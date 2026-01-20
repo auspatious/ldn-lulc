@@ -85,13 +85,15 @@ def get_all_tiles(
             )
             all_polys.append(extents_gdf)
         extents_gdf = pd.concat(all_polys)
+        # Remove duplicates
+        extents_gdf = extents_gdf.drop_duplicates(subset=["label"]).reset_index(drop=True)
         extents_gdf.to_file(GEOJSON_FILE, driver="GeoJSON")
     else:
         extents_gdf = gpd.read_file(GEOJSON_FILE)
 
     if format == "list":
         # Return a list of (x, y) tuples
-        return [tuple(label.split("_")) for label in extents_gdf["label"].tolist()]
+        return [tuple(map(int, label.split("_"))) for label in extents_gdf["label"].tolist()]
     elif format == "gdf":
         return extents_gdf
     else:
