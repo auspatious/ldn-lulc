@@ -8,6 +8,8 @@ from odc.geo.geom import Geometry
 
 from odc.geo.gridspec import GridSpec, XY
 
+from antimeridian import fix_polygon
+
 EPSG_CODE = 6933  # NSIDC EASE-Grid 2.0 Global
 
 GADM_FILE = Path(__file__).parent / "gadm_sids.gpkg"
@@ -50,7 +52,7 @@ def get_all_tiles(
 
     Alternately, returns a Geopandas GeoDataFrame of the tiles.
     """
-    GEOJSON_FILE = Path("sids_countries.geojson")
+    GEOJSON_FILE = Path(__file__).parent / "sids_tiles.geojson"
 
     if not GEOJSON_FILE.exists() or overwrite:
         grid = get_gridspec()
@@ -71,7 +73,7 @@ def get_all_tiles(
             geobox_labels = [
                 list(tile[0]) + [f"{tile[0][0]}_{tile[0][1]}"] for tile in tiles
             ]
-            geobox_extents = [gb.extent for gb in geoboxes]
+            geobox_extents = [fix_polygon(gb.extent.to_crs("epsg:4326")) for gb in geoboxes]
 
             labels_df = pd.DataFrame(
                 geobox_labels, columns=["x_index", "y_index", "label"]
@@ -79,7 +81,7 @@ def get_all_tiles(
             extents_gdf = gpd.GeoDataFrame(
                 labels_df,
                 geometry=geobox_extents,
-                crs=grid.crs,
+                crs="epsg:4326",
             )
             all_polys.append(extents_gdf)
         extents_gdf = pd.concat(all_polys)
