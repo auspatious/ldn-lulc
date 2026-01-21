@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 import pandas as pd
 import geopandas as gpd
@@ -6,7 +7,8 @@ from ldn.utils import ALL_COUNTRIES
 
 from odc.geo.geom import Geometry
 
-from odc.geo.gridspec import GridSpec, XY
+from odc.geo.gridspec import GridSpec
+from odc.geo import XY
 
 from antimeridian import fix_polygon
 
@@ -18,6 +20,10 @@ GADM_FILE = Path(__file__).parent / "gadm_sids.gpkg"
 def get_gadm(
     countries: dict = ALL_COUNTRIES, overwrite: bool = False
 ) -> gpd.GeoDataFrame:
+    """
+    Downloads the GADM data for the specified countries if not already cached locally.
+    Combines the country geometries into a single GeoDataFrame and saves to a local GeoPackage file.
+    """
     if not GADM_FILE.exists() or overwrite:
         all_polys = []
         for _, country_code in countries.items():
@@ -31,21 +37,40 @@ def get_gadm(
 
 
 def get_gridspec(resolution: int = 30, crs: int = EPSG_CODE) -> GridSpec:
+    """
+    Returns a GridSpec object.
+    Defines a uniform spatial grid (projection, resolution, tile size) across the entire globe.
+    This GridSpec covers the entire globe with tiles of 96,000m x 96,000m.
+    Each tile is made up of 30m pixels (m is EPSG:6933's unit).
+    EPSG:6933 (NSIDC EASE-Grid 2.0 Global) is used as the CRS for consistent area representation.
+
+    This GridSpec provides:
+        - Consistent global spatial referencing
+        - Efficient storage and access
+        - Scalable, tile-based processing
+    This enables:
+        - Simplified analysis and visualization
+        - Seamless mosaicking
+        - Globally comparable results
+    """
+
+    # Put the origin at a stable, off-Earth corner so the grid never moves.
+    # Prevent the antimeridian from coinciding with tile boundaries.
     gridspec_origin = XY(-20_000_000.0, -10_000_000.0)
 
     side_in_meters = 96_000
-    shape = (side_in_meters / resolution, side_in_meters / resolution)
+    shape_pixels_y_x = (side_in_meters / resolution, side_in_meters / resolution)
 
     return GridSpec(
         crs=crs,
-        tile_shape=shape,
+        tile_shape=shape_pixels_y_x,
         resolution=resolution,
         origin=gridspec_origin,
     )
 
 
 def get_all_tiles(
-    format: str = "list", countries: dict = ALL_COUNTRIES, overwrite: bool = False
+    format: Literal["list", "gdf"] = "list", countries: dict = ALL_COUNTRIES, overwrite: bool = False
 ) -> gpd.GeoDataFrame | list:
     """
     Returns a list of all grid tiles (as (x, y) tuples) that cover the combined geometry of all SIDS and DEP countries.
