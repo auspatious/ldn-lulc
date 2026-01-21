@@ -13,13 +13,18 @@ authors = [
     { name = "Will Jones", email = "will@auspatious.com" },
 ]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = "==3.12.*"
 dependencies = [
     "typer>=0.9.0",
     "odc-geo (>=0.5.0,<0.6.0)",
     "pandas (>=2.3.3,<3.0.0)",
     "geopandas (>=1.1.2,<2.0.0)",
-    "antimeridian (>=0.4.5,<0.5.0)"
+    "antimeridian (>=0.4.5,<0.5.0)",
+    "boto3 (>=1.42.31,<2.0.0)",
+    "xarray (>=2025.12.0,<2026.0.0)",
+    "odc-stac (>=0.5.2,<0.6.0)",
+    "datacube-compute @ git+https://github.com/auspatious/datacube-compute.git",
+    "dep-tools @ git+https://github.com/digitalearthpacific/dep-tools.git"
 ]
 
 [project.scripts]
@@ -31,7 +36,8 @@ dev = [
     "pytest (>=9.0.2,<10.0.0)",
     "folium (>=0.20.0,<0.21.0)",
     "mapclassify (>=2.10.0,<3.0.0)",
-    "matplotlib (>=3.10.8,<4.0.0)"
+    "matplotlib (>=3.10.8,<4.0.0)",
+    "ipykernel (>=7.1.0,<8.0.0)"
 ]
 
 [tool.setuptools.packages.find]

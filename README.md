@@ -7,42 +7,37 @@ The ldn folder contains an installable
 
 
 ## Quickstart
-
-1. (Recommended) Create and activate a virtual environment:
-  ```bash
-  python3 -m venv .venv
-  source .venv/bin/activate
+1. Ensure GDAL and its Python bindings are installed
+```bash
+brew upgrade gdal
 ```
 
-#### Using Poetry (recommended)
+1b. Ensure Rust is installed (for datacube-compute):
+```bash
+brew install rustup
+rustup-init
+export PATH="$HOME/.cargo/bin:$PATH"
+```
 
-<!-- 2. Ensure GDAL and its Python bindings are installed (not sure if this is needed yet). -->
-2. Install Poetry if you don't have it already:
+2. Install Poetry if you don't have it already and create and activate a virtual environment:
   ```bash
   pip install poetry
+  poetry env use $(brew --prefix python@3.12)/bin/python3.12
+  poetry env info
   ```
-<!-- 4. (Optional) Install development dependencies:
+
+#### Using Poetry (recommended)
+3a. (Optional) Install development dependencies:
   ```bash
   poetry install --with dev
-  ``` -->
-3. Install dependencies:
+  ```
+3b. Install dependencies:
   ```bash
   poetry install
   ```
 4. Run the CLI tool:
   ```bash
   poetry run ldn --help
-  ```
-
-#### Using pip (alternative)
-<!-- 2. Ensure GDAL and its Python bindings are installed (not sure if this is needed yet). -->
-2. Install the package and dependencies:
-  ```bash
-  pip install -e .
-  ```
-3. Run the CLI tool:
-  ```bash
-  ldn --help
   ```
 
 
@@ -56,15 +51,13 @@ For development purposes, you can install the package with development dependenc
 poetry install --with dev
 ```
 
-```bash
-# Using pip
-pip install -e ".[dev]"
-```
-
 ### To add a dependency
 
 Run: `poetry add --group dev pytest`
 
+Others:
+poetry add "dep-tools@git+https://github.com/digitalearthpacific/dep-tools.git"
+poetry add "datacube-compute@git+https://github.com/auspatious/datacube-compute.git"
 
 ### To run tests
 
