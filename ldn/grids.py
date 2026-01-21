@@ -58,7 +58,7 @@ def get_gridspec(resolution: int = 30, crs: int = EPSG_CODE) -> GridSpec:
     # Prevent the antimeridian from coinciding with tile boundaries.
     gridspec_origin = XY(-20_000_000.0, -10_000_000.0)
 
-    side_in_meters = 96_000
+    side_in_meters = 90_000
     shape_pixels_y_x = (side_in_meters / resolution, side_in_meters / resolution)
 
     return GridSpec(
@@ -112,8 +112,8 @@ def get_all_tiles(
         extents_gdf = pd.concat(all_polys)
         # Remove duplicates
         extents_gdf = extents_gdf.drop_duplicates(subset=["label"]).reset_index(drop=True)
-        # Drop three duplicates. 389_82, 389_81 and 389_79
-        extents_gdf = extents_gdf[~extents_gdf["label"].isin(["389_82", "389_81", "389_79"])]
+        # Drop three duplicates. 415_87, 415_88 are un-needed.
+        extents_gdf = extents_gdf[~extents_gdf["label"].isin(["415_87", "415_88"])]
         extents_gdf.to_file(GEOJSON_FILE, driver="GeoJSON")
     else:
         extents_gdf = gpd.read_file(GEOJSON_FILE)
