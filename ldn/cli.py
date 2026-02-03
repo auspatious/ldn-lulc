@@ -34,6 +34,8 @@ from ldn.cli_grid import cli_grid_app
 from ldn.grids import get_gridspec
 from dep_tools import grids
 
+from ldn.utils import NON_DEP_COUNTRIES
+
 app = typer.Typer()
 
 # All files will inherit this logging configuration so we only write once
@@ -85,8 +87,11 @@ def print_tasks(
 
     tasks = []
     for year in years_list:
-        for tile in get_all_tiles():
-            tasks.append({"id": "_".join(str(i) for i in tile), "year": year})
+        # Handle both CI and DEP grids
+        for tile in get_all_tiles(countries=NON_DEP_COUNTRIES):
+            tasks.append({"id": "_".join(str(i) for i in tile), "year": year, "grid": "ci"})
+        for tile in grids.get_tiles():
+            tasks.append({"id": "_".join(str(i) for i in tile), "year": year, "grid": "dep"})
 
     typer.echo(json.dumps(tasks, indent=2))
 
@@ -107,7 +112,7 @@ def geomad(
     threads_per_worker: Annotated[int, typer.Option()] = 16,
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
-    grid_name: Annotated[Literal["ldn", "dep"], typer.Option()] = "ldn",
+    grid_name: Annotated[Literal["ci", "dep"], typer.Option()] = "ci",
 ) -> None:
     """Run GeoMAD processing on Landsat data.
     
@@ -116,7 +121,8 @@ def geomad(
     ldn geomad --tile-id 136_142 --year 2025 --version 0.0.0 \
         --overwrite \
         --decimated \
-        --no-all-bands
+        --no-all-bands \
+        --grid-name ci
     """
     typer.echo(
         f"Running GeoMAD processing for tile {tile_id}, year {year}, version {version}"
@@ -124,18 +130,17 @@ def geomad(
 
     # Fixed variables
     sensor = "ls"
+    dataset_id = "geomad"
 
     # Set up variables and check
     tile_index = tuple(map(int, tile_id.split("_")))
 
     grid_map = {
-        "ldn": get_gridspec,
+        "ci": get_gridspec,
         "dep": grids.grid,
     }
     grid = grid_map[grid_name]()
     geobox = grid.tile_geobox(tile_index)
-
-    print(geobox)
 
     # TODO: Add grid_name to path.
     if not bucket.startswith("https://"):
@@ -152,10 +157,10 @@ def geomad(
 
     # Check if we've done this tile before
     itempath = S3ItemPath(
-        prefix="ausp",
+        prefix=grid_name,
         bucket=bucket,
         sensor=sensor,
-        dataset_id="geomad",
+        dataset_id=dataset_id,
         version=version,
         time=year,
         full_path_prefix=full_path_prefix,
@@ -198,7 +203,7 @@ def geomad(
 
     # Metadata creator
     stac_creator = StacCreator(
-        collection_url_root="https://data.ldn.auspatious.com/#ausp_ls_geomad/",
+        collection_url_root=f"https://data.ldn.auspatious.com/#{grid_name}_{sensor}_{dataset_id}/",
         itempath=itempath,
         with_raster=True,
     )

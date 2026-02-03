@@ -36,6 +36,8 @@ def get_gadm(
     return gpd.read_file(GADM_FILE)
 
 
+# This is for the non-pacific countries. All pacific countries are covered by the DEP grid (EPSG:3832).
+# Pacific data is seperate because of the antimeridian crossing, and consistency with existing DEP work.
 def get_gridspec(resolution: int = 30, crs: int = EPSG_CODE) -> GridSpec:
     """
     Returns a GridSpec object.
@@ -77,7 +79,7 @@ def get_all_tiles(
 
     Alternately, returns a Geopandas GeoDataFrame of the tiles.
     """
-    GEOJSON_FILE = Path(__file__).parent / "sids_tiles.geojson"
+    GEOJSON_FILE = Path(__file__).parent / "sids_ci_tiles.geojson"
 
     if not GEOJSON_FILE.exists() or overwrite:
         grid = get_gridspec()
@@ -98,6 +100,7 @@ def get_all_tiles(
             geobox_labels = [
                 list(tile[0]) + [f"{tile[0][0]}_{tile[0][1]}"] for tile in tiles
             ]
+            # TODO: We no longer need to fix the antimeridian for CI grid. DEP grid is the way around this.
             geobox_extents = [fix_polygon(gb.extent.to_crs("epsg:4326")) for gb in geoboxes]
 
             labels_df = pd.DataFrame(

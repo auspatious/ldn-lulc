@@ -88,3 +88,6 @@ DEP_COUNTRIES_AND_CODES = {
 
 # Merge dicts, DEP override SIDS if duplicate name
 ALL_COUNTRIES = {**SIDS_COUNTRIES_AND_CODES, **DEP_COUNTRIES_AND_CODES}
+
+# Get SIDS countries that are not in DEP for CI Grid use.
+NON_DEP_COUNTRIES = {k: v for k, v in SIDS_COUNTRIES_AND_CODES.items() if k not in DEP_COUNTRIES_AND_CODES}
