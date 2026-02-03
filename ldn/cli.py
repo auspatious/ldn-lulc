@@ -11,6 +11,7 @@ from dep_tools.stac_utils import StacCreator
 from dep_tools.task import AwsStacTask as Task
 from dep_tools.writers import AwsDsCogWriter
 from odc.stac import configure_s3_access
+from typing import Literal
 
 import json
 
@@ -31,6 +32,7 @@ import typer
 from ldn import get_version
 from ldn.cli_grid import cli_grid_app
 from ldn.grids import get_gridspec
+from dep_tools import grids
 
 app = typer.Typer()
 
@@ -105,6 +107,7 @@ def geomad(
     threads_per_worker: Annotated[int, typer.Option()] = 16,
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
+    grid_name: Annotated[Literal["ldn", "dep"], typer.Option()] = "ldn",
 ) -> None:
     """Run GeoMAD processing on Landsat data.
     
@@ -124,10 +127,18 @@ def geomad(
 
     # Set up variables and check
     tile_index = tuple(map(int, tile_id.split("_")))
-    grid = get_gridspec()
+
+    grid_map = {
+        "ldn": get_gridspec,
+        "dep": grids.grid,
+    }
+    grid = grid_map[grid_name]()
     geobox = grid.tile_geobox(tile_index)
 
-    if bucket == "data.ldn.auspatious.com":
+    print(geobox)
+
+    # TODO: Add grid_name to path.
+    if not bucket.startswith("https://"):
         full_path_prefix = "https://data.ldn.auspatious.com"
 
     if decimated:
