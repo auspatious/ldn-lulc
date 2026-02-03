@@ -32,7 +32,7 @@ import typer
 from ldn import get_version
 from ldn.cli_grid import cli_grid_app
 from ldn.grids import get_gridspec
-from dep_tools import grids
+from dep_tools.grids import get_tiles, grid
 
 from ldn.utils import NON_DEP_COUNTRIES
 
@@ -90,7 +90,7 @@ def print_tasks(
         # Handle both CI and DEP grids
         for tile in get_all_tiles(countries=NON_DEP_COUNTRIES):
             tasks.append({"id": "_".join(str(i) for i in tile), "year": year, "grid": "ci"})
-        for tile in grids.get_tiles():
+        for tile in get_tiles():
             tasks.append({"id": "_".join(str(i) for i in tile), "year": year, "grid": "dep"})
 
     typer.echo(json.dumps(tasks, indent=2))
@@ -137,10 +137,10 @@ def geomad(
 
     grid_map = {
         "ci": get_gridspec,
-        "dep": grids.grid,
+        "dep": grid,
     }
-    grid = grid_map[grid_name]()
-    geobox = grid.tile_geobox(tile_index)
+    _grid = grid_map[grid_name]()
+    geobox = _grid.tile_geobox(tile_index)
 
     # TODO: Add grid_name to path.
     if not bucket.startswith("https://"):
