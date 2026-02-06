@@ -32,9 +32,7 @@ import typer
 from ldn import get_version
 from ldn.cli_grid import cli_grid_app
 from ldn.grids import get_gridspec
-from dep_tools.grids import get_tiles, grid
-
-from ldn.utils import NON_DEP_COUNTRIES
+from dep_tools.grids import grid
 
 app = typer.Typer()
 
@@ -69,10 +67,11 @@ if __name__ == "__main__":
 @app.command()
 def print_tasks(
     years: Annotated[str, typer.Option()] = "2025",
+    grids: Annotated[Literal["ci", "dep", "both"], typer.Option()] = "both",
 ) -> None:
-    """Print all tasks for given years."""
-    # Parse the year string, making comma separated a list
-    # and - separated a range
+    """Print all tasks for given years for either both grids, or just the CI or DEP grid."""
+    logging.info(f"Generating tasks for years: {years} and grids: {grids}")
+    
     years_list = []
     if "," in years:
         years_list = years.split(",")
@@ -85,16 +84,25 @@ def print_tasks(
     assert len(years_list) > 0, "No years provided"
     assert all(y.isdigit() for y in years_list), "Years must be integers"
 
+    tiles = get_all_tiles(format="list", grids=grids, overwrite=False)
+
+    logging.info(f"Number of tasks: {len(years_list) * len(tiles)} (years: {len(years_list)}, tiles: {len(tiles)})")
+    
     tasks = []
     for year in years_list:
-        # Handle both CI and DEP grids
-        for tile in get_all_tiles(countries=NON_DEP_COUNTRIES):
-            tasks.append({"id": "_".join(str(i) for i in tile), "year": year, "grid": "ci"})
-        for tile in get_tiles():
-            tasks.append({"id": "_".join(str(i) for i in tile), "year": year, "grid": "dep"})
+        # get_all_tiles handles both CI and DEP grids or just one.
+        for tile in tiles:
+            tasks.append({
+                "id": "_".join(str(i) for i in tile[0]),
+                "year": year,
+                "grid_name": tile[1]
+            })
 
-    typer.echo(json.dumps(tasks, indent=2))
+    tasks_json_str = json.dumps(tasks, indent=2)
+    with open("tasks.json", "w") as f:
+        f.write(tasks_json_str)
 
+    typer.echo(tasks_json_str)
     return
 
 
@@ -125,8 +133,10 @@ def geomad(
         --grid-name ci
     """
     typer.echo(
-        f"Running GeoMAD processing for tile {tile_id}, year {year}, version {version}"
+        f"Running GeoMAD processing for tile {tile_id}, year {year}, version {version}, grid {grid_name} with overwrite={overwrite}, decimated={decimated}, all_bands={all_bands}, memory_limit={memory_limit}, n_workers={n_workers}, threads_per_worker={threads_per_worker}, xy_chunk_size={xy_chunk_size}, geomad_threads={geomad_threads}"
     )
+
+    # TODO: Test S3 access at the start of the function and fail fast if we don't have access, rather than waiting until we try to write the output.
 
     # Fixed variables
     sensor = "ls"
