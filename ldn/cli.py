@@ -152,7 +152,6 @@ def geomad(
     _grid = grid_map[grid_name]()
     geobox = _grid.tile_geobox(tile_index)
 
-    # TODO: Add grid_name to path.
     if not bucket.startswith("https://"):
         full_path_prefix = "https://data.ldn.auspatious.com"
 

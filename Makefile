@@ -1,12 +1,12 @@
 # Here we will store commands for working with the grid, GeoMAD, training data, and ML models.
-grid-list-countries-all:
-	poetry run ldn grid list-countries
+grid-list-countries-both:
+	poetry run ldn grid list-countries --grids="both"
 
 grid-list-countries-dep:
-	poetry run ldn grid list-countries --set="dep"
+	poetry run ldn grid list-countries --grids="dep"
 
-grid-list-countries-non-dep:
-	poetry run ldn grid list-countries --set="non_dep"
+grid-list-countries-ci:
+	poetry run ldn grid list-countries --grids="ci"
 
 
 print-tasks-2000-2024-both-grids:
