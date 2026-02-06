@@ -75,7 +75,7 @@ def get_gridspec(resolution: int = 30, crs: int = EPSG_CODE) -> GridSpec:
     )
 
 
-def get_all_tiles(
+def get_grid_tiles(
     format: Literal["list", "gdf"] = "list",
     grids: Literal["both", "ci", "dep"] = "both",
     overwrite: bool = False

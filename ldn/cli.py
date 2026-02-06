@@ -26,7 +26,7 @@ from ldn.geomad import (
     USGS_COLLECTION,
     LANDSAT_BANDS,
 )
-from ldn.grids import get_all_tiles
+from ldn.grids import get_grid_tiles
 import typer
 
 from ldn import get_version
@@ -84,13 +84,13 @@ def print_tasks(
     assert len(years_list) > 0, "No years provided"
     assert all(y.isdigit() for y in years_list), "Years must be integers"
 
-    tiles = get_all_tiles(format="list", grids=grids, overwrite=False)
+    tiles = get_grid_tiles(format="list", grids=grids, overwrite=False)
 
     logging.info(f"Number of tasks: {len(years_list) * len(tiles)} (years: {len(years_list)}, tiles: {len(tiles)})")
     
     tasks = []
     for year in years_list:
-        # get_all_tiles handles both CI and DEP grids or just one.
+        # get_grid_tiles handles both CI and DEP grids or just one.
         for tile in tiles:
             tasks.append({
                 "id": "_".join(str(i) for i in tile[0]),
