@@ -11,6 +11,7 @@ from dep_tools.stac_utils import StacCreator
 from dep_tools.task import AwsStacTask as Task
 from dep_tools.writers import AwsDsCogWriter
 from odc.stac import configure_s3_access
+from typing import Literal
 
 import json
 
@@ -25,12 +26,13 @@ from ldn.geomad import (
     USGS_COLLECTION,
     LANDSAT_BANDS,
 )
-from ldn.grids import get_all_tiles
+from ldn.grids import get_grid_tiles
 import typer
 
 from ldn import get_version
 from ldn.cli_grid import cli_grid_app
 from ldn.grids import get_gridspec
+from dep_tools.grids import grid
 
 app = typer.Typer()
 
@@ -46,6 +48,7 @@ logging.basicConfig(
 app.add_typer(
     cli_grid_app, name="grid", help="Commands for working with the ODC Geo Grid."
 )
+
 
 # Work for version and --version
 @app.command()
@@ -65,10 +68,11 @@ if __name__ == "__main__":
 @app.command()
 def print_tasks(
     years: Annotated[str, typer.Option()] = "2025",
+    grids: Annotated[Literal["ci", "dep", "both"], typer.Option()] = "both",
 ) -> None:
-    """Print all tasks for given years."""
-    # Parse the year string, making comma separated a list
-    # and - separated a range
+    """Print all tasks for given years for either both grids, or just the CI or DEP grid."""
+    logging.info(f"Generating tasks for years: {years} and grids: {grids}")
+
     years_list = []
     if "," in years:
         years_list = years.split(",")
@@ -81,13 +85,29 @@ def print_tasks(
     assert len(years_list) > 0, "No years provided"
     assert all(y.isdigit() for y in years_list), "Years must be integers"
 
+    tiles = get_grid_tiles(format="list", grids=grids, overwrite=False)
+
+    logging.info(
+        f"Number of tasks: {len(years_list) * len(tiles)} (years: {len(years_list)}, tiles: {len(tiles)})"
+    )
+
     tasks = []
     for year in years_list:
-        for tile in get_all_tiles():
-            tasks.append({"id": "_".join(str(i) for i in tile), "year": year})
+        # get_grid_tiles handles both CI and DEP grids or just one.
+        for tile in tiles:
+            tasks.append(
+                {
+                    "id": "_".join(str(i) for i in tile[0]),
+                    "year": year,
+                    "grid_name": tile[1],
+                }
+            )
 
-    typer.echo(json.dumps(tasks, indent=2))
+    tasks_json_str = json.dumps(tasks, indent=2)
+    with open("tasks.json", "w") as f:
+        f.write(tasks_json_str)
 
+    typer.echo(tasks_json_str)
     return
 
 
@@ -105,6 +125,7 @@ def geomad(
     threads_per_worker: Annotated[int, typer.Option()] = 16,
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
+    region: Annotated[Literal["pacific", "non-pacific"], typer.Option()] = "pacific",
 ) -> None:
     """Run GeoMAD processing on Landsat data.
     
@@ -113,21 +134,31 @@ def geomad(
     ldn geomad --tile-id 136_142 --year 2025 --version 0.0.0 \
         --overwrite \
         --decimated \
-        --no-all-bands
+        --no-all-bands \
+        --grid-name pacific
     """
-    typer.echo(
-        f"Running GeoMAD processing for tile {tile_id}, year {year}, version {version}"
+    info = (
+        f"Running GeoMAD processing for tile {tile_id}, year {year}, version {version},"
+        f" region {region} with overwrite={overwrite}, decimated={decimated},"
+        f" all_bands={all_bands}, memory_limit={memory_limit}, n_workers={n_workers},"
+        f" threads_per_worker={threads_per_worker}, xy_chunk_size={xy_chunk_size}, "
+        f"geomad_threads={geomad_threads}"
     )
+    typer.echo(info)
+
+    # TODO: Test S3 access at the start of the function and fail fast if we don't have access, rather than waiting until we try to write the output.
 
     # Fixed variables
     sensor = "ls"
+    dataset_id = "geomad"
 
     # Set up variables and check
     tile_index = tuple(map(int, tile_id.split("_")))
-    grid = get_gridspec()
+
+    grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_index)
 
-    if bucket == "data.ldn.auspatious.com":
+    if not bucket.startswith("https://"):
         full_path_prefix = "https://data.ldn.auspatious.com"
 
     if decimated:
@@ -139,12 +170,14 @@ def geomad(
     # Configure for checking item existence
     client = boto3.client("s3")
 
+    prefix = "ci" if region == "non-pacific" else "dep"
+
     # Check if we've done this tile before
     itempath = S3ItemPath(
-        prefix="ausp",
+        prefix=prefix,
         bucket=bucket,
         sensor=sensor,
-        dataset_id="geomad",
+        dataset_id=dataset_id,
         version=version,
         time=year,
         full_path_prefix=full_path_prefix,
@@ -187,7 +220,7 @@ def geomad(
 
     # Metadata creator
     stac_creator = StacCreator(
-        collection_url_root="https://data.ldn.auspatious.com/#ausp_ls_geomad/",
+        collection_url_root=f"https://data.ldn.auspatious.com/#{prefix}_{sensor}_{dataset_id}/",
         itempath=itempath,
         with_raster=True,
     )

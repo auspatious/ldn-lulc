@@ -216,3 +216,6 @@ ldn/_version.py
 ldn/gadm_sids.gpkg
 ldn/gadm_sids.gpkg-shm
 ldn/gadm_sids.gpkg-wal
+ldn/tasks.json
+
+*.tif

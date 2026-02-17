@@ -1,3 +1,5 @@
+from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
+
 SIDS_COUNTRIES_AND_CODES = {
     # Caribbean
     "Anguilla": "AIA",
@@ -60,31 +62,9 @@ SIDS_COUNTRIES_AND_CODES = {
     "Seychelles": "SYC",
     "Singapore": "SGP",
 }
-# https://github.com/digitalearthpacific/dep-tools/blob/main/dep_tools/grids.py#L23
-DEP_COUNTRIES_AND_CODES = {
-    "American Samoa": "ASM",
-    "Cook Islands": "COK",
-    "Fiji": "FJI",
-    "French Polynesia": "PYF",
-    "Guam": "GUM",
-    "Kiribati": "KIR",
-    "Marshall Islands": "MHL",
-    "Micronesia": "FSM",
-    "Nauru": "NRU",
-    "New Caledonia": "NCL",
-    "Niue": "NIU",
-    "Northern Mariana Islands": "MNP",
-    "Palau": "PLW",
-    "Papua New Guinea": "PNG",
-    "Pitcairn Islands": "PCN",
-    "Solomon Islands": "SLB",
-    "Samoa": "WSM",
-    "Tokelau": "TKL",
-    "Tonga": "TON",
-    "Tuvalu": "TUV",
-    "Vanuatu": "VUT",
-    "Wallis and Futuna": "WLF",
-}
 
 # Merge dicts, DEP override SIDS if duplicate name
 ALL_COUNTRIES = {**SIDS_COUNTRIES_AND_CODES, **DEP_COUNTRIES_AND_CODES}
+
+# Get SIDS countries that are not in DEP for CI Grid use.
+NON_DEP_COUNTRIES = {k: v for k, v in SIDS_COUNTRIES_AND_CODES.items() if k not in DEP_COUNTRIES_AND_CODES}

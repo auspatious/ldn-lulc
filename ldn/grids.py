@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Literal
 
@@ -11,6 +12,13 @@ from odc.geo.gridspec import GridSpec
 from odc.geo import XY
 
 from antimeridian import fix_polygon
+
+from dep_tools.grids import (
+    PACIFIC_EPSG,
+    grid as dep_grid,
+    COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES,
+)
+from ldn.utils import NON_DEP_COUNTRIES
 
 EPSG_CODE = 6933  # NSIDC EASE-Grid 2.0 Global
 
@@ -36,7 +44,9 @@ def get_gadm(
     return gpd.read_file(GADM_FILE)
 
 
-def get_gridspec(resolution: int = 30, crs: int = EPSG_CODE) -> GridSpec:
+# This is for the non-pacific countries. All pacific countries are covered by the DEP grid (EPSG:3832).
+# Pacific data is seperate because of the antimeridian crossing, and consistency with existing DEP work.
+def get_gridspec(resolution: int = 30, crs: int = EPSG_CODE, region: Literal["pacific", "non-pacific"] = "non-pacific") -> GridSpec:
     """
     Returns a GridSpec object.
     Defines a uniform spatial grid (projection, resolution, tile size) across the entire globe.
@@ -54,6 +64,13 @@ def get_gridspec(resolution: int = 30, crs: int = EPSG_CODE) -> GridSpec:
         - Globally comparable results
     """
 
+    if region not in ["pacific", "non-pacific"]:
+        raise ValueError("Invalid region. Must be 'pacific' or 'non-pacific'.")
+    
+    if region == "pacific":
+        # For the Pacific region, we use the DEP-defined grid
+        return dep_grid(resolution, simplify_tolerance=0, crs=PACIFIC_EPSG, return_type="GridSpec")
+
     # Put the origin at a stable, off-Earth corner so the grid never moves.
     # Prevent the antimeridian from coinciding with tile boundaries.
     gridspec_origin = XY(-20_000_000.0, -10_000_000.0)
@@ -69,59 +86,127 @@ def get_gridspec(resolution: int = 30, crs: int = EPSG_CODE) -> GridSpec:
     )
 
 
-def get_all_tiles(
-    format: Literal["list", "gdf"] = "list", countries: dict = ALL_COUNTRIES, overwrite: bool = False
-) -> gpd.GeoDataFrame | list:
+def get_grid_tiles(
+    format: Literal["list", "gdf"] = "list",
+    grids: Literal["all", "pacific", "non-pacific"] = "all",
+    overwrite: bool = False,
+) -> gpd.GeoDataFrame | list[tuple[tuple[int, int], str]]:
     """
-    Returns a list of all grid tiles (as (x, y) tuples) that cover the combined geometry of all SIDS and DEP countries.
-
+    Returns a list of all grid tiles (as ((x, y), grid_name) tuples) that cover the combined geometry of all SIDS and DEP countries.
     Alternately, returns a Geopandas GeoDataFrame of the tiles.
+    Writes two GeoJSONs: one for CI, one for DEP.
+    As an optimization, if the GeoJSON files already exist and overwrite=False, it will read from those instead of recalculating the tiles.
+    Output list format [((x, y), grid_name), ...] or GeoDataFrame with columns ['x_index', 'y_index', 'label', 'geometry', 'grid_name']
+    where label is "x_index_y_index".
     """
-    GEOJSON_FILE = Path(__file__).parent / "sids_tiles.geojson"
+    if format not in ["list", "gdf"]:
+        raise ValueError("Invalid format. Must be 'list' or 'gdf'.")
 
-    if not GEOJSON_FILE.exists() or overwrite:
-        grid = get_gridspec()
-        gadm = get_gadm(countries=countries)
+    if grids not in ["all", "pacific", "non-pacific"]:
+        raise ValueError(
+            "Invalid grids value. Must be 'all', 'pacific', or 'non-pacific'."
+        )
 
-        all_polys = []
+    logging.info(
+        f"Getting all tiles for grids: {grids} with format: {format} and overwrite: {overwrite}"
+    )
 
-        for country, code in countries.items():
-            selection = gadm[gadm["GID_0"] == code]
-            if selection.empty:
-                raise ValueError(
-                    f"No geometry found for country: {country} with code {code}"
+    geojson_path_non_pacific = Path(__file__).parent / "sids_non_pacific_tiles.geojson"
+    geojson_path_pacific = Path(__file__).parent / "sids_pacific_tiles.geojson"
+    geojson_path_all = Path(__file__).parent / "sids_all_tiles.geojson"
+
+    def process_grid(grid_name, grid_obj, gadm, countries, geojson_file):
+        logging.info(
+            f"Processing grid {grid_name} for countries: {list(countries.keys())}"
+        )
+        if not overwrite and geojson_file.exists():
+            logging.info(
+                "Reading existing GeoJSON file because overwrite is False and file exists."
+            )
+            extents_gdf = gpd.read_file(geojson_file)
+        else:
+            logging.info(
+                "Calculating tiles because overwrite is True or file does not exist."
+            )
+            all_polys = []
+            for country, code in countries.items():
+                selection = gadm[gadm["GID_0"] == code]
+                if selection.empty:
+                    raise ValueError(
+                        f"No geometry found for country: {country} with code {code}"
+                    )
+                polygon = Geometry(selection.geometry.union_all(), crs=gadm.crs)
+                tiles = list(grid_obj.tiles_from_geopolygon(polygon))
+                geoboxes = [tile[1] for tile in tiles]
+                geobox_labels = [
+                    list(tile[0]) + [f"{tile[0][0]}_{tile[0][1]}"] for tile in tiles
+                ]
+                geobox_extents = [
+                    fix_polygon(gb.extent.to_crs("epsg:4326")) for gb in geoboxes
+                ]  # Fix antimeridian crossing geoms.
+                labels_df = pd.DataFrame(
+                    geobox_labels, columns=["x_index", "y_index", "label"]
                 )
-            polygon = Geometry(selection.geometry.union_all(), crs=gadm.crs)
-            tiles = list(grid.tiles_from_geopolygon(polygon))
-
-            geoboxes = [tile[1] for tile in tiles]
-            geobox_labels = [
-                list(tile[0]) + [f"{tile[0][0]}_{tile[0][1]}"] for tile in tiles
-            ]
-            geobox_extents = [fix_polygon(gb.extent.to_crs("epsg:4326")) for gb in geoboxes]
-
-            labels_df = pd.DataFrame(
-                geobox_labels, columns=["x_index", "y_index", "label"]
+                extents_gdf = gpd.GeoDataFrame(
+                    labels_df, geometry=geobox_extents, crs="epsg:4326"
+                )
+                extents_gdf["grid_name"] = grid_name
+                all_polys.append(extents_gdf)
+            extents_gdf = (
+                pd.concat(all_polys)
+                .drop_duplicates(subset=["label"])
+                .reset_index(drop=True)
             )
-            extents_gdf = gpd.GeoDataFrame(
-                labels_df,
-                geometry=geobox_extents,
-                crs="epsg:4326",
+
+            extents_gdf.to_file(
+                geojson_file, driver="GeoJSON"
+            )  # Just write if overwrite is True or file does not exist.
+        return extents_gdf
+
+    # Combine the grids if both are requested, otherwise just return the requested grid.
+    # In the requested return format. This ensures the two grids are different.
+    grid_configs = []
+    if grids in ["all", "pacific"]:
+        # Pacific is requested
+        grid_configs.append(
+            (
+                "pacific",
+                get_gridspec(region="pacific"),
+                get_gadm(countries=DEP_COUNTRIES_AND_CODES),
+                DEP_COUNTRIES_AND_CODES,
+                geojson_path_pacific,
             )
-            all_polys.append(extents_gdf)
-        extents_gdf = pd.concat(all_polys)
-        # Remove duplicates
-        extents_gdf = extents_gdf.drop_duplicates(subset=["label"]).reset_index(drop=True)
-        # Drop three duplicates. 415_87, 415_88 are un-needed.
-        extents_gdf = extents_gdf[~extents_gdf["label"].isin(["415_87", "415_88"])]
-        extents_gdf.to_file(GEOJSON_FILE, driver="GeoJSON")
-    else:
-        extents_gdf = gpd.read_file(GEOJSON_FILE)
+        )
+    if grids in ["all", "non-pacific"]:
+        # Non-Pacific is requested
+        grid_configs.append(
+            (
+                "non-pacific",
+                get_gridspec(region="non-pacific"),
+                get_gadm(countries=NON_DEP_COUNTRIES),
+                NON_DEP_COUNTRIES,
+                geojson_path_non_pacific,
+            )
+        )
+
+    grid_dfs = [process_grid(*cfg) for cfg in grid_configs]
+
+    all_tiles_df = pd.concat(grid_dfs)
+    if all_tiles_df.empty:
+        raise ValueError("No tiles found for the requested grids and countries.")
+
+    all_tiles_gdf = gpd.GeoDataFrame(all_tiles_df, geometry="geometry", crs="epsg:4326")
+
+    if grids == "all" and (overwrite or not geojson_path_all.exists()):
+        logging.info(
+            "Writing combined GeoJSON file for all tiles because grids is 'all', and (overwrite is True or the file does not exist)."
+        )
+        all_tiles_gdf.to_file(geojson_path_all, driver="GeoJSON")
 
     if format == "list":
-        # Return a list of (x, y) tuples
-        return [tuple(map(int, label.split("_"))) for label in extents_gdf["label"].tolist()]
-    elif format == "gdf":
-        return extents_gdf
+        return [
+            ((int(row["x_index"]), int(row["y_index"])), str(row["grid_name"]))
+            for _, row in all_tiles_gdf.iterrows()
+        ]
     else:
-        raise ValueError("format must be 'list' or 'gdf'")
+        return all_tiles_gdf.reset_index(drop=True)
