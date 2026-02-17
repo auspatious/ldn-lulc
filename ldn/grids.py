@@ -46,7 +46,7 @@ def get_gadm(
 
 # This is for the non-pacific countries. All pacific countries are covered by the DEP grid (EPSG:3832).
 # Pacific data is seperate because of the antimeridian crossing, and consistency with existing DEP work.
-def get_gridspec(resolution: int = 30, crs: int = EPSG_CODE, region: Literal["pacific", "non-pacific"] = "non-pacific") -> GridSpec:
+def get_gridspec(region: Literal["pacific", "non-pacific"], resolution: int = 30, crs: int = EPSG_CODE) -> GridSpec:
     """
     Returns a GridSpec object.
     Defines a uniform spatial grid (projection, resolution, tile size) across the entire globe.
