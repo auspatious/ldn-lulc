@@ -92,11 +92,11 @@ def get_grid_tiles(
     overwrite: bool = False,
 ) -> gpd.GeoDataFrame | list[tuple[tuple[int, int], str]]:
     """
-    Returns a list of all grid tiles (as ((x, y), grid_name) tuples) that cover the combined geometry of all SIDS and DEP countries.
+    Returns a list of all grid tiles (as ((x, y), region) tuples) that cover the combined geometry of all SIDS and DEP countries.
     Alternately, returns a Geopandas GeoDataFrame of the tiles.
     Writes two GeoJSONs: one for CI, one for DEP.
     As an optimization, if the GeoJSON files already exist and overwrite=False, it will read from those instead of recalculating the tiles.
-    Output list format [((x, y), grid_name), ...] or GeoDataFrame with columns ['x_index', 'y_index', 'label', 'geometry', 'grid_name']
+    Output list format [((x, y), region), ...] or GeoDataFrame with columns ['x_index', 'y_index', 'label', 'geometry', 'region']
     where label is "x_index_y_index".
     """
     if format not in ["list", "gdf"]:
@@ -115,9 +115,9 @@ def get_grid_tiles(
     geojson_path_pacific = Path(__file__).parent / "sids_pacific_tiles.geojson"
     geojson_path_all = Path(__file__).parent / "sids_all_tiles.geojson"
 
-    def process_grid(grid_name, grid_obj, gadm, countries, geojson_file):
+    def process_grid(region, grid_obj, gadm, countries, geojson_file):
         logging.info(
-            f"Processing grid {grid_name} for countries: {list(countries.keys())}"
+            f"Processing grid {region} for countries: {list(countries.keys())}"
         )
         if not overwrite and geojson_file.exists():
             logging.info(
@@ -150,7 +150,7 @@ def get_grid_tiles(
                 extents_gdf = gpd.GeoDataFrame(
                     labels_df, geometry=geobox_extents, crs="epsg:4326"
                 )
-                extents_gdf["grid_name"] = grid_name
+                extents_gdf["region"] = region
                 all_polys.append(extents_gdf)
             extents_gdf = (
                 pd.concat(all_polys)
@@ -163,7 +163,7 @@ def get_grid_tiles(
             )  # Just write if overwrite is True or file does not exist.
         return extents_gdf
 
-    # Combine the grids if both are requested, otherwise just return the requested grid.
+    # Combine the grids if all are requested, otherwise just return the requested grid.
     # In the requested return format. This ensures the two grids are different.
     grid_configs = []
     if grids in ["all", "pacific"]:
@@ -205,7 +205,7 @@ def get_grid_tiles(
 
     if format == "list":
         return [
-            ((int(row["x_index"]), int(row["y_index"])), str(row["grid_name"]))
+            ((int(row["x_index"]), int(row["y_index"])), str(row["region"]))
             for _, row in all_tiles_gdf.iterrows()
         ]
     else:
