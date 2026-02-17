@@ -67,10 +67,10 @@ if __name__ == "__main__":
 
 @app.command()
 def print_tasks(
-    years: Annotated[str, typer.Option()] = "2025",
-    grids: Annotated[Literal["ci", "dep", "both"], typer.Option()] = "both",
+    years: Annotated[str, typer.Option()],
+    grids: Annotated[Literal["all", "pacific", "non-pacific"], typer.Option()] = "all",
 ) -> None:
-    """Print all tasks for given years for either both grids, or just the CI or DEP grid."""
+    """Print all tasks for given years for either all grids, or just the Pacific or non-Pacific grid."""
     logging.info(f"Generating tasks for years: {years} and grids: {grids}")
 
     years_list = []
@@ -93,13 +93,13 @@ def print_tasks(
 
     tasks = []
     for year in years_list:
-        # get_grid_tiles handles both CI and DEP grids or just one.
+        # get_grid_tiles handles all (Pacific and non-Pacific grids) or just one.
         for tile in tiles:
             tasks.append(
                 {
                     "id": "_".join(str(i) for i in tile[0]),
                     "year": year,
-                    "grid_name": tile[1],
+                    "region": tile[1],
                 }
             )
 
@@ -116,6 +116,7 @@ def geomad(
     tile_id: Annotated[str, typer.Option()],
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
+    region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
     bucket: Annotated[str, typer.Option()] = "data.ldn.auspatious.com",
     overwrite: Annotated[bool, typer.Option()] = False,
     decimated: Annotated[bool, typer.Option()] = False,
@@ -125,7 +126,6 @@ def geomad(
     threads_per_worker: Annotated[int, typer.Option()] = 16,
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
-    region: Annotated[Literal["pacific", "non-pacific"], typer.Option()] = "pacific",
 ) -> None:
     """Run GeoMAD processing on Landsat data.
     
@@ -135,7 +135,7 @@ def geomad(
         --overwrite \
         --decimated \
         --no-all-bands \
-        --grid-name pacific
+        --region pacific
     """
     info = (
         f"Running GeoMAD processing for tile {tile_id}, year {year}, version {version},"
@@ -145,6 +145,8 @@ def geomad(
         f"geomad_threads={geomad_threads}"
     )
     typer.echo(info)
+    if region not in ["pacific", "non-pacific"]:
+        raise ValueError(f"Invalid region: {region}. Must be 'pacific' or 'non-pacific'.")
 
     # TODO: Test S3 access at the start of the function and fail fast if we don't have access, rather than waiting until we try to write the output.
 
