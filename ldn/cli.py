@@ -49,6 +49,7 @@ app.add_typer(
     cli_grid_app, name="grid", help="Commands for working with the ODC Geo Grid."
 )
 
+
 # Work for version and --version
 @app.command()
 def version() -> None:
@@ -71,7 +72,7 @@ def print_tasks(
 ) -> None:
     """Print all tasks for given years for either both grids, or just the CI or DEP grid."""
     logging.info(f"Generating tasks for years: {years} and grids: {grids}")
-    
+
     years_list = []
     if "," in years:
         years_list = years.split(",")
@@ -86,17 +87,21 @@ def print_tasks(
 
     tiles = get_grid_tiles(format="list", grids=grids, overwrite=False)
 
-    logging.info(f"Number of tasks: {len(years_list) * len(tiles)} (years: {len(years_list)}, tiles: {len(tiles)})")
-    
+    logging.info(
+        f"Number of tasks: {len(years_list) * len(tiles)} (years: {len(years_list)}, tiles: {len(tiles)})"
+    )
+
     tasks = []
     for year in years_list:
         # get_grid_tiles handles both CI and DEP grids or just one.
         for tile in tiles:
-            tasks.append({
-                "id": "_".join(str(i) for i in tile[0]),
-                "year": year,
-                "grid_name": tile[1]
-            })
+            tasks.append(
+                {
+                    "id": "_".join(str(i) for i in tile[0]),
+                    "year": year,
+                    "grid_name": tile[1],
+                }
+            )
 
     tasks_json_str = json.dumps(tasks, indent=2)
     with open("tasks.json", "w") as f:
@@ -120,7 +125,7 @@ def geomad(
     threads_per_worker: Annotated[int, typer.Option()] = 16,
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
-    grid_name: Annotated[Literal["ci", "dep"], typer.Option()] = "ci",
+    region: Annotated[Literal["pacific", "non-pacific"], typer.Option()] = "pacific",
 ) -> None:
     """Run GeoMAD processing on Landsat data.
     
@@ -130,11 +135,16 @@ def geomad(
         --overwrite \
         --decimated \
         --no-all-bands \
-        --grid-name ci
+        --grid-name pacific
     """
-    typer.echo(
-        f"Running GeoMAD processing for tile {tile_id}, year {year}, version {version}, grid {grid_name} with overwrite={overwrite}, decimated={decimated}, all_bands={all_bands}, memory_limit={memory_limit}, n_workers={n_workers}, threads_per_worker={threads_per_worker}, xy_chunk_size={xy_chunk_size}, geomad_threads={geomad_threads}"
+    info = (
+        f"Running GeoMAD processing for tile {tile_id}, year {year}, version {version},"
+        f" region {region} with overwrite={overwrite}, decimated={decimated},"
+        f" all_bands={all_bands}, memory_limit={memory_limit}, n_workers={n_workers},"
+        f" threads_per_worker={threads_per_worker}, xy_chunk_size={xy_chunk_size}, "
+        f"geomad_threads={geomad_threads}"
     )
+    typer.echo(info)
 
     # TODO: Test S3 access at the start of the function and fail fast if we don't have access, rather than waiting until we try to write the output.
 
@@ -145,12 +155,8 @@ def geomad(
     # Set up variables and check
     tile_index = tuple(map(int, tile_id.split("_")))
 
-    grid_map = {
-        "ci": get_gridspec,
-        "dep": grid,
-    }
-    _grid = grid_map[grid_name]()
-    geobox = _grid.tile_geobox(tile_index)
+    grid = get_gridspec(region=region)
+    geobox = grid.tile_geobox(tile_index)
 
     if not bucket.startswith("https://"):
         full_path_prefix = "https://data.ldn.auspatious.com"
@@ -164,9 +170,11 @@ def geomad(
     # Configure for checking item existence
     client = boto3.client("s3")
 
+    prefix = "ci" if region == "non-pacific" else "dep"
+
     # Check if we've done this tile before
     itempath = S3ItemPath(
-        prefix=grid_name,
+        prefix=prefix,
         bucket=bucket,
         sensor=sensor,
         dataset_id=dataset_id,
@@ -212,7 +220,7 @@ def geomad(
 
     # Metadata creator
     stac_creator = StacCreator(
-        collection_url_root=f"https://data.ldn.auspatious.com/#{grid_name}_{sensor}_{dataset_id}/",
+        collection_url_root=f"https://data.ldn.auspatious.com/#{prefix}_{sensor}_{dataset_id}/",
         itempath=itempath,
         with_raster=True,
     )
