@@ -181,10 +181,8 @@ def random_sampling(da,
     else:
         crs = da.attrs.get('crs', None)
 
-    crs_code = crs.to_epsg()
-
-    # Patch spatial_ref property
-    all_samples["spatial_ref"] = crs_code
+    # Remove 
+    all_samples.drop(columns=["variable", "band", "spatial_ref"], inplace=True)
 
     #create geopandas dataframe
     gdf = gpd.GeoDataFrame(
