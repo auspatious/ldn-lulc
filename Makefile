@@ -89,3 +89,23 @@ geomad-pacific-test-kiribati-atolls:
 	--decimated \
 	--all-bands \
 	--region pacific
+
+geomad-non-pacific-test-singapore-1:
+	poetry run ldn geomad \
+	--tile-id 333_112 \
+	--year 2020 \
+	--version 0.0.0 \
+	--overwrite \
+	--decimated \
+	--all-bands \
+	--region non-pacific
+
+geomad-non-pacific-test-singapore-2:
+	poetry run ldn geomad \
+	--tile-id 333_113 \
+	--year 2020 \
+	--version 0.0.0 \
+	--overwrite \
+	--decimated \
+	--all-bands \
+	--region non-pacific
