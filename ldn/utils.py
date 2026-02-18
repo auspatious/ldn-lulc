@@ -1,3 +1,4 @@
+import yaml
 from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
 
 SIDS_COUNTRIES_AND_CODES = {
@@ -72,3 +73,6 @@ NON_DEP_COUNTRIES = {
     for k, v in SIDS_COUNTRIES_AND_CODES.items()
     if k not in DEP_COUNTRIES_AND_CODES
 }
+
+with open("typology_mapping.yaml") as f:
+    typology_mapping = yaml.safe_load(f)
