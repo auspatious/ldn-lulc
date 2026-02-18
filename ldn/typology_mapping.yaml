@@ -1,14 +1,19 @@
 # Using YAML to preserve comments
+
+# TODO: Ensure this lines up with Fang's typology here: https://github.com/auspatious/ldn-lulc/blob/main/typology/typology.md
+
+# Our level 1 classes
 classes:
     'No data': 0
-    'Tree': 1
+    'Tree Cover': 1
     'Grassland': 2
     'Cropland': 3
     'Wetland': 4
     'Built-up': 5
-    'Other land': 6
+    'Other': 6
     'Water': 7
 
+# Colours to visualise our level 1 classes
 colours:
     0: 'white'
     1: 'darkgreen'
@@ -19,6 +24,7 @@ colours:
     6: 'yellow'
     7: 'blue'
 
+# Mappings from existing products to our level 1 classes
 cci_lc_map:
     # Cropland class -> Cropland
     10: 3
@@ -31,7 +37,7 @@ cci_lc_map:
     120: 2
     121: 2
     122: 2
-    # Tree class -> Tree / Tree and shrub -> Tree
+    # Tree class -> Tree / Tree and shrub -> Tree Cover
     50: 1
     60: 1
     61: 1
@@ -70,7 +76,7 @@ cci_lc_map:
 world_cover_map:
     # Water
     80: 7
-    # Tree
+    # Tree -> Tree Cover
     10: 1
     # Shrub / Grassland -> Grassland
     20: 2
@@ -93,7 +99,7 @@ io_map:
     0: 0
     # Water
     1: 7
-    # Tree
+    # Tree -> Tree Cover
     2: 1
     # Wetland
     4: 4
