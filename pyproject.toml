@@ -19,7 +19,7 @@ dependencies = [
     "odc-geo (>=0.5.0,<0.6.0)",
     "pandas (>=2.3.3,<3.0.0)",
     "geopandas (>=1.1.2,<2.0.0)",
-    "antimeridian (>=0.4.5,<0.5.0)",
+    "antimeridian (<0.4.5)",
     "boto3 (>=1.42.31,<2.0.0)",
     "xarray (>=2025.12.0,<2026.0.0)",
     "odc-stac (>=0.5.2,<0.6.0)",
@@ -37,7 +37,8 @@ dev = [
     "folium (>=0.20.0,<0.21.0)",
     "mapclassify (>=2.10.0,<3.0.0)",
     "matplotlib (>=3.10.8,<4.0.0)",
-    "ipykernel (>=7.1.0,<8.0.0)"
+    "ipykernel (>=7.1.0,<8.0.0)",
+    "datacube (>=1.9.14,<2.0.0)"
 ]
 
 [tool.setuptools.packages.find]
