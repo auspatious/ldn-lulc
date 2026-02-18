@@ -1,0 +1,109 @@
+# Using YAML to preserve comments
+classes:
+    'No data': 0
+    'Tree': 1
+    'Grassland': 2
+    'Cropland': 3
+    'Wetland': 4
+    'Built-up': 5
+    'Other land': 6
+    'Water': 7
+
+colours:
+    0: 'white'
+    1: 'darkgreen'
+    2: 'limegreen'
+    3: 'lime'
+    4: 'turquoise'
+    5: 'gray'
+    6: 'yellow'
+    7: 'blue'
+
+cci_lc_map:
+    # Cropland class -> Cropland
+    10: 3
+    11: 3
+    12: 3
+    20: 3
+    30: 3
+    # Natural Vegetation / Shrub class -> Grassland
+    40: 2
+    120: 2
+    121: 2
+    122: 2
+    # Tree class -> Tree / Tree and shrub -> Tree
+    50: 1
+    60: 1
+    61: 1
+    62: 1
+    70: 1
+    71: 1
+    72: 1
+    80: 1
+    81: 1
+    82: 1
+    90: 1
+    100: 1
+    # Grass and Herbaceous / Moss/Lichen -> Grassland
+    110: 2
+    130: 2
+    140: 2
+    # Sparse vegetation -> Grassland
+    150: 2
+    151: 2
+    152: 2
+    153: 2
+    # Wetland
+    160: 4
+    170: 4
+    180: 4
+    # Built-up
+    190: 5
+    # Bare class / Snow/Ice -> other land
+    200: 6
+    201: 6
+    202: 6
+    220: 6
+    # Water
+    210: 7
+
+world_cover_map:
+    # Water
+    80: 7
+    # Tree
+    10: 1
+    # Shrub / Grassland -> Grassland
+    20: 2
+    30: 2
+    # Cropland
+    40: 3
+    # Built-up
+    50: 5
+    # Bare / Snow/Ice -> other land
+    60: 6
+    70: 6
+    # Wetland / Mangroves -> Wetland
+    90: 4
+    95: 4
+    # Moss/Lichen -> other land
+    100: 6
+
+io_map:
+    # No data
+    0: 0
+    # Water
+    1: 7
+    # Tree
+    2: 1
+    # Wetland
+    4: 4
+    # Cropland
+    5: 3
+    # Built-up
+    7: 5
+    # Bare/Sparse / Snow/Ice / Cloud -> other land
+    8: 6
+    9: 6
+    10: 6
+    # Rangeland
+    11: 2
