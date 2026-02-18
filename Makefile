@@ -82,10 +82,34 @@ geomad-pacific-test-fiji-volcanic:
 
 geomad-pacific-test-kiribati-atolls:
 	poetry run ldn geomad \
-	--tile-id 92_43 \
+	--tile-id 58_43 \
 	--year 2024 \
 	--version 0.0.0 \
 	--overwrite \
 	--decimated \
 	--all-bands \
 	--region pacific
+
+geomad-test-case-study-sites:
+	$(MAKE) geomad-pacific-test-kiribati-atolls
+	$(MAKE) geomad-pacific-test-fiji-volcanic
+	$(MAKE) geomad-pacific-test-fiji-antimeridian
+	$(MAKE) geomad-non-pacific-test-carribbean-atolls-belize
+	$(MAKE) geomad-non-pacific-test-carribbean-land-suriname
+	$(MAKE) geomad-non-pacific-test-cape-verde
+	$(MAKE) geomad-non-pacific-test-comoros
+
+GEOMAD_CASE_STUDY_TILE_ID ?= 63_20
+GEOMAD_CASE_STUDY_REGION ?= pacific
+
+geomad-test-single-case-study-site-2000-2025:
+	for year in $$(seq 2000 2025); do \
+		poetry run ldn geomad \
+		--tile-id $(GEOMAD_CASE_STUDY_TILE_ID) \
+		--year $$year \
+		--version 0.0.0 \
+		--overwrite \
+		--decimated \
+		--all-bands \
+		--region $(GEOMAD_CASE_STUDY_REGION); \
+	done
