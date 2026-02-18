@@ -173,11 +173,23 @@ def random_sampling(da,
     y = [i[0] for i in list(all_samples.index)]
     x = [i[1] for i in list(all_samples.index)]
 
+    # Get CRS from the DataArray
+    if hasattr(da, 'rio') and da.rio.crs is not None:
+        crs = da.rio.crs
+    elif hasattr(da, 'spatial_ref'):
+        crs = da.spatial_ref
+    else:
+        crs = da.attrs.get('crs', None)
+
+    crs_code = crs.to_epsg()
+
+    # Patch spatial_ref property
+    all_samples["spatial_ref"] = crs_code
+
     #create geopandas dataframe
     gdf = gpd.GeoDataFrame(
         all_samples,
-        #crs=da.crs,
-        crs=da.spatial_ref, # change made here as attribute da.crs may not exist
+        crs=crs,
         geometry=gpd.points_from_xy(x,y)).reset_index()
 
     gdf = gdf.drop(['x', 'y'],axis=1)
