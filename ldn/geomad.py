@@ -1,8 +1,12 @@
+from typing import Iterable, Tuple
+
 from datacube_compute import geomedian_with_mads
 from dep_tools.exceptions import EmptyCollectionError
-from dep_tools.processors import LandsatProcessor, Processor
+from dep_tools.processors import Processor
 from dep_tools.stac_utils import set_stac_properties
 from xarray import DataArray, Dataset
+from odc.algo import erase_bad, mask_cleanup
+
 
 USGS_CATALOG = "https://earth-search.aws.element84.com/v1"
 USGS_COLLECTION = "landsat-c2-l2"
@@ -12,13 +16,44 @@ LANDSAT_SCALE = 0.0000275
 LANDSAT_OFFSET = -0.2
 
 
-
 def http_to_s3_url(http_url):
     """Convert a USGS HTTP URL to an S3 URL"""
     s3_url = http_url.replace(
         "https://landsatlook.usgs.gov/data", "s3://usgs-landsat"
     ).rstrip(":1")
     return s3_url
+
+
+def mask_clouds(
+    xr: Dataset,
+    filters: Iterable[Tuple[str, int]] | None = None,
+    include_shadow: bool = True,
+) -> Dataset:
+
+    NODATA = 1
+    CIRRUS = 2  # Only valid for LS8 and LS9, but we can still apply
+    # it to LS7 data without error, it just won't mask anything.
+    CLOUD = 3
+    CLOUD_SHADOW = 4
+
+    # nodata = xr.qa_pixel == xr.qa_pixel.odc.nodata
+
+    fields = [CIRRUS, CLOUD]
+    if include_shadow:
+        fields.append(CLOUD_SHADOW)
+
+    bitmask = 0
+    for field in fields:
+        bitmask |= 1 << field
+
+    cloud_mask = xr.qa_pixel & bitmask != 0
+
+    if filters is not None:
+        cloud_mask = mask_cleanup(cloud_mask, filters)
+
+    # mask = nodata | cloud_mask
+
+    return erase_bad(xr, cloud_mask)
 
 
 class GeoMADProcessor(Processor):
@@ -34,6 +69,10 @@ class GeoMADProcessor(Processor):
         },
         drop_vars: list[str] = [],
         preprocessor: Processor | None = None,
+        mask_clouds_kwargs: dict = {
+            "filters": [("dilation", 3), ("erosion", 2)],
+            "include_shadow": True,
+        },
         **kwargs,
     ) -> None:
         super().__init__(send_area_to_processor, **kwargs)
@@ -42,6 +81,7 @@ class GeoMADProcessor(Processor):
         self.geomad_options = geomad_options
         self.drop_vars = drop_vars
         self.preprocessor = preprocessor
+        self.mask_kwargs = mask_clouds_kwargs
 
     def process(self, xr: DataArray) -> Dataset:
         # Raise an exception if there's not enough data
@@ -49,9 +89,8 @@ class GeoMADProcessor(Processor):
             raise EmptyCollectionError(
                 f"{xr.time.size} is less than {self.min_timesteps} timesteps"
             )
-        
-        if self.preprocessor is not None:
-            xr = self.preprocessor.process(xr)
+
+        xr = mask_clouds(xr, **self.mask_kwargs)
 
         data = xr
 
@@ -74,19 +113,15 @@ class GeoMADProcessor(Processor):
 class GeoMADLandsatProcessor(GeoMADProcessor):
     def __init__(
         self,
-        preprocessor_args: dict = {
-            "mask_clouds": True,
-            "mask_clouds_kwargs": {
-                "filters": [("dilation", 3), ("erosion", 2)],
-                "keep_ints": True,
-            },
-            "scale_and_offset": False,
+        mask_clouds_kwargs: dict = {
+            "filters": [("dilation", 3), ("erosion", 2)],
+            "include_shadow": True,
         },
-        drop_vars=["qa_pixel"],
+        drop_vars: list[str] = ["qa_pixel"],
         **kwargs,
     ) -> None:
         super().__init__(
-            preprocessor=LandsatProcessor(**preprocessor_args),
+            mask_clouds_kwargs=mask_clouds_kwargs,
             drop_vars=drop_vars,
             **kwargs,
         )

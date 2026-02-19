@@ -91,13 +91,14 @@ geomad-pacific-test-kiribati-atolls:
 	--region pacific
 
 geomad-singapore:
-	poetry run ldn geomad \
+	ldn geomad \
 	--tile-id 333_113 \
 	--year 2024 \
 	--version 0.0.0 \
 	--overwrite \
 	--decimated \
 	--all-bands \
+	--no-include-shadow \
 	--region non-pacific
 
 geomad-test-case-sites:
@@ -115,7 +116,7 @@ VERSION ?= 0.0.1
 
 geomad-test-site-2000-2025:
 	for year in $$(seq 2000 2025); do \
-		poetry run ldn geomad \
+		ldn geomad \
 			--tile-id $(GEOMAD_CASE_STUDY_TILE_ID) \
 			--region $(GEOMAD_CASE_STUDY_REGION) \
 			--year $$year \

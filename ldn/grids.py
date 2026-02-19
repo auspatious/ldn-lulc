@@ -21,6 +21,7 @@ from dep_tools.grids import (
 from ldn.utils import NON_DEP_COUNTRIES
 
 EPSG_CODE = 6933  # NSIDC EASE-Grid 2.0 Global
+logger = logging.getLogger(__name__)
 
 GADM_FILE = Path(__file__).parent / "gadm_sids.gpkg"
 
@@ -107,7 +108,7 @@ def get_grid_tiles(
             "Invalid grids value. Must be 'all', 'pacific', or 'non-pacific'."
         )
 
-    logging.info(
+    logger.info(
         f"Getting all tiles for grids: {grids} with format: {format} and overwrite: {overwrite}"
     )
 
@@ -116,16 +117,16 @@ def get_grid_tiles(
     geojson_path_all = Path(__file__).parent / "sids_all_tiles.geojson"
 
     def process_grid(region, grid_obj, gadm, countries, geojson_file):
-        logging.info(
+        logger.info(
             f"Processing grid {region} for countries: {list(countries.keys())}"
         )
         if not overwrite and geojson_file.exists():
-            logging.info(
+            logger.info(
                 "Reading existing GeoJSON file because overwrite is False and file exists."
             )
             extents_gdf = gpd.read_file(geojson_file)
         else:
-            logging.info(
+            logger.info(
                 "Calculating tiles because overwrite is True or file does not exist."
             )
             all_polys = []
@@ -198,7 +199,7 @@ def get_grid_tiles(
     all_tiles_gdf = gpd.GeoDataFrame(all_tiles_df, geometry="geometry", crs="epsg:4326")
 
     if grids == "all" and (overwrite or not geojson_path_all.exists()):
-        logging.info(
+        logger.info(
             "Writing combined GeoJSON file for all tiles because grids is 'all', and (overwrite is True or the file does not exist)."
         )
         all_tiles_gdf.to_file(geojson_path_all, driver="GeoJSON")
