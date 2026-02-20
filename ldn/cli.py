@@ -197,8 +197,10 @@ def geomad(
     # This may be necessary in other places too
     search_kwargs = {"query": {"landsat:collection_category": {"in": ["T1"]}}}
     if region == "pacific":
-        # Searching for nothing gives us everything
-        search_kwargs == {}
+        if year_int <= 2012:
+            # Searching for nothing gives us everything
+            typer.echo("Using both T1 and T2 data for Pacific for LS7 era")
+            search_kwargs == {}
 
     # Fixed variables
     sensor = "ls"
@@ -214,7 +216,7 @@ def geomad(
         full_path_prefix = "https://data.ldn.auspatious.com"
 
     if decimated:
-        typer.echo("Warning, using decimated bands for testing purposes.")
+        typer.echo("Warning, using decimated (low resolution) for testing purposes.")
         geobox = geobox.zoom_out(10)
 
     # Configure for dask and reading data
