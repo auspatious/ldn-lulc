@@ -21,7 +21,7 @@ from dep_tools.exceptions import EmptyCollectionError
 from dask.distributed import Client as DaskClient
 
 from ldn.geomad import (
-    GeoMADLandsatProcessor,
+    GeoMADProcessor,
     LANDSAT_SCALE,
     LANDSAT_OFFSET,
     USGS_CATALOG,
@@ -283,7 +283,7 @@ def geomad(
         with_raster=True,
     )
 
-    processor = GeoMADLandsatProcessor(
+    processor = GeoMADProcessor(
         geomad_options=dict(
             work_chunks=(100, 100),
             num_threads=geomad_threads,

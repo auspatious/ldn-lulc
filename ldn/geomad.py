@@ -1,28 +1,22 @@
 from datetime import datetime
+from logging import Logger, getLogger
 from typing import Iterable, Tuple
 
 from datacube_compute import geomedian_with_mads
 from dep_tools.exceptions import EmptyCollectionError
-from dep_tools.processors import Processor
-from geopandas import GeoDataFrame
-import numpy as np
-from xarray import DataArray, Dataset
-from odc.algo import erase_bad, mask_cleanup
-
-from dep_tools.exceptions import EmptyCollectionError
 from dep_tools.loaders import StacLoader
+from dep_tools.namers import S3ItemPath
 from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
-from dep_tools.stac_utils import set_stac_properties, StacCreator
-from dep_tools.writers import AwsDsCogWriter, AwsStacWriter, Writer
+from dep_tools.stac_utils import StacCreator
 from dep_tools.task import AreaTask
-from dep_tools.namers import S3ItemPath
-
-
-from logging import Logger, getLogger
+from dep_tools.writers import AwsDsCogWriter, AwsStacWriter, Writer
+from geopandas import GeoDataFrame
+import numpy as np
+from odc.algo import erase_bad, mask_cleanup
+from xarray import DataArray, Dataset
 
 TaskID = str
-
 
 USGS_CATALOG = "https://earth-search.aws.element84.com/v1"
 USGS_COLLECTION = "landsat-c2-l2"
@@ -53,7 +47,6 @@ def set_stac_properties(
     end_year_index = int(end_year.astype("int64"))
 
     start_datetime = _to_utc_ms_string(start_year)
-
     end_datetime = _to_utc_ms_string(
         end_year + np.timedelta64(1, "Y") - np.timedelta64(1, "s")
     )
@@ -81,11 +74,9 @@ def mask_clouds(
     filters: Iterable[Tuple[str, int]] | None = None,
     include_shadow: bool = True,
 ) -> Dataset:
-
     # Only valid for LS8 and LS9, but we can still apply
     # it to LS7 data without error, it just won't mask anything.
     CIRRUS = 2
-
     CLOUD = 3
     CLOUD_SHADOW = 4
 
@@ -133,79 +124,42 @@ class GeoMADProcessor(Processor):
         self.mask_kwargs = mask_clouds_kwargs
 
     def process(self, xr: DataArray) -> Dataset:
-        # Raise an exception if there's not enough data
         if xr.time.size < self.min_timesteps:
             raise EmptyCollectionError(
                 f"{xr.time.size} is less than {self.min_timesteps} timesteps"
             )
 
         xr = mask_clouds(xr, **self.mask_kwargs)
-
-        data = xr
-
-        if len(self.drop_vars) > 0:
-            data = data.drop_vars(self.drop_vars)
+        data = xr.drop_vars(self.drop_vars) if len(self.drop_vars) > 0 else xr
 
         geomad = geomedian_with_mads(data, **self.geomad_options)
 
         if self.load_data_before_writing:
             geomad = geomad.compute()
 
-        # Add nodata as 0 to the count variable
         geomad["count"].odc.nodata = 0
-
-        output = set_stac_properties(data, geomad)
-
-        return output
+        return set_stac_properties(data, geomad)
 
 
-class GeoMADLandsatProcessor(GeoMADProcessor):
-    def __init__(
-        self,
-        mask_clouds_kwargs: dict = {
-            "filters": [("dilation", 3), ("erosion", 2)],
-            "include_shadow": True,
-        },
-        drop_vars: list[str] = ["qa_pixel"],
-        **kwargs,
-    ) -> None:
-        super().__init__(
-            mask_clouds_kwargs=mask_clouds_kwargs,
-            drop_vars=drop_vars,
-            **kwargs,
-        )
-
-
-class StacTask(AreaTask):
-    """A StacTask extends :py:class:`AreaTask` by adding a searcher and optional
-    post-processor, STAC creator, and STAC writer.
-
-    Most arguments (id, area, loader, processor, writer, logger) are as for
-    :py:class:`AreaTask`.
-
-    Args:
-        searcher: The searcher searches for data, typically on the basis of
-            the id and/or the area.
-        post_processor: A :py:class:`Processor` that can prep data for writing,
-            for example scaling or data type conversions.
-        stac_creator: Creates a STAC Item from the data.
-        stac_writer: Writes the STAC Item to storage.
-    """
+class AwsStacTask(AreaTask):
+    """Area task with search + STAC creation/writing for AWS workflows."""
 
     def __init__(
         self,
+        itempath: S3ItemPath,
         id: TaskID,
         area: GeoDataFrame,
         searcher: Searcher,
         loader: StacLoader,
         processor: Processor,
-        writer: Writer,
         post_processor: Processor | None = None,
-        stac_creator: StacCreator | None = None,
-        stac_writer: Writer | None = None,
         logger: Logger = getLogger(),
+        **kwargs,
     ):
-        """ """
+        writer = kwargs.pop("writer", AwsDsCogWriter(itempath))
+        stac_creator = kwargs.pop("stac_creator", StacCreator(itempath))
+        stac_writer = kwargs.pop("stac_writer", AwsStacWriter(itempath))
+
         super().__init__(id, area, loader, processor, writer, logger)
         self.id = id
         self.searcher = searcher
@@ -220,7 +174,6 @@ class StacTask(AreaTask):
         processor_kwargs = (
             dict(area=self.area) if self.processor.send_area_to_processor else dict()
         )
-
         output_data = self.processor.process(input_data, **processor_kwargs)
 
         if self.post_processor is not None:
@@ -233,34 +186,3 @@ class StacTask(AreaTask):
             self.stac_writer.write(stac_item, self.id)
 
         return paths
-
-
-class AwsStacTask(StacTask):
-    def __init__(
-        self,
-        itempath: S3ItemPath,
-        id: TaskID,
-        area,
-        searcher: Searcher,
-        loader: StacLoader,
-        processor: Processor,
-        post_processor: Processor | None = None,
-        logger: Logger = getLogger(),
-        **kwargs,
-    ):
-        writer = kwargs.pop("writer", AwsDsCogWriter(itempath))
-        stac_creator = kwargs.pop("stac_creator", StacCreator(itempath))
-        stac_writer = kwargs.pop("stac_writer", AwsStacWriter(itempath))
-        super().__init__(
-            id=id,
-            area=area,
-            searcher=searcher,
-            loader=loader,
-            processor=processor,
-            post_processor=post_processor,
-            writer=writer,
-            stac_creator=stac_creator,
-            stac_writer=stac_writer,
-            logger=logger,
-            **kwargs,
-        )

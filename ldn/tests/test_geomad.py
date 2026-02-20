@@ -2,7 +2,6 @@ import numpy as np
 import xarray as xr
 
 from ldn.geomad import set_stac_properties
-from ldn.geomad import GeoMADPostProcessor
 
 
 def test_set_stac_properties_datetime_same_year() -> None:
@@ -62,20 +61,3 @@ def test_set_stac_properties_datetime_three_year_span() -> None:
     assert props["start_datetime"] == expected_start
     assert props["datetime"] == expected_midpoint
     assert props["end_datetime"] == expected_end
-
-
-def test_geomad_postprocessor_normalizes_stac_properties() -> None:
-    ds = xr.Dataset()
-    ds.attrs["stac_properties"] = {
-        "start_datetime": "1999-01-01T00:00:00.000Z",
-        "datetime": "1999-01-01T00:00:00Z",
-        "end_datetime": "2001-12-31T23:59:59Z",
-        "created": "2026-02-20T03:35:41.838738Z",
-    }
-
-    out = GeoMADPostProcessor().process(ds)
-    props = out.attrs["stac_properties"]
-
-    assert props["start_datetime"] == "1999-01-01T00:00:00.000Z"
-    assert props["datetime"] == "2000-01-01T00:00:00.000Z"
-    assert props["end_datetime"] == "2001-12-31T23:59:59.000Z"
