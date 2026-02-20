@@ -4,9 +4,24 @@ from typing import Iterable, Tuple
 from datacube_compute import geomedian_with_mads
 from dep_tools.exceptions import EmptyCollectionError
 from dep_tools.processors import Processor
+from geopandas import GeoDataFrame
 import numpy as np
 from xarray import DataArray, Dataset
 from odc.algo import erase_bad, mask_cleanup
+
+from dep_tools.exceptions import EmptyCollectionError
+from dep_tools.loaders import StacLoader
+from dep_tools.processors import Processor
+from dep_tools.searchers import Searcher
+from dep_tools.stac_utils import set_stac_properties, StacCreator
+from dep_tools.writers import AwsDsCogWriter, AwsStacWriter, Writer
+from dep_tools.task import AreaTask
+from dep_tools.namers import S3ItemPath
+
+
+from logging import Logger, getLogger
+
+TaskID = str
 
 
 USGS_CATALOG = "https://earth-search.aws.element84.com/v1"
@@ -15,6 +30,10 @@ USGS_COLLECTION = "landsat-c2-l2"
 LANDSAT_BANDS = ["qa_pixel", "red", "green", "blue", "nir08", "swir16", "swir22"]
 LANDSAT_SCALE = 0.0000275
 LANDSAT_OFFSET = -0.2
+
+
+def _to_utc_ms_string(dt: np.datetime64) -> str:
+    return str(np.datetime_as_string(dt, unit="ms", timezone="UTC"))
 
 
 def http_to_s3_url(http_url):
@@ -30,31 +49,28 @@ def set_stac_properties(
 ) -> Dataset | DataArray:
     start_year = np.datetime64(input_xr.time.min().values, "Y")
     end_year = np.datetime64(input_xr.time.max().values, "Y")
+    start_year_index = int(start_year.astype("int64"))
+    end_year_index = int(end_year.astype("int64"))
 
-    start_datetime = np.datetime_as_string(
-        start_year, unit="ms", timezone="UTC"
-    )
+    start_datetime = _to_utc_ms_string(start_year)
 
-    end_datetime = np.datetime_as_string(
-        end_year + np.timedelta64(1, "Y") - np.timedelta64(1, "s"),
-        timezone="UTC",
+    end_datetime = _to_utc_ms_string(
+        end_year + np.timedelta64(1, "Y") - np.timedelta64(1, "s")
     )
 
     datetime_value = start_datetime
-    if start_year != end_year:
-        midpoint_year_index = (start_year.astype(int) + end_year.astype(int)) // 2
+    if start_year_index != end_year_index:
+        midpoint_year_index = (start_year_index + end_year_index) // 2
         midpoint_year = np.datetime64("1970", "Y") + np.timedelta64(
-            int(midpoint_year_index), "Y"
+            midpoint_year_index, "Y"
         )
-        datetime_value = np.datetime_as_string(
-            midpoint_year, unit="ms", timezone="UTC"
-        )
+        datetime_value = _to_utc_ms_string(midpoint_year)
 
     output_xr.attrs["stac_properties"] = dict(
         start_datetime=start_datetime,
         datetime=datetime_value,
         end_datetime=end_datetime,
-        created=np.datetime_as_string(np.datetime64(datetime.now()), timezone="UTC"),
+        created=_to_utc_ms_string(np.datetime64(datetime.now())),
     )
 
     return output_xr
@@ -68,7 +84,7 @@ def mask_clouds(
 
     # Only valid for LS8 and LS9, but we can still apply
     # it to LS7 data without error, it just won't mask anything.
-    CIRRUS = 2  
+    CIRRUS = 2
 
     CLOUD = 3
     CLOUD_SHADOW = 4
@@ -160,23 +176,91 @@ class GeoMADLandsatProcessor(GeoMADProcessor):
         )
 
 
-class GeoMADPostProcessor(Processor):
+class StacTask(AreaTask):
+    """A StacTask extends :py:class:`AreaTask` by adding a searcher and optional
+    post-processor, STAC creator, and STAC writer.
+
+    Most arguments (id, area, loader, processor, writer, logger) are as for
+    :py:class:`AreaTask`.
+
+    Args:
+        searcher: The searcher searches for data, typically on the basis of
+            the id and/or the area.
+        post_processor: A :py:class:`Processor` that can prep data for writing,
+            for example scaling or data type conversions.
+        stac_creator: Creates a STAC Item from the data.
+        stac_writer: Writes the STAC Item to storage.
+    """
+
     def __init__(
         self,
-        vars: list[str] = [],
-        drop_vars: list[str] = [],
-        scale: float | None = None,
-        offset: float | None = None,
+        id: TaskID,
+        area: GeoDataFrame,
+        searcher: Searcher,
+        loader: StacLoader,
+        processor: Processor,
+        writer: Writer,
+        post_processor: Processor | None = None,
+        stac_creator: StacCreator | None = None,
+        stac_writer: Writer | None = None,
+        logger: Logger = getLogger(),
     ):
-        self._vars = [v for v in vars if v not in drop_vars]
-        self._scale = scale
-        self._offset = offset
+        """ """
+        super().__init__(id, area, loader, processor, writer, logger)
+        self.id = id
+        self.searcher = searcher
+        self.post_processor = post_processor
+        self.stac_creator = stac_creator
+        self.stac_writer = stac_writer
 
-    def process(self, xr: Dataset):
-        if len(self._vars) != 0:
-            for var in self._vars:
-                if self._scale is not None:
-                    xr[var].attrs["scales"] = self._scale
-                if self._offset is not None:
-                    xr[var].attrs["offsets"] = self._offset
-        return xr
+    def run(self):
+        items = self.searcher.search(self.area)
+        input_data = self.loader.load(items, self.area)
+
+        processor_kwargs = (
+            dict(area=self.area) if self.processor.send_area_to_processor else dict()
+        )
+
+        output_data = self.processor.process(input_data, **processor_kwargs)
+
+        if self.post_processor is not None:
+            output_data = self.post_processor.process(output_data)
+
+        paths = self.writer.write(output_data, self.id)
+
+        if self.stac_creator is not None and self.stac_writer is not None:
+            stac_item = self.stac_creator.process(output_data, self.id)
+            self.stac_writer.write(stac_item, self.id)
+
+        return paths
+
+
+class AwsStacTask(StacTask):
+    def __init__(
+        self,
+        itempath: S3ItemPath,
+        id: TaskID,
+        area,
+        searcher: Searcher,
+        loader: StacLoader,
+        processor: Processor,
+        post_processor: Processor | None = None,
+        logger: Logger = getLogger(),
+        **kwargs,
+    ):
+        writer = kwargs.pop("writer", AwsDsCogWriter(itempath))
+        stac_creator = kwargs.pop("stac_creator", StacCreator(itempath))
+        stac_writer = kwargs.pop("stac_writer", AwsStacWriter(itempath))
+        super().__init__(
+            id=id,
+            area=area,
+            searcher=searcher,
+            loader=loader,
+            processor=processor,
+            post_processor=post_processor,
+            writer=writer,
+            stac_creator=stac_creator,
+            stac_writer=stac_writer,
+            logger=logger,
+            **kwargs,
+        )

@@ -47,7 +47,11 @@ def get_gadm(
 
 # This is for the non-pacific countries. All pacific countries are covered by the DEP grid (EPSG:3832).
 # Pacific data is seperate because of the antimeridian crossing, and consistency with existing DEP work.
-def get_gridspec(region: Literal["pacific", "non-pacific"], resolution: int = 30, crs: int = EPSG_CODE) -> GridSpec:
+def get_gridspec(
+    region: Literal["pacific", "non-pacific"],
+    resolution: int = 30,
+    crs: int = EPSG_CODE,
+) -> GridSpec:
     """
     Returns a GridSpec object.
     Defines a uniform spatial grid (projection, resolution, tile size) across the entire globe.
@@ -67,10 +71,12 @@ def get_gridspec(region: Literal["pacific", "non-pacific"], resolution: int = 30
 
     if region not in ["pacific", "non-pacific"]:
         raise ValueError("Invalid region. Must be 'pacific' or 'non-pacific'.")
-    
+
     if region == "pacific":
         # For the Pacific region, we use the DEP-defined grid
-        return dep_grid(resolution, simplify_tolerance=0, crs=PACIFIC_EPSG, return_type="GridSpec")
+        return dep_grid(
+            resolution, simplify_tolerance=0, crs=PACIFIC_EPSG, return_type="GridSpec"
+        )
 
     # Put the origin at a stable, off-Earth corner so the grid never moves.
     # Prevent the antimeridian from coinciding with tile boundaries.
@@ -117,9 +123,7 @@ def get_grid_tiles(
     geojson_path_all = Path(__file__).parent / "sids_all_tiles.geojson"
 
     def process_grid(region, grid_obj, gadm, countries, geojson_file):
-        logger.info(
-            f"Processing grid {region} for countries: {list(countries.keys())}"
-        )
+        logger.info(f"Processing grid {region} for countries: {list(countries.keys())}")
         if not overwrite and geojson_file.exists():
             logger.info(
                 "Reading existing GeoJSON file because overwrite is False and file exists."

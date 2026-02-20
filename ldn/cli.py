@@ -9,7 +9,7 @@ from dep_tools.searchers import PystacSearcher
 from dep_tools.loaders import OdcLoader
 from typing_extensions import Annotated
 from dep_tools.stac_utils import StacCreator
-from dep_tools.task import AwsStacTask as Task
+from ldn.geomad import AwsStacTask as Task
 from dep_tools.writers import AwsDsCogWriter
 from odc.stac import configure_s3_access
 from rasterio.errors import NotGeoreferencedWarning
@@ -183,7 +183,9 @@ def geomad(
     )
     typer.echo(info)
     if region not in ["pacific", "non-pacific"]:
-        raise ValueError(f"Invalid region: {region}. Must be 'pacific' or 'non-pacific'.")
+        raise ValueError(
+            f"Invalid region: {region}. Must be 'pacific' or 'non-pacific'."
+        )
 
     year_int = int(year)
     search_year = year
@@ -192,7 +194,9 @@ def geomad(
         year_start = year_int - ls7_buffer_years
         year_end = year_int + ls7_buffer_years
         search_year = f"{year_start}/{year_end}"
-        typer.echo(f"Using {ls7_buffer_years}-year buffered window for LS7 era: {search_year}")
+        typer.echo(
+            f"Using {ls7_buffer_years}-year buffered window for LS7 era: {search_year}"
+        )
 
     # For now, if we're in the Pacific, use both T1 and T2 data
     # This may be necessary in other places too
@@ -292,7 +296,7 @@ def geomad(
         drop_vars=["qa_pixel"],
         mask_clouds_kwargs={
             "filters": [("dilation", 3), ("erosion", 2)],
-            "include_shadow": include_shadow
+            "include_shadow": include_shadow,
         },
     )
 
