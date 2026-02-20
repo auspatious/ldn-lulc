@@ -186,12 +186,13 @@ def geomad(
         raise ValueError(f"Invalid region: {region}. Must be 'pacific' or 'non-pacific'.")
 
     year_int = int(year)
+    search_year = year
     # If we're in the LS7 era, use a buffered window of data
     if year_int <= 2012:
         year_start = year_int - ls7_buffer_years
         year_end = year_int + ls7_buffer_years
-        year = f"{year_start}/{year_end}"
-        typer.echo(f"Using {ls7_buffer_years}-year buffered window for LS7 era: {year}")
+        search_year = f"{year_start}/{year_end}"
+        typer.echo(f"Using {ls7_buffer_years}-year buffered window for LS7 era: {search_year}")
 
     # For now, if we're in the Pacific, use both T1 and T2 data
     # This may be necessary in other places too
@@ -255,7 +256,7 @@ def geomad(
     searcher = PystacSearcher(
         catalog=USGS_CATALOG,
         collections=[USGS_COLLECTION],
-        datetime=year,
+        datetime=search_year,
         **search_kwargs,
     )
 

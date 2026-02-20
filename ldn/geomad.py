@@ -1,9 +1,10 @@
+from datetime import datetime
 from typing import Iterable, Tuple
 
 from datacube_compute import geomedian_with_mads
 from dep_tools.exceptions import EmptyCollectionError
 from dep_tools.processors import Processor
-from dep_tools.stac_utils import set_stac_properties
+import numpy as np
 from xarray import DataArray, Dataset
 from odc.algo import erase_bad, mask_cleanup
 
@@ -22,6 +23,41 @@ def http_to_s3_url(http_url):
         "https://landsatlook.usgs.gov/data", "s3://usgs-landsat"
     ).rstrip(":1")
     return s3_url
+
+
+def set_stac_properties(
+    input_xr: DataArray | Dataset, output_xr: DataArray | Dataset
+) -> Dataset | DataArray:
+    start_year = np.datetime64(input_xr.time.min().values, "Y")
+    end_year = np.datetime64(input_xr.time.max().values, "Y")
+
+    start_datetime = np.datetime_as_string(
+        start_year, unit="ms", timezone="UTC"
+    )
+
+    end_datetime = np.datetime_as_string(
+        end_year + np.timedelta64(1, "Y") - np.timedelta64(1, "s"),
+        timezone="UTC",
+    )
+
+    datetime_value = start_datetime
+    if start_year != end_year:
+        midpoint_year_index = (start_year.astype(int) + end_year.astype(int)) // 2
+        midpoint_year = np.datetime64("1970", "Y") + np.timedelta64(
+            int(midpoint_year_index), "Y"
+        )
+        datetime_value = np.datetime_as_string(
+            midpoint_year, unit="ms", timezone="UTC"
+        )
+
+    output_xr.attrs["stac_properties"] = dict(
+        start_datetime=start_datetime,
+        datetime=datetime_value,
+        end_datetime=end_datetime,
+        created=np.datetime_as_string(np.datetime64(datetime.now()), timezone="UTC"),
+    )
+
+    return output_xr
 
 
 def mask_clouds(

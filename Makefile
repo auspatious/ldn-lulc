@@ -93,20 +93,10 @@ geomad-pacific-test-kiribati-atolls:
 geomad-singapore:
 	ldn geomad \
 	--tile-id 333_113 \
-	--year 2025 \
-	--version 0.0.1 \
-	--overwrite \
-	--all-bands \
-	--region non-pacific
-
-geomad-singapore-no-shadow:
-	ldn geomad \
-	--tile-id 333_113 \
-	--year 2025 \
+	--year 2000 \
 	--version 0.0.1ns \
 	--overwrite \
 	--all-bands \
-	--no-include-shadow \
 	--region non-pacific
 
 geomad-singapore-2012:
@@ -127,9 +117,15 @@ geomad-test-case-sites:
 	$(MAKE) geomad-non-pacific-test-cape-verde
 	$(MAKE) geomad-non-pacific-test-comoros
 
-# 112 is the south half of singapore
+# 333_112, 333_113 is Singapore
+# 63,20 is SW Fiji
+# GEOMAD_CASE_STUDY_TILE_ID ?= 63_20
+# GEOMAD_CASE_STUDY_REGION ?= pacific
+# GEOMAD_CASE_STUDY_TILE_ID ?= 333_112
+# GEOMAD_CASE_STUDY_REGION ?= non-pacific
 GEOMAD_CASE_STUDY_TILE_ID ?= 333_113
 GEOMAD_CASE_STUDY_REGION ?= non-pacific
+
 
 geomad-test-site-2000-2025:
 	for year in $$(seq 2000 2025); do \
