@@ -181,9 +181,6 @@ def random_sampling(da,
     else:
         crs = da.attrs.get('crs', None)
 
-    # Remove unwanted columns
-    all_samples.drop(columns=["variable", "band", "spatial_ref"], inplace=True)
-
     #create geopandas dataframe
     gdf = gpd.GeoDataFrame(
         all_samples,
