@@ -219,5 +219,6 @@ ldn/gadm_sids.gpkg-wal
 ldn/tasks.json
 
 *.tif
+*.tif.aux.xml
 
 tasks.json

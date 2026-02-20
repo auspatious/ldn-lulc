@@ -1,4 +1,5 @@
 import yaml
+from pathlib import Path
 from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
 
 SIDS_COUNTRIES_AND_CODES = {
@@ -74,5 +75,6 @@ NON_DEP_COUNTRIES = {
     if k not in DEP_COUNTRIES_AND_CODES
 }
 
-with open("typology_mapping.yaml") as f:
+_TYP_FILE = Path(__file__).resolve().parent / "typology_mapping.yaml"
+with _TYP_FILE.open("r", encoding="utf-8") as f:
     typology_mapping = yaml.safe_load(f)
