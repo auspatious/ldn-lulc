@@ -93,12 +93,29 @@ geomad-pacific-test-kiribati-atolls:
 geomad-singapore:
 	ldn geomad \
 	--tile-id 333_113 \
-	--year 2024 \
-	--version 0.0.0 \
+	--year 2025 \
+	--version 0.0.1 \
 	--overwrite \
-	--decimated \
+	--all-bands \
+	--region non-pacific
+
+geomad-singapore-no-shadow:
+	ldn geomad \
+	--tile-id 333_113 \
+	--year 2025 \
+	--version 0.0.1ns \
+	--overwrite \
 	--all-bands \
 	--no-include-shadow \
+	--region non-pacific
+
+geomad-singapore-2012:
+	ldn geomad \
+	--tile-id 333_113 \
+	--year 2012 \
+	--version 0.0.1 \
+	--overwrite \
+	--all-bands \
 	--region non-pacific
 
 geomad-test-case-sites:
@@ -110,9 +127,9 @@ geomad-test-case-sites:
 	$(MAKE) geomad-non-pacific-test-cape-verde
 	$(MAKE) geomad-non-pacific-test-comoros
 
+# 112 is the south half of singapore
 GEOMAD_CASE_STUDY_TILE_ID ?= 333_113
 GEOMAD_CASE_STUDY_REGION ?= non-pacific
-VERSION ?= 0.0.1
 
 geomad-test-site-2000-2025:
 	for year in $$(seq 2000 2025); do \
@@ -120,7 +137,7 @@ geomad-test-site-2000-2025:
 			--tile-id $(GEOMAD_CASE_STUDY_TILE_ID) \
 			--region $(GEOMAD_CASE_STUDY_REGION) \
 			--year $$year \
-			--version $(VERSION) \
-			--no-overwrite \
+			--version 0.0.1 \
+			--overwrite \
 			--all-bands; \
 	done

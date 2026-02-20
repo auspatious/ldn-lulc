@@ -155,7 +155,8 @@ def geomad(
     bucket: Annotated[str, typer.Option()] = "data.ldn.auspatious.com",
     overwrite: Annotated[bool, typer.Option()] = False,
     decimated: Annotated[bool, typer.Option()] = False,
-    include_shadow: Annotated[bool, typer.Option()] = True,
+    include_shadow: Annotated[bool, typer.Option()] = False,
+    ls7_buffer_years: Annotated[int, typer.Option()] = 1,
     all_bands: Annotated[bool, typer.Option()] = True,
     memory_limit: Annotated[str, typer.Option()] = "10GB",
     n_workers: Annotated[int, typer.Option()] = 2,
@@ -183,6 +184,21 @@ def geomad(
     typer.echo(info)
     if region not in ["pacific", "non-pacific"]:
         raise ValueError(f"Invalid region: {region}. Must be 'pacific' or 'non-pacific'.")
+
+    year_int = int(year)
+    # If we're in the LS7 era, use a buffered window of data
+    if year_int <= 2012:
+        year_start = year_int - ls7_buffer_years
+        year_end = year_int + ls7_buffer_years
+        year = f"{year_start}/{year_end}"
+        typer.echo(f"Using {ls7_buffer_years}-year buffered window for LS7 era: {year}")
+
+    # For now, if we're in the Pacific, use both T1 and T2 data
+    # This may be necessary in other places too
+    search_kwargs = {"query": {"landsat:collection_category": {"in": ["T1"]}}}
+    if region == "pacific":
+        # Searching for nothing gives us everything
+        search_kwargs == {}
 
     # Fixed variables
     sensor = "ls"
@@ -230,7 +246,6 @@ def geomad(
         if not overwrite:
             typer.echo(f"Item does not exist at {stac_document}, processing tile.")
 
-    search_kwargs = {"query": {"landsat:collection_category": {"in": ["T1"]}}}
     load_kwargs = {}
 
     # Searcher finds STAC Items

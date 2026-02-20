@@ -30,13 +30,12 @@ def mask_clouds(
     include_shadow: bool = True,
 ) -> Dataset:
 
-    NODATA = 1
-    CIRRUS = 2  # Only valid for LS8 and LS9, but we can still apply
+    # Only valid for LS8 and LS9, but we can still apply
     # it to LS7 data without error, it just won't mask anything.
+    CIRRUS = 2  
+
     CLOUD = 3
     CLOUD_SHADOW = 4
-
-    # nodata = xr.qa_pixel == xr.qa_pixel.odc.nodata
 
     fields = [CIRRUS, CLOUD]
     if include_shadow:
@@ -50,8 +49,6 @@ def mask_clouds(
 
     if filters is not None:
         cloud_mask = mask_cleanup(cloud_mask, filters)
-
-    # mask = nodata | cloud_mask
 
     return erase_bad(xr, cloud_mask)
 
