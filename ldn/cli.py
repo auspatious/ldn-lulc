@@ -152,6 +152,7 @@ def geomad(
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
+    product_owner: Annotated[str | None, typer.Option()] = None,
     bucket: Annotated[str, typer.Option()] = "data.ldn.auspatious.com",
     overwrite: Annotated[bool, typer.Option()] = False,
     decimated: Annotated[bool, typer.Option()] = False,
@@ -229,7 +230,9 @@ def geomad(
     # Configure for checking item existence
     client = boto3.client("s3")
 
-    prefix = "ci" if region == "non-pacific" else "dep"
+    prefix = "ausp"
+    if product_owner is None:
+        prefix = "ci" if region == "non-pacific" else "dep"
 
     # Check if we've done this tile before
     itempath = S3ItemPath(
