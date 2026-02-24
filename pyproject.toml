@@ -15,16 +15,17 @@ authors = [
 readme = "README.md"
 requires-python = "==3.12.*"
 dependencies = [
-    "typer>=0.9.0",
-    "odc-geo (>=0.5.0,<0.6.0)",
-    "pandas (>=2.3.3,<3.0.0)",
-    "geopandas (>=1.1.2,<2.0.0)",
     "antimeridian (>=0.4.5,<0.5.0)",
     "boto3 (>=1.42.31,<2.0.0)",
-    "xarray (>=2025.12.0,<2026.0.0)",
-    "odc-stac (>=0.5.2,<0.6.0)",
     "datacube-compute @ git+https://github.com/auspatious/datacube-compute.git",
-    "dep-tools @ git+https://github.com/digitalearthpacific/dep-tools.git"
+    "dep-tools @ git+https://github.com/digitalearthpacific/dep-tools.git",
+    "geopandas (>=1.1.2,<2.0.0)",
+    "odc-geo (>=0.5.0,<0.6.0)",
+    "odc-stac (>=0.5.2,<0.6.0)",
+    "pandas (>=2.3.3,<3.0.0)",
+    "rasterio==1.4.3",
+    "typer>=0.9.0",
+    "xarray (>=2025.12.0,<2026.0.0)",
 ]
 
 [project.scripts]

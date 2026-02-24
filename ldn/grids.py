@@ -21,6 +21,7 @@ from dep_tools.grids import (
 from ldn.utils import NON_DEP_COUNTRIES
 
 EPSG_CODE = 6933  # NSIDC EASE-Grid 2.0 Global
+logger = logging.getLogger(__name__)
 
 GADM_FILE = Path(__file__).parent / "gadm_sids.gpkg"
 
@@ -46,7 +47,11 @@ def get_gadm(
 
 # This is for the non-pacific countries. All pacific countries are covered by the DEP grid (EPSG:3832).
 # Pacific data is seperate because of the antimeridian crossing, and consistency with existing DEP work.
-def get_gridspec(region: Literal["pacific", "non-pacific"], resolution: int = 30, crs: int = EPSG_CODE) -> GridSpec:
+def get_gridspec(
+    region: Literal["pacific", "non-pacific"],
+    resolution: int = 30,
+    crs: int = EPSG_CODE,
+) -> GridSpec:
     """
     Returns a GridSpec object.
     Defines a uniform spatial grid (projection, resolution, tile size) across the entire globe.
@@ -66,10 +71,12 @@ def get_gridspec(region: Literal["pacific", "non-pacific"], resolution: int = 30
 
     if region not in ["pacific", "non-pacific"]:
         raise ValueError("Invalid region. Must be 'pacific' or 'non-pacific'.")
-    
+
     if region == "pacific":
         # For the Pacific region, we use the DEP-defined grid
-        return dep_grid(resolution, simplify_tolerance=0, crs=PACIFIC_EPSG, return_type="GridSpec")
+        return dep_grid(
+            resolution, simplify_tolerance=0, crs=PACIFIC_EPSG, return_type="GridSpec"
+        )
 
     # Put the origin at a stable, off-Earth corner so the grid never moves.
     # Prevent the antimeridian from coinciding with tile boundaries.
@@ -107,7 +114,7 @@ def get_grid_tiles(
             "Invalid grids value. Must be 'all', 'pacific', or 'non-pacific'."
         )
 
-    logging.info(
+    logger.info(
         f"Getting all tiles for grids: {grids} with format: {format} and overwrite: {overwrite}"
     )
 
@@ -116,16 +123,14 @@ def get_grid_tiles(
     geojson_path_all = Path(__file__).parent / "sids_all_tiles.geojson"
 
     def process_grid(region, grid_obj, gadm, countries, geojson_file):
-        logging.info(
-            f"Processing grid {region} for countries: {list(countries.keys())}"
-        )
+        logger.info(f"Processing grid {region} for countries: {list(countries.keys())}")
         if not overwrite and geojson_file.exists():
-            logging.info(
+            logger.info(
                 "Reading existing GeoJSON file because overwrite is False and file exists."
             )
             extents_gdf = gpd.read_file(geojson_file)
         else:
-            logging.info(
+            logger.info(
                 "Calculating tiles because overwrite is True or file does not exist."
             )
             all_polys = []
@@ -198,7 +203,7 @@ def get_grid_tiles(
     all_tiles_gdf = gpd.GeoDataFrame(all_tiles_df, geometry="geometry", crs="epsg:4326")
 
     if grids == "all" and (overwrite or not geojson_path_all.exists()):
-        logging.info(
+        logger.info(
             "Writing combined GeoJSON file for all tiles because grids is 'all', and (overwrite is True or the file does not exist)."
         )
         all_tiles_gdf.to_file(geojson_path_all, driver="GeoJSON")

@@ -1,5 +1,6 @@
 import logging
 import sys
+import warnings
 
 import boto3
 from dep_tools.namers import S3ItemPath
@@ -8,9 +9,10 @@ from dep_tools.searchers import PystacSearcher
 from dep_tools.loaders import OdcLoader
 from typing_extensions import Annotated
 from dep_tools.stac_utils import StacCreator
-from dep_tools.task import AwsStacTask as Task
+from ldn.geomad import AwsStacTask as Task
 from dep_tools.writers import AwsDsCogWriter
 from odc.stac import configure_s3_access
+from rasterio.errors import NotGeoreferencedWarning
 from typing import Literal
 
 import json
@@ -19,7 +21,7 @@ from dep_tools.exceptions import EmptyCollectionError
 from dask.distributed import Client as DaskClient
 
 from ldn.geomad import (
-    GeoMADLandsatProcessor,
+    GeoMADProcessor,
     LANDSAT_SCALE,
     LANDSAT_OFFSET,
     USGS_CATALOG,
@@ -32,17 +34,50 @@ import typer
 from ldn import get_version
 from ldn.cli_grid import cli_grid_app
 from ldn.grids import get_gridspec
-from dep_tools.grids import grid
 
 app = typer.Typer()
 
-# All files will inherit this logging configuration so we only write once
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(module)s | %(name)s:%(funcName)s:%(lineno)d - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    stream=sys.stderr,
+# Configure logging so CLI output shows only ldn logs by default.
+LOG_FORMAT = "%(asctime)s | %(levelname)s | %(module)s | %(name)s:%(funcName)s:%(lineno)d - %(message)s"
+
+root_logger = logging.getLogger()
+root_logger.handlers.clear()
+root_logger.setLevel(logging.WARNING)
+
+ldn_handler = logging.StreamHandler(sys.stderr)
+ldn_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S"))
+
+logger = logging.getLogger("ldn")
+logger.handlers.clear()
+logger.addHandler(ldn_handler)
+logger.setLevel(logging.INFO)
+logger.propagate = False
+
+logger = logging.getLogger(__name__)
+
+# Reduce known noisy third-party warnings while keeping actionable logs visible.
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    module=r"odc\.algo\._masking",
+    message=r"`binary_dilation` is deprecated since version 0\.26.*",
 )
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    module=r"odc\.algo\._masking",
+    message=r"`binary_erosion` is deprecated since version 0\.26.*",
+)
+warnings.filterwarnings(
+    "ignore",
+    category=NotGeoreferencedWarning,
+    module=r"rasterio\.warp",
+)
+logging.getLogger("rasterio._err").setLevel(logging.ERROR)
+logging.getLogger("dask").setLevel(logging.ERROR)
+logging.getLogger("distributed").setLevel(logging.ERROR)
+logging.getLogger("distributed.shuffle").setLevel(logging.ERROR)
+logging.getLogger("distributed.shuffle._scheduler_plugin").setLevel(logging.ERROR)
 
 # Add the subcommands
 app.add_typer(
@@ -71,7 +106,7 @@ def print_tasks(
     grids: Annotated[Literal["all", "pacific", "non-pacific"], typer.Option()] = "all",
 ) -> None:
     """Print all tasks for given years for either all grids, or just the Pacific or non-Pacific grid."""
-    logging.info(f"Generating tasks for years: {years} and grids: {grids}")
+    logger.info(f"Generating tasks for years: {years} and grids: {grids}")
 
     years_list = []
     if "," in years:
@@ -87,7 +122,7 @@ def print_tasks(
 
     tiles = get_grid_tiles(format="list", grids=grids, overwrite=False)
 
-    logging.info(
+    logger.info(
         f"Number of tasks: {len(years_list) * len(tiles)} (years: {len(years_list)}, tiles: {len(tiles)})"
     )
 
@@ -117,9 +152,12 @@ def geomad(
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
+    product_owner: Annotated[str | None, typer.Option()] = None,
     bucket: Annotated[str, typer.Option()] = "data.ldn.auspatious.com",
     overwrite: Annotated[bool, typer.Option()] = False,
     decimated: Annotated[bool, typer.Option()] = False,
+    include_shadow: Annotated[bool, typer.Option()] = False,
+    ls7_buffer_years: Annotated[int, typer.Option()] = 1,
     all_bands: Annotated[bool, typer.Option()] = True,
     memory_limit: Annotated[str, typer.Option()] = "10GB",
     n_workers: Annotated[int, typer.Option()] = 2,
@@ -142,13 +180,33 @@ def geomad(
         f" region {region} with overwrite={overwrite}, decimated={decimated},"
         f" all_bands={all_bands}, memory_limit={memory_limit}, n_workers={n_workers},"
         f" threads_per_worker={threads_per_worker}, xy_chunk_size={xy_chunk_size}, "
-        f"geomad_threads={geomad_threads}"
+        f"geomad_threads={geomad_threads}, include_shadow={include_shadow}"
     )
     typer.echo(info)
     if region not in ["pacific", "non-pacific"]:
-        raise ValueError(f"Invalid region: {region}. Must be 'pacific' or 'non-pacific'.")
+        raise ValueError(
+            f"Invalid region: {region}. Must be 'pacific' or 'non-pacific'."
+        )
 
-    # TODO: Test S3 access at the start of the function and fail fast if we don't have access, rather than waiting until we try to write the output.
+    year_int = int(year)
+    search_year = year
+    # If we're in the LS7 era, use a buffered window of data
+    if year_int <= 2012:
+        year_start = year_int - ls7_buffer_years
+        year_end = year_int + ls7_buffer_years
+        search_year = f"{year_start}/{year_end}"
+        typer.echo(
+            f"Using {ls7_buffer_years}-year buffered window for LS7 era: {search_year}"
+        )
+
+    # For now, if we're in the Pacific, use both T1 and T2 data
+    # This may be necessary in other places too
+    search_kwargs = {"query": {"landsat:collection_category": {"in": ["T1"]}}}
+    if region == "pacific":
+        if year_int <= 2012:
+            # Searching for nothing gives us everything
+            typer.echo("Using both T1 and T2 data for Pacific for LS7 era")
+            search_kwargs == {}
 
     # Fixed variables
     sensor = "ls"
@@ -164,7 +222,7 @@ def geomad(
         full_path_prefix = "https://data.ldn.auspatious.com"
 
     if decimated:
-        typer.echo("Warning, using decimated bands for testing purposes.")
+        typer.echo("Warning, using decimated (low resolution) for testing purposes.")
         geobox = geobox.zoom_out(10)
 
     # Configure for dask and reading data
@@ -172,7 +230,9 @@ def geomad(
     # Configure for checking item existence
     client = boto3.client("s3")
 
-    prefix = "ci" if region == "non-pacific" else "dep"
+    prefix = "ausp"
+    if product_owner is None:
+        prefix = "ci" if region == "non-pacific" else "dep"
 
     # Check if we've done this tile before
     itempath = S3ItemPath(
@@ -194,9 +254,8 @@ def geomad(
         raise typer.Exit()
     else:
         if not overwrite:
-            typer.echo(f"Item does not exist at {stac_document}, proceeding to write.")
+            typer.echo(f"Item does not exist at {stac_document}, processing tile.")
 
-    search_kwargs = {"query": {"landsat:collection_category": {"in": ["T1"]}}}
     load_kwargs = {}
 
     # Searcher finds STAC Items
@@ -204,7 +263,7 @@ def geomad(
     searcher = PystacSearcher(
         catalog=USGS_CATALOG,
         collections=[USGS_COLLECTION],
-        datetime=year,
+        datetime=search_year,
         **search_kwargs,
     )
 
@@ -227,7 +286,7 @@ def geomad(
         with_raster=True,
     )
 
-    processor = GeoMADLandsatProcessor(
+    processor = GeoMADProcessor(
         geomad_options=dict(
             work_chunks=(100, 100),
             num_threads=geomad_threads,
@@ -238,6 +297,10 @@ def geomad(
         ),
         min_timesteps=5,
         drop_vars=["qa_pixel"],
+        mask_clouds_kwargs={
+            "filters": [("dilation", 3), ("erosion", 2)],
+            "include_shadow": include_shadow,
+        },
     )
 
     try:
