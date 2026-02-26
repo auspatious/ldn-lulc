@@ -3130,6 +3130,58 @@ files = [
 ]
 
 [[package]]
+name = "obstore"
+version = "0.9.0"
+description = ""
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "obstore-0.9.0-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:eb22618bf0825c1f5d77862639ac06dab97f68efc5bed953ae3b9104bc744335"},
+    {file = "obstore-0.9.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:43719d03f1ff3f4ce6ff42913d1671cd73131d412731d521a92079bae5033871"},
+    {file = "obstore-0.9.0-cp310-cp310-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:737ec53fad70365b15829c5378d280850dfea279b17f67a4701b81efc377d48f"},
+    {file = "obstore-0.9.0-cp310-cp310-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:a8cbef4dc4d08649882a8fbfd569bb7252a02134cf16359e41e26d8e2bc544f5"},
+    {file = "obstore-0.9.0-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:512d6a0292688dfee0c8f7a3151deac44ef25297826bb95c9a418b9f8a1e52d2"},
+    {file = "obstore-0.9.0-cp310-cp310-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:185612c178f035016b51589465027b7e390bc6017239e7c52496450bf60db373"},
+    {file = "obstore-0.9.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c8985c1d53cc6747ffcbf8aa2a85b438fc7b84b10c1e882d84d9feabd91233ab"},
+    {file = "obstore-0.9.0-cp310-cp310-manylinux_2_24_aarch64.whl", hash = "sha256:89156d054a12ea7a0a00cceead50a8081d1cb31b67f7a690b8b7453735b8720b"},
+    {file = "obstore-0.9.0-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:420999cefb8e94ce50f583783550c1ff909b1f92166762869d625df7af081499"},
+    {file = "obstore-0.9.0-cp310-cp310-musllinux_1_2_armv7l.whl", hash = "sha256:ba3f63f1e5b10e73fe57aefa046c4eb44b4ec585bae977763fee98a341d4206b"},
+    {file = "obstore-0.9.0-cp310-cp310-musllinux_1_2_i686.whl", hash = "sha256:ae89254af6568c81b8d116e2603fa385737e6526d4ddcbd755920889d1714991"},
+    {file = "obstore-0.9.0-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:fba305a1e1b5cc807bf33f31ea4941c0d0218e4ad0f5cb81a54fc2c427e4e0d2"},
+    {file = "obstore-0.9.0-cp310-cp310-win_amd64.whl", hash = "sha256:dff6f3bf7141a9be080d38108049c59fe8a3ea5c7b643aa4356c0ae608b169bc"},
+    {file = "obstore-0.9.0-cp311-abi3-macosx_10_12_x86_64.whl", hash = "sha256:2f61dd66a4f918da8832cc3a35e57ecd25a18c0772544ca16e01fb91a78e01d6"},
+    {file = "obstore-0.9.0-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:286c1d6ccccef3533133330fbbb425e11d3564502bdba0b79569f50ab93adca4"},
+    {file = "obstore-0.9.0-cp311-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:e0ba6d461ec57f605777dae68a9bc2de60326a64e13cb96a08a750da5c2206cc"},
+    {file = "obstore-0.9.0-cp311-abi3-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:bb5e41b00ee749ce20ba6fd2d242da82097bec1f5ddaf572cfda594269435760"},
+    {file = "obstore-0.9.0-cp311-abi3-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:78344a8fb77473ec92c7c969b88e1ca095c0a240f7ceef2bd28112f071653c8a"},
+    {file = "obstore-0.9.0-cp311-abi3-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:9d0d928def88cdfd5dd9d9d74af1fe8b5f6b0b8d4187560a6e6f5222d7b0a236"},
+    {file = "obstore-0.9.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8fad70f0c7daea2d7a47c0b9a5024fb09b81c29ad8e27870a989763f0000488f"},
+    {file = "obstore-0.9.0-cp311-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:b0512aa65f9628eeb2d46f8527efd8641c281470bca9aa4a4fd7798a842b2df8"},
+    {file = "obstore-0.9.0-cp311-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:3d05e8986565f5a64677df6d172581406cbb9879b1ea9c05da9c7915edf023ae"},
+    {file = "obstore-0.9.0-cp311-abi3-musllinux_1_2_armv7l.whl", hash = "sha256:c6637e5ad2f24a977976ab9dd6bd753292fe3141fbd140b2d8311ba22abf4d44"},
+    {file = "obstore-0.9.0-cp311-abi3-musllinux_1_2_i686.whl", hash = "sha256:5d3b3c0ae3688e09bcd9c149b71c60b739b376e6a5cfdf06231c1159c6d7cd30"},
+    {file = "obstore-0.9.0-cp311-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:2f53d7288b6ba288ae77f7600a1bbc21ce6738ce68c2fdf78c6b5e9494581969"},
+    {file = "obstore-0.9.0-cp311-abi3-win_amd64.whl", hash = "sha256:93693c1e93671df1845a3236200880665a3737b2a17deaad3d840a89b58e7336"},
+    {file = "obstore-0.9.0-pp311-pypy311_pp73-macosx_10_12_x86_64.whl", hash = "sha256:20304af23a349b3d907b8141d8dcc7b04554fadea45846cb6025e98d07a46985"},
+    {file = "obstore-0.9.0-pp311-pypy311_pp73-macosx_11_0_arm64.whl", hash = "sha256:4a848fc43e197cbf59db0470988633fd7cfc75163928c6aea5698b290127b010"},
+    {file = "obstore-0.9.0-pp311-pypy311_pp73-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:e2dda08c8b2d32ea1a8b8616a0d469400a2c057b620ca50c9c8a0d9ad78b8933"},
+    {file = "obstore-0.9.0-pp311-pypy311_pp73-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:485cc0484eef4736f6e87e6e640b22e6b3fbbd5399753c54be066195c2cadf93"},
+    {file = "obstore-0.9.0-pp311-pypy311_pp73-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:0e21559f4bd201cbd86d239166544d7fc181b042ef8e2407edcbaa19fdfa658f"},
+    {file = "obstore-0.9.0-pp311-pypy311_pp73-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:f6c3a7ba49e4a9eadc6c0e15b049e7244de80fe49118651457b4f2f5ef088a1f"},
+    {file = "obstore-0.9.0-pp311-pypy311_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f8d672fa444b1e3be40bc481989ac669c9b6a696af2d4bbe95cc61716ed0f20a"},
+    {file = "obstore-0.9.0-pp311-pypy311_pp73-manylinux_2_24_aarch64.whl", hash = "sha256:4df3f81c61f734b216d4ce1b4baebffd6bdbf5e676d4233b528ded21c05cc75e"},
+    {file = "obstore-0.9.0-pp311-pypy311_pp73-musllinux_1_2_aarch64.whl", hash = "sha256:79564f5acca97ca9f2010168aa24ec3b40f7fe2619b42f8906f9a84ba1abf067"},
+    {file = "obstore-0.9.0-pp311-pypy311_pp73-musllinux_1_2_armv7l.whl", hash = "sha256:74327b56459e0fc3895bb8ec26f10f52c2c346e49fa1d4b7dd96d5b90c5cf0d6"},
+    {file = "obstore-0.9.0-pp311-pypy311_pp73-musllinux_1_2_i686.whl", hash = "sha256:ff37414c8513959b71ab420cd6a6fc71e468d01b369a3348ffadc06ee8d2134d"},
+    {file = "obstore-0.9.0-pp311-pypy311_pp73-musllinux_1_2_x86_64.whl", hash = "sha256:be0817d41837c9e7359f306058e3ca03aafe38e054fbc8a07be80e4badffa110"},
+    {file = "obstore-0.9.0.tar.gz", hash = "sha256:53747452279b94890787c2e051394c4243f2ab3882cdff9e259a796cb269c13e"},
+]
+
+[package.dependencies]
+typing-extensions = {version = "*", markers = "python_full_version < \"3.13.0\""}
+
+[[package]]
 name = "odc-algo"
 version = "1.1.1"
 description = "Miscellaneous Algorithmic helper methods"
@@ -4888,6 +4940,30 @@ libyaml = ["ruamel.yaml.clibz (>=0.3.7) ; platform_python_implementation == \"CP
 oldlibyaml = ["ruamel.yaml.clib ; platform_python_implementation == \"CPython\""]
 
 [[package]]
+name = "rustac"
+version = "0.9.6"
+description = "The power of Rust for the Python STAC ecosystem"
+optional = false
+python-versions = ">=3.11"
+groups = ["main"]
+files = [
+    {file = "rustac-0.9.6-cp311-abi3-macosx_10_12_x86_64.whl", hash = "sha256:2e1df6e2fbf98e6c77a4f4d106ba83cf66fa878d85ecd99aed29f16d16ae911f"},
+    {file = "rustac-0.9.6-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:85b7a7a37826d0c924e52bf49db78057c4cef4b53b4f78a91b355584309d6ba1"},
+    {file = "rustac-0.9.6-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:389d278d7d410e3579b63c2a1748b3da35b63a040bfbdd55db3fd0456b8ae6a6"},
+    {file = "rustac-0.9.6-cp311-abi3-manylinux_2_28_armv7l.whl", hash = "sha256:2b00621e0d4b1ed4f07c4c86617e5a2737c09873b8fb706c7d83a0c019abfcf2"},
+    {file = "rustac-0.9.6-cp311-abi3-manylinux_2_28_ppc64le.whl", hash = "sha256:b61b8bc6882279479fd6cf76a0e3fb01c64c55e513af09abebadfe08651367f4"},
+    {file = "rustac-0.9.6-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:743d2f3ffa01c5c4c7dab7693ea5d0bb7ebd565df7767e595d2789e21b20a85f"},
+    {file = "rustac-0.9.6-cp311-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:b936bfb486f977b4c3bd20841e398469c2175fff6179f55e4adb43a87a2f2667"},
+    {file = "rustac-0.9.6-cp311-abi3-musllinux_1_2_armv7l.whl", hash = "sha256:f476c326a8ba72c859a47e4da6ad7cdb1be0860f534ce0c32b7679808f31f28d"},
+    {file = "rustac-0.9.6-cp311-abi3-musllinux_1_2_i686.whl", hash = "sha256:fe40e14fa586b3e01c577fcb371128c76ff3e58cd875d2825083c263f26ff4b2"},
+    {file = "rustac-0.9.6-cp311-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:131825cd08535b35ce8013540dc9b3e1df77c591ffe047ffd3e18efe6260057c"},
+    {file = "rustac-0.9.6.tar.gz", hash = "sha256:dca3a6ec066a3881c52211d5074a1bdfde4f40c4a987bc5241ed7540cab5b443"},
+]
+
+[package.extras]
+arrow = ["arro3-core (>=0.4.5)"]
+
+[[package]]
 name = "s3transfer"
 version = "0.16.0"
 description = "An Amazon S3 Transfer Manager"
@@ -5943,4 +6019,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = "==3.12.*"
-content-hash = "60a8f2d9b2acc11b6576b34de7578e2608f74ad4bc0466a03b10b754b428e729"
+content-hash = "e6b79d792be359a5b2d0013ac1227c5cf25e5e6b299caf9a6e3169378301b603"
