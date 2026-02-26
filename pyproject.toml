@@ -23,21 +23,18 @@ dependencies = [
     "boto3 (>=1.42.31,<2.0.0)",
     "datacube-compute @ git+https://github.com/auspatious/datacube-compute.git",
     "dep-tools @ git+https://github.com/digitalearthpacific/dep-tools.git",
-    "geopandas (>=1.1.2,<2.0.0)",
-    "odc-geo (>=0.5.0,<0.6.0)",
     "odc-stac (>=0.5.2,<0.6.0)",
-    "pandas (>=2.3.3,<3.0.0)",
     "rasterio>=1.4.3",
-    "typer>=0.9.0",
     "xarray (>=2025.12.0,<2026.0.0)",
     "rustac (>=0.9.6,<0.10.0)",
     "obstore (>=0.9.0,<0.10.0)",
-    "ipykernel (>=7.2.0,<8.0.0)"
 ]
 
 [project.scripts]
 ldn = "ldn.cli:app"
 
+[tool.setuptools.package-data]
+ldn = ["typology_mapping.yaml"]
 
 [dependency-groups]
 dev = [
