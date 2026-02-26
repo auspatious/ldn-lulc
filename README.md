@@ -39,6 +39,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
   ```bash
   poetry run ldn --help
   ```
+5. Run Makefile commands:
+  ```bash
+  poetry run make geomad-singapore
+  ```
 
 
 ### Development
