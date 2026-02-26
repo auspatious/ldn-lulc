@@ -26,11 +26,11 @@ level1_classes:
     label: "Built-up"
     value: 5
     color: "gray"
-  other:
+  water:
     label: "Water"
     value: 6
     color: "blue"
-  water:
+  other:
     label: "Other"
     value: 7
     color: "yellow"
