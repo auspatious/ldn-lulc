@@ -91,3 +91,43 @@ docker buildx build . --tag ldn-lulc:latest
 Once built, you can run any command in the container:
 
 `docker run --rm ldn-lulc:latest ldn grid list-countries`
+
+
+# Notes 2026-02-27:
+
+## Goal of training data, model, and prediction:
+
+#### Sites:
+- Fiji
+- Singapore
+- etc.
+Use get_gadm function. Not by AOI or any other search. method. Buffer country boundary 100m.
+
+### Steps: 
+1. Training data:
+For each site extract training data.
+  -> Find product agreement. mask to gadm 100m buffer.
+  -> Add geomad, indices, elevation etc.
+  -> Write csv per site of training data.
+do this in a notebook. don't commit training data.
+
+2. Training model:
+Try one model for all sites. (append all CSVs)
+export model dump (python pickle?)
+in future we may need to make different models for different regions and year ranges.
+train the model using the geomad of the year of the input products.
+
+3. Predict:
+per grid tile:
+  per year:
+    load geomad/indices/elevation etc.
+    make using get_gadm (buffered 100m)
+    predict
+This is as a command. 
+
+First version do all of this in a single notebook.
+
+
+### High prio:
+- Remove NetCDF and raster reprojection.
+- Then merge this big PR. Then do all the next version tweaks in a new PR.
