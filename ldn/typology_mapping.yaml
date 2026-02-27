@@ -1,0 +1,127 @@
+# Using YAML to preserve comments
+
+# Our level 1 classes
+level1_classes:
+  no_data:
+    label: "No data"
+    value: 0
+    color: "white"
+  tree_cover:
+    label: "Tree Cover"
+    value: 1
+    color: "darkgreen"
+  grassland:
+    label: "Grassland"
+    value: 2
+    color: "limegreen"
+  cropland:
+    label: "Cropland"
+    value: 3
+    color: "lime"
+  wetland:
+    label: "Wetland"
+    value: 4
+    color: "turquoise"
+  built_up:
+    label: "Built-up"
+    value: 5
+    color: "gray"
+  water:
+    label: "Water"
+    value: 6
+    color: "blue"
+  other:
+    label: "Other"
+    value: 7
+    color: "yellow"
+
+
+# Mappings from existing products to our level 1 classes
+cci_lc_map:
+    # Cropland class -> Cropland
+    10: 3
+    11: 3
+    12: 3
+    20: 3
+    30: 3
+    # Natural Vegetation / Shrub class -> Grassland
+    40: 2
+    120: 2
+    121: 2
+    122: 2
+    # Tree class -> Tree / Tree and shrub -> Tree Cover
+    50: 1
+    60: 1
+    61: 1
+    62: 1
+    70: 1
+    71: 1
+    72: 1
+    80: 1
+    81: 1
+    82: 1
+    90: 1
+    100: 1
+    # Grass and Herbaceous / Moss/Lichen -> Grassland
+    110: 2
+    130: 2
+    140: 2
+    # Sparse vegetation -> Grassland
+    150: 2
+    151: 2
+    152: 2
+    153: 2
+    # Wetland
+    160: 4
+    170: 4
+    180: 4
+    # Built-up
+    190: 5
+    # Bare class / Snow/Ice -> other land
+    200: 7
+    201: 7
+    202: 7
+    220: 7
+    # Water
+    210: 6
+
+world_cover_map:
+    # Water
+    80: 6
+    # Tree -> Tree Cover
+    10: 1
+    # Shrub / Grassland -> Grassland
+    20: 2
+    30: 2
+    # Cropland
+    40: 3
+    # Built-up
+    50: 5
+    # Bare / Snow/Ice -> other land
+    60: 7
+    70: 7
+    # Wetland / Mangroves -> Wetland
+    90: 4
+    95: 4
+    # Moss/Lichen -> other land
+    100: 7
+
+io_map:
+    # No data
+    0: 0
+    # Water
+    1: 6
+    # Tree -> Tree Cover
+    2: 1
+    # Wetland
+    4: 4
+    # Cropland
+    5: 3
+    # Built-up
+    7: 5
+    # Bare/Sparse / Snow/Ice / Cloud -> other land
+    8: 7
+    9: 7
+    10: 7
+    # Rangeland
+    11: 2
