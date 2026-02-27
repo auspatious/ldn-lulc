@@ -43,7 +43,8 @@ dev = [
     "mapclassify (>=2.10.0,<3.0.0)",
     "matplotlib (>=3.10.8,<4.0.0)",
     "ipykernel (>=7.1.0,<8.0.0)",
-    "datacube (>=1.9.14)"
+    "datacube (>=1.9.14)",
+    "duckdb (>=1.4.4,<2.0.0)"
 ]
 
 [tool.setuptools.packages.find]
