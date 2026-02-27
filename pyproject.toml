@@ -44,7 +44,8 @@ dev = [
     "matplotlib (>=3.10.8,<4.0.0)",
     "ipykernel (>=7.1.0,<8.0.0)",
     "datacube (>=1.9.14)",
-    "duckdb (>=1.4.4,<2.0.0)"
+    "duckdb (>=1.4.4,<2.0.0)",
+    "ipyleaflet (>=0.20.0,<0.21.0)"
 ]
 
 [tool.setuptools.packages.find]
