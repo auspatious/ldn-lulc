@@ -57,7 +57,7 @@ poetry install --with dev
 
 ### To add a dependency
 
-Run: `poetry add --group dev pytest`
+Run: `poetry add --dev pytest`
 
 Others:
 poetry add "dep-tools@git+https://github.com/digitalearthpacific/dep-tools.git"
