@@ -220,6 +220,5 @@ ldn/tasks.json
 
 *.tif
 *.tif.aux.xml
-*.nc
 
 tasks.json
