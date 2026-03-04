@@ -84,6 +84,7 @@ cci_lc_map:
     220: 7
     # Water
     210: 6
+# TODO: CCI needs to map more classes to Other (7). Right now it has no Other pixels in Singapore.
 
 world_cover_map:
     # Water
