@@ -142,3 +142,12 @@ geomad-2000-2025:
 				--overwrite; \
 		done; \
 	done
+
+
+
+
+# End goal: per tile and year, predict LULC.
+# predict-lulc-singapore-2020:
+# 	ldn predict \
+# 	--tile-id 333_112 \
+# 	--year 2020

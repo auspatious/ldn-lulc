@@ -1,4 +1,16 @@
+import json
 from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
+
+import xarray as xr
+from odc.stac import load
+from pystac import Item
+from pystac_client import Client
+from rustac import search_sync
+import numpy as np
+from planetary_computer import sign_url
+from geopandas import GeoSeries
+from scipy.ndimage import sobel
+
 
 
 SIDS_COUNTRIES_AND_CODES = {
@@ -77,15 +89,17 @@ NON_DEP_COUNTRIES = {
 
 # TODO: Put this in a more specific/appropriate location.
 # This function gets the Geomedian (scaled to floats), GeoMAD, elevation, and indices.
-# aoi can be a (buffered) country multipolygon, or tile polygon from the GridSpec.
-def get_geomad_dem_indices(aoi_or_tile: Multipolygon | Polygon, datetime: str) -> xarray.Dataset:
+# aoi can be a (buffered) country Geoseries, or tile.
+def get_geomad_dem_indices(aoi_or_tile: GeoSeries, year: str, analysis_crs: str, catalog: Client) -> xr.Dataset:
 
-    # Query our GeoMAD STAC-Geoparquet by AOI bbox and datetime.
+    aoi_geojson = json.loads(aoi_or_tile.to_json(to_wgs84=True))["features"][0]["geometry"]
+
+    # Query our GeoMAD STAC-Geoparquet by AOI bbox and year.
     # parquet = "s3://data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet"
     stac_geoparquet = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ci_ls_geomad/0-0-2/ci_ls_geomad.parquet" # Non-Pacific
     # stac_geoparquet = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet" # Pacific
-    stac_docs = search_sync(stac_geoparquet, intersects=country_geojson, datetime=datetime_year) # , store=S3Store(bucket="data.ldn.auspatious.com", region="us-west-2"))
-    print(f"Found {len(stac_docs)} STAC documents for this AOI and datetime year")
+    stac_docs = search_sync(stac_geoparquet, intersects=aoi_geojson, datetime=year) # , store=S3Store(bucket="data.ldn.auspatious.com", region="us-west-2"))
+    print(f"Found {len(stac_docs)} STAC documents for this AOI and year")
     geomad_items = [Item.from_dict(feature) for feature in stac_docs]
     print(f"Parsed {len(geomad_items)} STAC items")
 
@@ -93,20 +107,17 @@ def get_geomad_dem_indices(aoi_or_tile: Multipolygon | Polygon, datetime: str) -
     print(f"Available bands: {bands}")
 
 
-
-    # TODO: Load geomad without any CRS/res options. We want to load it as native.
     geomad_ds = load(
         geomad_items,
-        crs=analysis_crs,
-        resolution=10, # Do 100 for faster development, but use 10m for final runs.
         groupby="solar_day",
-        intersects=country_geojson,
-        datetime=datetime_year,
+        crs=analysis_crs, # Non-pacific data is already in EPSG:6933, but we want to make sure it matches our analysis CRS. Pacific data is in EPSG:3832, so it needs to be reprojected.
+        intersects=aoi_geojson,
+        datetime=year,
         chunks={}, # Force lazy loading.
     )
+    print(f"Native GeoMAD dataset CRS: {geomad_ds.odc.crs.epsg}") # 6933 for non-Pacific, 3832 for Pacific. Should be in the same CRS as our analysis.
     geomad_ds = geomad_ds.squeeze().load() # .load() to read the data into memory, .squeeze() to remove any singleton dimensions.
     print(f"GeoMAD dataset shape: {geomad_ds.dims}")
-    geomad_ds
 
 
     # Scale observed values
@@ -118,10 +129,8 @@ def get_geomad_dem_indices(aoi_or_tile: Multipolygon | Polygon, datetime: str) -
         pass # If rerunning, count is already removed
     band_names_geomad = [b for b in bands if b.endswith('mad')] # ['smad', 'bcmad', 'emad']
     band_names_geomedian = [b for b in bands if b not in band_names_geomad] # ['red', 'blue', 'green', 'swir16', 'swir22', 'nir08']
-    print(band_names_geomad)
-    print(band_names_geomedian)
 
-    # Adapted from https://github.com/auspatious/cloud-native-geospatial-eo-workshop/blob/main/02_Cloud_Native_Land_Productivity_For_SDG15_LS.ipynb
+
     def scale_offset(band):
         nodata = band == 0
         # Apply a scaling factor and offset to the band
@@ -185,16 +194,15 @@ def get_geomad_dem_indices(aoi_or_tile: Multipolygon | Polygon, datetime: str) -
         return geomad
 
     geomad_ds = make_indices(geomad_ds)
-    geomad_ds.head()
+    print(geomad_ds.head())
 
 
-    #### Elevation 
-    # TODO: Get slope and aspect too.
+    #### Elevation, slope, aspect.
     # Load DEM
     dem_items = list(
         catalog.search(
             collections=["cop-dem-glo-30"],
-            intersects=country_geojson,
+            intersects=aoi_geojson,
         ).items()
     )
 
@@ -204,7 +212,6 @@ def get_geomad_dem_indices(aoi_or_tile: Multipolygon | Polygon, datetime: str) -
     # Upscales from 30m to 10m.
     dem = load(
         dem_items,
-        # geobox=geomad_ds.odc.geobox, # Use the same geobox as geomad for alignment. This will reproject and resample the DEM to match geomad.
         like=geomad_ds,
         resampling="nearest",
         patch_url=sign_url,
@@ -212,9 +219,23 @@ def get_geomad_dem_indices(aoi_or_tile: Multipolygon | Polygon, datetime: str) -
 
     print(dem)
 
-    # Merge
-    dem = dem.assign_coords(time=geomad_ds.time)
-    geomad_dem = xr.merge([geomad_ds, dem])
+    dem_da = dem['elevation']
+    dem_vals = dem_da.values.astype("float32")
+    res_m = abs(float(dem.x[1] - dem.x[0]))
+
+    dz_dx = sobel(dem_vals, axis=1) / (8 * res_m)
+    dz_dy = sobel(dem_vals, axis=0) / (8 * res_m)
+
+    slope  = xr.DataArray(np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))), coords=dem_da.coords, dims=dem_da.dims, name="slope")
+    aspect = xr.DataArray((90 - np.degrees(np.arctan2(-dz_dy, dz_dx))) % 360,  coords=dem_da.coords, dims=dem_da.dims, name="aspect")
+
+    print("Aspect min:", aspect.min().values, "max:", aspect.max().values)
+    print("Slope min:", slope.min().values, "max:", slope.max().values)
+
+    # Merge elevation, slope, aspect, and geomad
+    dem_ds = xr.Dataset({"elevation": dem_da, "slope": slope, "aspect": aspect})
+    dem_ds = dem_ds.assign_coords(time=geomad_ds.time)
+    geomad_dem = xr.merge([geomad_ds, dem_ds])
 
     # We probably should keep the distinction between nan and zero... but I dont know if it matters for us.
     # geomad_dem = geomad_dem.fillna(0) # Fill NaN with 0 for exploration. We will keep NaN in the actual training data.
