@@ -147,8 +147,6 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
 
     geomad_ds = make_indices(geomad_ds)
 
-    # return geomad_ds # Debugging
-
     # Now for DEM data do per bbox search and load to avoid loading the whole world for Fiji.
     dem_items = catalog.search(
         collections=["cop-dem-glo-30"],
@@ -165,24 +163,19 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
         patch_url=sign_url,
     ).squeeze().compute().rename({"data": "elevation"}) # Squeeze removes the time dimension, which is not needed for DEM.
 
-    return dem # Debugging
+    dem_da = dem['elevation']
+    dem_vals = dem_da.values.astype("float32")
+    res_m = abs(float(dem.x[1] - dem.x[0]))
 
-    # dem_da = dem['elevation']
-    # dem_vals = dem_da.values.astype("float32")
-    # res_m = abs(float(dem.x[1] - dem.x[0]))
+    dz_dx = sobel(dem_vals, axis=1) / (8 * res_m)
+    dz_dy = sobel(dem_vals, axis=0) / (8 * res_m)
 
-    # dz_dx = sobel(dem_vals, axis=1) / (8 * res_m)
-    # dz_dy = sobel(dem_vals, axis=0) / (8 * res_m)
+    slope  = xr.DataArray(np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))), coords=dem_da.coords, dims=dem_da.dims, name="slope")
+    aspect = xr.DataArray((90 - np.degrees(np.arctan2(-dz_dy, dz_dx))) % 360,  coords=dem_da.coords, dims=dem_da.dims, name="aspect")
 
-    # slope  = xr.DataArray(np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))), coords=dem_da.coords, dims=dem_da.dims, name="slope")
-    # aspect = xr.DataArray((90 - np.degrees(np.arctan2(-dz_dy, dz_dx))) % 360,  coords=dem_da.coords, dims=dem_da.dims, name="aspect")
+    dem_ds = xr.Dataset({"elevation": dem_da, "slope": slope, "aspect": aspect})
 
-    # print("Slope  min:", slope.min().values,  "max:", slope.max().values)
-    # print("Aspect min:", aspect.min().values, "max:", aspect.max().values)
+    # Merge GeoMAD (10m native) and DEM (30m, resampled to 10m GeoMAD grid) on x, y, time.
+    dem_ds = dem_ds.assign_coords(time=geomad_ds.time) # Add GeoMAD time coordinate to DEM dataset so they can be merged.
 
-    # dem_ds = xr.Dataset({"elevation": dem_da, "slope": slope, "aspect": aspect})
-
-    # # Merge GeoMAD (10m native) and DEM (30m, resampled to 10m GeoMAD grid) on x, y, time.
-    # dem_ds = dem_ds.assign_coords(time=geomad_ds.time) # Add GeoMAD time coordinate to DEM dataset so they can be merged.
-
-    # return xr.merge([geomad_ds, dem_ds])
+    return xr.merge([geomad_ds, dem_ds])
