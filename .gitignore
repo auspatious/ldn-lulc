@@ -218,6 +218,7 @@ ldn/gadm_sids.gpkg-shm
 ldn/gadm_sids.gpkg-wal
 ldn/tasks.json
 
+*.zarr
 *.tif
 *.tif.aux.xml
 notebooks/training_data/training_data*.geojson

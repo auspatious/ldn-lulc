@@ -92,7 +92,9 @@ NON_DEP_COUNTRIES = {
 def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: str, year: str, catalog: Client) -> xr.Dataset:
     assert len(region_polygon_gdf.geometry) == 1, "region_polygon_gdf must contain at one multipolygon"
 
-    geomad_items = search_sync(stac_geoparquet, bbox=list(region_polygon_gdf.geometry[0].bounds), datetime=year)
+    print(region_polygon_gdf.geometry[0].bounds)
+
+    geomad_items = search_sync(stac_geoparquet, bbox=list(region_polygon_gdf.total_bounds), datetime=year)
 
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
     print(f"Found {len(geomad_items)} GeoMAD items for this region and year")
@@ -153,8 +155,8 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
         bbox=list(region_polygon_gdf.geometry[0].bounds),
         # datetime="2021"
     )
-    print(f"Found {dem_items.matched()} unique DEM items for this AOI")
-    dem_items = dem_items.items()
+    dem_items = list(dem_items.items())
+    print(f"Found {len(dem_items)} unique DEM items for this AOI")
 
     dem = load(
         dem_items,
