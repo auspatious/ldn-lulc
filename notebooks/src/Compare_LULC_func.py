@@ -2,29 +2,7 @@
 import numpy as np
 import xarray as xr
 from matplotlib.colors import ListedColormap, BoundaryNorm
-
-# Define standard legend and colors
-standard_legend = {
-    0: "No data",
-    1: "Tree covered",
-    2: "Grassland",
-    3: "Cropland",
-    4: "Wetland",
-    5: "Artificial",
-    6: "Other land",
-    7: "Water body",
-}
-
-class_colors = {
-    0: "#000000",
-    1: "#4a7c46",
-    2: "#be8729",
-    3: "#ffd03a",
-    4: "#00e8b8",
-    5: "#db1c21",
-    6: "#c8d5cd",
-    7: "#3042e1",
-}
+from ldn.typology import colors as class_colors, classes_flipped as standard_legend
 
 
 def get_standard_legend():
