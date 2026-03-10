@@ -61,29 +61,30 @@ def random_sampling(da,
         raise ValueError("Sampling strategy must be one of 'stratified_random', "+
                              "'equal_stratified_random', 'random', or 'manual'") 
     
-    #open the dataset as a pandas dataframe
+    # Open the dataset as a pandas dataframe
     da = da.squeeze()
     df = da.to_dataframe(name=class_attr)
     
-    # change made here: drop invalid class value
+    # Change made here: drop invalid class value
     df=df[df[class_attr]!=drop_value]
     
-    #list to store points
+    # List to store points
     samples = []
     
-    #determine class ratios in image
+    # Determine class ratios in image
     class_ratio = pd.DataFrame({'proportion': df[class_attr].value_counts(normalize=True),
                             'n_available':df[class_attr].value_counts(normalize=False),
                             'class':df[class_attr].value_counts(normalize=True).keys()
                          })
+    print(class_ratio)
     if sampling == 'stratified_random':
         for _class in class_ratio['class']:
-            #use relative proportions of classes to sample df
+            # Use relative proportions of classes to sample df
             no_of_points = n * class_ratio[class_ratio['class']==_class]['proportion'].values[0]
             n_available=class_ratio[class_ratio['class']==_class]['n_available'].values[0]
             if n_available>=max([min_sample_n, no_of_points]):
                 no_of_points = max([min_sample_n, no_of_points])
-                #random sample each class
+                # Random sample each class
                 print('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + 'locations')
             else:
                 no_of_points=n_available
@@ -95,7 +96,7 @@ def random_sampling(da,
         classes = np.unique(df[class_attr])
         
         for _class in classes:
-            #use relative proportions of classes to sample df
+            # Use relative proportions of classes to sample df
             no_of_points = n / len(classes)
             n_available=class_ratio[class_ratio['class']==_class]['n_available'].values[0]
             if n_available>=no_of_points:
@@ -107,7 +108,7 @@ def random_sampling(da,
             sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
             samples.append(sample_loc)   
             
-#             #random sample each classes
+#             # Random sample each classes
 #             try:
 #                 sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
 #                 print('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + ' locations')
@@ -119,23 +120,23 @@ def random_sampling(da,
     
     if sampling == 'random':
         no_of_points = n
-        #random sample entire df
-        print('Randomly sampling dataAraay at '+ str(round(no_of_points)) + ' locations')
+        # Random sample entire df
+        print('Randomly sampling dataArray at '+ str(round(no_of_points)) + ' locations')
         sample_loc = df.dropna().sample(n=int(round(no_of_points)))
         samples.append(sample_loc)
     
     if sampling == 'manual':
         if isinstance(manual_class_ratios, dict):
-            #check classes in dict match classes in data
+            # Check classes in dict match classes in data
             classes = np.unique(df[class_attr])
             dict_classes = list(manual_class_ratios.keys())
             
             if set(dict_classes).issubset([str(i) for i in classes]):
-                #mask for just those classes in the provided dictionary
+                # Mask for just those classes in the provided dictionary
                 mask = np.isin(classes,
                                np.array(dict_classes).astype(type(classes[0])))
                 classes = classes[mask]               
-                #run sampling
+                # Run sampling
                 for _class in classes:
                     no_of_points = manual_class_ratios.get(str(_class))
                     n_available=class_ratio[class_ratio['class']==_class]['n_available'].values[0]
@@ -166,10 +167,10 @@ def random_sampling(da,
             raise ValueError("Must supply a dictionary mapping {'class': numofpoints} if sampling" +
                              " is set to 'manual'")
     
-    #join back into single datafame
+    # Join back into single dataframe
     all_samples = pd.concat([samples[i] for i in range(0,len(samples))])
         
-    #get pd.mulitindex coords as list 
+    # Get pd.multiindex coords as list 
     y = [i[0] for i in list(all_samples.index)]
     x = [i[1] for i in list(all_samples.index)]
 
@@ -181,7 +182,7 @@ def random_sampling(da,
     else:
         crs = da.attrs.get('crs', None)
 
-    #create geopandas dataframe
+    # Create geopandas dataframe
     gdf = gpd.GeoDataFrame(
         all_samples,
         crs=crs,
