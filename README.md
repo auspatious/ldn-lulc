@@ -5,55 +5,40 @@ This repo contains scripts relevant to the development of new LULC datasets for 
 The ldn folder contains an installable 
 
 
-
 ## Quickstart
-1. Ensure GDAL and its Python bindings are installed
+
+1. Install GDAL (and its Python bindings) via Homebrew
 ```bash
-brew upgrade gdal
+  brew upgrade gdal
 ```
 
-1b. Ensure Rust is installed (for datacube-compute):
+2. Install Rust (for datacube-compute):
 ```bash
 brew install rustup
 rustup-init
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-2. Install Poetry if you don't have it already and create and activate a virtual environment:
+3. Install Poetry if you don't have it already:
   ```bash
   pip install poetry
-  poetry env use $(brew --prefix python@3.12)/bin/python3.12
-  poetry env info
-  ```
 
-#### Using Poetry (recommended)
-3a. (Optional) Install development dependencies:
-  ```bash
-  poetry install --with dev
-  ```
-3b. Install dependencies:
-  ```bash
+4. Create and activate a Poetry virtual environment pointing at Homebrew's Python 3.12 and install dependencies:
+  poetry env use $(brew --prefix python@3.12)/bin/python3.12
   poetry install
   ```
-4. Run the CLI tool:
-  ```bash
-  poetry run ldn --help
-  ```
-5. Run Makefile commands:
-  ```bash
-  poetry run make geomad-singapore
-  ```
 
-
-### Development
-
-For development purposes, you can install the package with development dependencies:
-
-
+  For development dependencies:
 ```bash
-# Using Poetry
-poetry install --with dev
+   poetry install --with dev
 ```
+
+5. Run the CLI tool:
+```bash
+   poetry run ldn --help
+   poetry run make geomad-singapore
+```
+
 
 ### To add a dependency
 
