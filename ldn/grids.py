@@ -138,7 +138,7 @@ def get_grid_tiles(
                 selection = gadm[gadm["GID_0"] == code]
                 if selection.empty:
                     raise ValueError(
-                        f"No geometry found for country: {country} with code {code}"
+                        f"No geometry found for country: {country} with code {code}. Check get_gadm has been run for all countries with overwrite on."
                     )
                 polygon = Geometry(selection.geometry.union_all(), crs=gadm.crs)
                 tiles = list(grid_obj.tiles_from_geopolygon(polygon))
@@ -163,6 +163,8 @@ def get_grid_tiles(
                 .reset_index(drop=True)
             )
 
+            logger.info(f"Writing geojson for grid {region} with {len(extents_gdf)} tiles.")
+
             extents_gdf.to_file(
                 geojson_file, driver="GeoJSON"
             )  # Just write if overwrite is True or file does not exist.
@@ -177,7 +179,7 @@ def get_grid_tiles(
             (
                 "pacific",
                 get_gridspec(region="pacific"),
-                get_gadm(countries=DEP_COUNTRIES_AND_CODES),
+                get_gadm(countries=DEP_COUNTRIES_AND_CODES), # Ensure all data is here by running with overwrite before if a subset has been run
                 DEP_COUNTRIES_AND_CODES,
                 geojson_path_pacific,
             )
@@ -188,7 +190,7 @@ def get_grid_tiles(
             (
                 "non-pacific",
                 get_gridspec(region="non-pacific"),
-                get_gadm(countries=NON_DEP_COUNTRIES),
+                get_gadm(countries=NON_DEP_COUNTRIES), # Ensure all data is here by running with overwrite before if a subset has been run
                 NON_DEP_COUNTRIES,
                 geojson_path_non_pacific,
             )
@@ -204,7 +206,7 @@ def get_grid_tiles(
 
     if grids == "all" and (overwrite or not geojson_path_all.exists()):
         logger.info(
-            "Writing combined GeoJSON file for all tiles because grids is 'all', and (overwrite is True or the file does not exist)."
+            f"Writing combined GeoJSON file for all tiles because grids is 'all', and (overwrite is True or the file does not exist). With {len(all_tiles_gdf)} tiles."
         )
         all_tiles_gdf.to_file(geojson_path_all, driver="GeoJSON")
 
