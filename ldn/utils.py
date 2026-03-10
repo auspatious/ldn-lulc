@@ -108,15 +108,14 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
         geopolygon=region_polygon_gdf.geometry[0], # Clip to the region polygon bbox to avoid loading whole items (which can cross the antimeridian).
         chunks={}, # Force lazy loading.
     )
+    geomad_ds = geomad_ds.drop_vars("count")
+    bands.remove('count')
 
     print(f"GeoMAD dataset loaded CRS (should be native): {geomad_ds.odc.crs.epsg}")
     geomad_ds = geomad_ds.squeeze().load()
     print(f"GeoMAD dataset shape: {geomad_ds.dims}")
 
-    # return geomad_ds # Debugging
-
     # Scale + indices
-    bands.remove('count')
     band_names_geomad = [b for b in bands if b.endswith('mad')]
     band_names_geomedian = [b for b in bands if b not in band_names_geomad]
 
