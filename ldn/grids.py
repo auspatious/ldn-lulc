@@ -82,7 +82,7 @@ def get_gridspec(
     # Prevent the antimeridian from coinciding with tile boundaries.
     gridspec_origin = XY(-20_000_000.0, -10_000_000.0)
 
-    side_in_meters = 90_000
+    side_in_meters = 96_000
     shape_pixels_y_x = (side_in_meters / resolution, side_in_meters / resolution)
 
     return GridSpec(
