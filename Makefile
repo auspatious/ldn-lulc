@@ -4,6 +4,10 @@ VERSION ?= 0.0.2
 DECIMATED ?= --decimated
 YEAR ?= 2024
 
+# Get grid tiles - all
+grid-get-tiles-all:
+	ldn grid get-grid-tiles --format="gdf" --grids="all" --overwrite
+
 # List countries in grids
 grid-list-countries-all:
 	ldn grid list-countries --grids="all"

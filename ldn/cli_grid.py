@@ -1,12 +1,23 @@
 import logging
-from typing import Literal
+import geopandas as gpd
+from typing import Annotated, Literal
 
 import typer
 from ldn.utils import ALL_COUNTRIES, NON_DEP_COUNTRIES
+from ldn.grids import get_grid_tiles
 from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
 
 cli_grid_app = typer.Typer()
 logger = logging.getLogger(__name__)
+
+
+@cli_grid_app.command("get-grid-tiles")
+def _get_grid_tiles(
+    format: Literal["list", "gdf"] = "list",
+    grids: Literal["all", "pacific", "non-pacific"] = "all",
+    overwrite: Annotated[bool, typer.Option()] = False,
+) -> gpd.GeoDataFrame | list[tuple[tuple[int, int], str]]:
+    return get_grid_tiles(format, grids, overwrite)
 
 
 @cli_grid_app.command("list-countries")
