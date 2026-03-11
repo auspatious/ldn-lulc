@@ -187,9 +187,9 @@ def random_sampling(da,
         all_samples,
         crs=crs,
         geometry=gpd.points_from_xy(x,y)).reset_index()
-
-    gdf = gdf.drop(['x', 'y'],axis=1)
     
+    gdf = gdf.drop(['latitude', 'longitude', 'time', 'spatial_ref'],axis=1)
+
     if out_fname is not None:
         gdf.to_file(out_fname)
     

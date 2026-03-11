@@ -221,7 +221,9 @@ ldn/tasks.json
 *.zarr
 *.tif
 *.tif.aux.xml
-notebooks/training_data/training_data*.geojson
-notebooks/training_data/training_data*.csv
+notebooks/training_data/*_samples.geojson
+notebooks/training_data/*_samples.csv
+notebooks/training_data/training_data_*.geojson
+notebooks/training_data/training_data_*.csv
 
 tasks.json
