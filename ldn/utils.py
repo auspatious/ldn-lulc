@@ -86,49 +86,14 @@ NON_DEP_COUNTRIES = {
 }
 
 
-# TODO: Put this in a more specific/appropriate location.
-# This function gets the Geomedian (scaled to floats), GeoMAD, elevation, and indices.
-# region_polygon_gdf is a GeoDataFrame of a single region multipolygon in WGS84.
-def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: str, year: str, catalog: Client) -> xr.Dataset:
-    assert len(region_polygon_gdf.geometry) == 1, "region_polygon_gdf must contain at one multipolygon"
+# TODO: Put these in a more specific/appropriate location than utils.
+def scale_offset_landsat(band):
+    nodata = (band == 0) | (band == 65535)
+    band = band * 0.0000275 + -0.2
+    band = band.clip(0, 1)
+    return band.where(~nodata, other=np.nan)
 
-    print(region_polygon_gdf.geometry[0].bounds)
-
-    geomad_items = search_sync(stac_geoparquet, bbox=list(region_polygon_gdf.total_bounds), datetime=year)
-
-    geomad_items = [Item.from_dict(doc) for doc in geomad_items]
-    print(f"Found {len(geomad_items)} GeoMAD items for this region and year")
-
-    bands = list(geomad_items[0].assets.keys())
-    print(f"Available bands: {bands}")
-
-    geomad_ds = load(
-        geomad_items,
-        # Region is in 4326 which is good for clipping, despite GeoMAD being in 3857 (for pacific region).
-        geopolygon=region_polygon_gdf.geometry[0], # Clip to the region polygon bbox to avoid loading whole items (which can cross the antimeridian).
-        chunks={}, # Force lazy loading.
-    )
-    geomad_ds = geomad_ds.drop_vars("count")
-    bands.remove('count')
-
-    print(f"GeoMAD dataset loaded CRS (should be native): {geomad_ds.odc.crs.epsg}")
-    geomad_ds = geomad_ds.squeeze().load()
-    print(f"GeoMAD dataset shape: {geomad_ds.dims}")
-
-    # Scale + indices
-    band_names_geomad = [b for b in bands if b.endswith('mad')]
-    band_names_geomedian = [b for b in bands if b not in band_names_geomad]
-
-    def scale_offset(band):
-        nodata = band == 0
-        band = band * 0.0000275 + -0.2
-        band = band.clip(0, 1)
-        return band.where(~nodata, other=np.nan)
-
-    for band in band_names_geomedian:
-        geomad_ds[band] = scale_offset(geomad_ds[band])
-
-    def make_indices(geomad: xr.Dataset) -> xr.Dataset:
+def make_indices(geomad: xr.Dataset) -> xr.Dataset:
         nir = geomad.nir08
         red = geomad.red
         green = geomad.green
@@ -146,6 +111,42 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
         geomad["bui"]   = ndbi - geomad["ndvi"]
         return geomad
 
+# This function gets the Geomedian (scaled to floats), GeoMAD, elevation, and indices.
+# region_polygon_gdf is a GeoDataFrame of a single region multipolygon in WGS84.
+def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: str, year: str, catalog: Client) -> xr.Dataset:
+    assert len(region_polygon_gdf.geometry) == 1, "region_polygon_gdf must contain at one multipolygon"
+
+    print(region_polygon_gdf.geometry[0].bounds)
+
+    geomad_items = search_sync(stac_geoparquet, bbox=list(region_polygon_gdf.total_bounds), datetime=year)
+
+    geomad_items = [Item.from_dict(doc) for doc in geomad_items]
+    print(f"Found {len(geomad_items)} GeoMAD items for this region and year")
+
+    bands = [b for b in geomad_items[0].assets.keys() if b != "count"]
+    print(f"Available bands (excluding count): {bands}")
+
+    geomad_ds = load(
+        geomad_items,
+        # Region is in 4326 which is good for clipping, despite GeoMAD being in 3857 (for pacific region).
+        geopolygon=region_polygon_gdf.geometry[0], # Filters but doesn't clip to the region polygon.
+        chunks={}, # Force lazy loading.
+        bands=bands, # Only load the bands we need (exclude count).
+    )
+
+    print(f"GeoMAD dataset loaded CRS (should be native): {geomad_ds.odc.crs.epsg}")
+    print(f"GeoMAD bands loaded: {list(geomad_ds.data_vars)}")
+    geomad_ds = geomad_ds.squeeze().load()
+    print(f"GeoMAD dataset shape: {geomad_ds.dims}")
+
+    # Scale + indices
+    band_names_geomad = [b for b in bands if b.endswith('mad')]
+    band_names_geomedian = [b for b in bands if b not in band_names_geomad]
+
+    for band in band_names_geomedian:
+        # Replace 0 values with NaN.
+        geomad_ds[band] = scale_offset_landsat(geomad_ds[band])
+
     geomad_ds = make_indices(geomad_ds)
 
     # Now for DEM data do per bbox search and load to avoid loading the whole world for Fiji.
@@ -155,7 +156,7 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
         # datetime="2021"
     )
     dem_items = list(dem_items.items())
-    print(f"Found {len(dem_items)} unique DEM items for this AOI")
+    print(f"Found {len(dem_items)} DEM items for this AOI")
 
     dem = load(
         dem_items,
@@ -179,4 +180,11 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
     # Merge GeoMAD (10m native) and DEM (30m, resampled to 10m GeoMAD grid) on x, y, time.
     dem_ds = dem_ds.assign_coords(time=geomad_ds.time) # Add GeoMAD time coordinate to DEM dataset so they can be merged.
 
-    return xr.merge([geomad_ds, dem_ds])
+    merged = xr.merge([geomad_ds, dem_ds])
+
+    # Write NaN as nodata for all bands before clipping (clip fills outside pixels with 0.0 otherwise)
+    for var in merged.data_vars:
+        merged[var] = merged[var].rio.write_nodata(float("nan"))
+
+    # Clip.
+    return merged.rio.clip(region_polygon_gdf.to_crs(merged.odc.crs).geometry, merged.rio.crs, drop=True)
