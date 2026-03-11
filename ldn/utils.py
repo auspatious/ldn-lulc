@@ -9,6 +9,8 @@ import numpy as np
 from planetary_computer import sign_url
 from geopandas import GeoDataFrame
 from scipy.ndimage import sobel
+from shapely.geometry import box
+from ldn.grids import get_gadm
 
 
 
@@ -188,3 +190,26 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
 
     # Clip.
     return merged.rio.clip(region_polygon_gdf.to_crs(merged.odc.crs).geometry, merged.rio.crs, drop=True)
+
+
+def get_buffered_country(country_of_interest: dict, wgs84: str, analysis_crs: str) -> GeoDataFrame:
+    buffer_m  = 100
+
+    country_gadm = get_gadm(countries=country_of_interest, overwrite=True)
+
+    country_name = list(country_of_interest.keys())[0]
+
+    # This is just for Fiji. We are subsetting it to about half the country bounds so it doesn't cross the antimeridian.
+    # Also filter to where geomad data has been processed for now.
+    if country_name in ["Fiji"]: # TODO: Support other antimeridian countries: "Tuvalu", "Kiribati"
+        country_gadm = country_gadm.clip(box(177.4009565, -18.432913, 178.1764803, -17.6795452)) # Small box for developing. Just within 1 GeoMAD tile.
+        # country_gadm = country_gadm.clip(box(0, -22, 179.5, -13)) # Big box for production
+    elif country_name in ["Cape Verde"]:
+        country_gadm = country_gadm.clip(box(-23.030888787646717, 15.90108906603784, -22.58701075077235, 16.29305080107241)) # Box for Cape Verde to avoid loading all of West Africa. Adjusted to include buffer.
+
+    # Buffer country polygon to include coastal zones.
+    # Fiji and Singapore are both a single multipolygon from GADM.
+    return GeoDataFrame(
+        geometry=country_gadm.to_crs(analysis_crs).buffer(buffer_m).to_crs(wgs84),
+        crs=wgs84
+    )
