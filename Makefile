@@ -95,7 +95,17 @@ geomad-pacific-test-kiribati-atolls:
 geomad-singapore:
 	ldn geomad \
 	--tile-id 333_113 \
-	--year 2000 \
+	--year 2020 \
+	--version $(VERSION) \
+	--overwrite \
+	--all-bands \
+	$(DECIMATED) \
+	--region non-pacific
+
+geomad-singapore-2:
+	ldn geomad \
+	--tile-id 333_112 \
+	--year 2020 \
 	--version $(VERSION) \
 	--overwrite \
 	--all-bands \
@@ -136,3 +146,12 @@ geomad-2000-2025:
 				--overwrite; \
 		done; \
 	done
+
+
+
+
+# End goal: per tile and year, predict LULC.
+# predict-lulc-singapore-2020:
+# 	ldn predict \
+# 	--tile-id 333_112 \
+# 	--year 2020
