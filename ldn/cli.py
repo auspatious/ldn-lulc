@@ -1,4 +1,5 @@
 import logging
+import warnings
 import sys
 
 import boto3
@@ -12,6 +13,7 @@ from ldn.geomad import AwsStacTask as Task
 from dep_tools.writers import AwsDsCogWriter
 from odc.stac import configure_s3_access
 from typing import Literal
+from rasterio.errors import NotGeoreferencedWarning
 
 import json
 
@@ -36,20 +38,19 @@ from ldn.grids import get_gridspec
 app = typer.Typer()
 
 # All files will inherit this logging configuration so we only write once
+# Set the default logging level to ERROR to avoid info logs from libraries
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.ERROR,
     format="%(asctime)s | %(levelname)s | %(module)s | %(name)s:%(funcName)s:%(lineno)d - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     stream=sys.stderr,
+    force=True,
 )
-# # Set the default logging level to ERROR to avoid too much info from other libraries, but set our own logger to INFO
-# logging.basicConfig(
-#     level=logging.ERROR,
-#     format="%(asctime)s | %(levelname)s | %(module)s | %(name)s:%(funcName)s:%(lineno)d - %(message)s",
-#     datefmt="%Y-%m-%d %H:%M:%S",
-#     stream=sys.stderr,
-# )
-# logging.getLogger("ldn").setLevel(logging.INFO)
+# Set our own logger level to INFO
+logging.getLogger("ldn").setLevel(logging.INFO)
+# Suppress warnings from libraries to avoid cluttering the output
+warnings.filterwarnings("ignore", category=FutureWarning) # Should we update the code to avoid these, rather than ignore them?
+warnings.filterwarnings("ignore", category=NotGeoreferencedWarning) # This seems like something we should fix, not ignore.
 
 # Add the subcommands
 app.add_typer(
@@ -280,6 +281,7 @@ def geomad(
             n_workers=n_workers,
             threads_per_worker=threads_per_worker,
             memory_limit=memory_limit,
+            silence_logs=logging.ERROR,
         ):
             paths = Task(
                 itempath=itempath,
