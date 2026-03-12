@@ -88,14 +88,32 @@ NON_DEP_COUNTRIES = {
 }
 
 
-# TODO: Put these in a more specific/appropriate location than utils.
 def scale_offset_landsat(band):
+    """Scale Landsat reflectance values and mask nodata.
+
+    Args:
+        band: Input xarray band with Landsat-style integer reflectance values.
+
+    Returns:
+        A scaled band clipped to [0, 1] with nodata values replaced by NaN.
+    """
     nodata = (band == 0) | (band == 65535)
     band = band * 0.0000275 + -0.2
     band = band.clip(0, 1)
     return band.where(~nodata, other=np.nan)
 
+
 def make_indices(geomad: xr.Dataset) -> xr.Dataset:
+        """Compute spectral indices from scaled geomedian bands and append them to a GeoMAD dataset.
+
+        Args:
+            geomad: GeoMAD dataset containing at least `nir08`, `red`, `green`,
+                `blue`, `swir16`, and `swir22` bands.
+
+        Returns:
+            The input dataset with additional index bands (`ndvi`, `ndwi`,
+            `mndwi`, `ndti`, `bsi`, `mbi`, `baei`, and `bui`).
+        """
         nir = geomad.nir08
         red = geomad.red
         green = geomad.green
@@ -113,9 +131,27 @@ def make_indices(geomad: xr.Dataset) -> xr.Dataset:
         geomad["bui"]   = ndbi - geomad["ndvi"]
         return geomad
 
-# This function gets the Geomedian (scaled to floats), GeoMAD, elevation, and indices.
-# region_polygon_gdf is a GeoDataFrame of a single region multipolygon in WGS84.
+
 def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: str, year: str, catalog: Client) -> xr.Dataset:
+    """Load Geomedian, GeoMAD, and DEM data for a region and compute terrain/spectral features.
+
+    The function loads GeoMAD bands for a regional AOI and year, applies
+    Landsat scaling to geomedian bands, derives spectral indices, loads Copernicus
+    DEM data aligned to the GeoMAD grid, computes slope and aspect, and clips the
+    merged dataset to the region geometry.
+
+    Args:
+        region_polygon_gdf: A GeoDataFrame containing exactly one polygon or
+            multipolygon in WGS84 coordinates.
+        stac_geoparquet: Path or URL to the STAC geoparquet source used by
+            `rustac.search_sync` for GeoMAD item lookup.
+        year: Temporal filter used for GeoMAD item search.
+        catalog: STAC client used to query DEM items.
+
+    Returns:
+        An xarray Dataset containing GeoMAD bands, derived spectral indices,
+        elevation, slope, and aspect clipped to the region geometry.
+    """
     assert len(region_polygon_gdf.geometry) == 1, "region_polygon_gdf must contain at one multipolygon"
 
     print(region_polygon_gdf.geometry[0].bounds)
@@ -193,6 +229,21 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
 
 
 def get_buffered_country(country_of_interest: dict, wgs84: str, analysis_crs: str) -> GeoDataFrame:
+    """Fetch and buffer a country geometry for analysis.
+
+    Retrieves country geometry from GADM, applies country-specific clipping for
+    known edge cases (for example antimeridian handling for Fiji), buffers in
+    the analysis CRS, and returns the result in WGS84.
+
+    Args:
+        country_of_interest: Mapping of country name to country code (single-item
+            dictionary expected).
+        wgs84: CRS string for output coordinates (EPSG:4326).
+        analysis_crs: Projected CRS string used for buffering in meters.
+
+    Returns:
+        A GeoDataFrame containing buffered country geometry in `wgs84`.
+    """
     buffer_m  = 100
 
     country_gadm = get_gadm(countries=country_of_interest, overwrite=True)

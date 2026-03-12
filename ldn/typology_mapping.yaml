@@ -1,4 +1,4 @@
-# Using YAML to preserve comments
+# Using YAML rather than JSON to preserve comments
 
 # Our level 1 classes
 level1_classes:
