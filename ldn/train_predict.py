@@ -182,7 +182,7 @@ def get_buffered_country(country_of_interest: dict, wgs84: str, analysis_crs: st
         stac_geoparquet = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ci_ls_geomad/0-0-2/ci_ls_geomad.parquet"
     geomad_items = search_sync(stac_geoparquet, bbox=list(country_gadm.total_bounds), datetime="2020")
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
-    print(f"Found {len(geomad_items)} GeoMAD items for this country in 2020. Clipping country to  the first item while developing.")
+    print(f"Found {len(geomad_items)} GeoMAD items for this country in 2020. Clipping country to the first item while developing.")
     geomad_bbox = geomad_items[0].bbox
     country_gadm = country_gadm.clip(box(*geomad_bbox))
 
