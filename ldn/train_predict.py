@@ -175,13 +175,16 @@ def get_buffered_country(country_of_interest: dict, wgs84: str, analysis_crs: st
 
     country_name = list(country_of_interest.keys())[0]
 
-    # This is just for Fiji. We are subsetting it to about half the country bounds so it doesn't cross the antimeridian.
-    # Also filter to where geomad data has been processed for now.
-    if country_name in ["Fiji"]: # TODO: Support other antimeridian countries: "Tuvalu", "Kiribati"
-        country_gadm = country_gadm.clip(box(177.4009565, -18.432913, 178.1764803, -17.6795452)) # Small box for developing. Just within 1 GeoMAD tile.
-        # country_gadm = country_gadm.clip(box(0, -22, 179.5, -13)) # Big box for production
-    elif country_name in ["Cape Verde"]:
-        country_gadm = country_gadm.clip(box(-23.030888787646717, 15.90108906603784, -22.58701075077235, 16.29305080107241)) # Box for Cape Verde to avoid loading all of West Africa. Adjusted to include buffer.
+    # Temporarily clip country geoms to GeoMAD processed areas because we don't have that much processed yet.
+    # TODO: Remove this step once GeoMAD has been run for all countries. 
+    stac_geoparquet = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet"
+    if country_name == "Singapore":
+        stac_geoparquet = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ci_ls_geomad/0-0-2/ci_ls_geomad.parquet"
+    geomad_items = search_sync(stac_geoparquet, bbox=list(country_gadm.total_bounds), datetime="2020")
+    geomad_items = [Item.from_dict(doc) for doc in geomad_items]
+    print(f"Found {len(geomad_items)} GeoMAD items for this country in 2020. Only using the first one while developing.")
+    geomad_bbox = geomad_items[0].bbox
+    country_gadm = country_gadm.clip(box(*geomad_bbox))
 
     # Buffer country polygon to include coastal zones.
     # Fiji and Singapore are both a single multipolygon from GADM.
