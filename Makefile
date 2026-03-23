@@ -148,13 +148,6 @@ geomad-2000-2025:
 	done
 
 
-create-training-data-singapore-2020:
-	ldn train-predict create-training-data \
-	--tile-id 333_112
-
-train-model:
-	ldn train-predict train-model
-
 # Visualisation
 make-mosaic-all-2020:
 	ldn make-mosaics \
@@ -169,7 +162,15 @@ make-mosaic-prediction-2020:
 	--dataset prediction \
 	--years "2020"
 
-# Prediction
+
+###### Train and Predict
+
+# 1. Training data is created in notebooks/training_data/0_Generate_Training_Points.ipynb.
+
+# 2. Train a model with the training data made in the notebook above.
+train-model:
+	ldn train-predict train-model
+# 3. Predict LULC for a tile and year.
 predict-lulc-singapore-2020:
 	ldn train-predict predict \
 	--tile-id 333_112 \
