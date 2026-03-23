@@ -1,3 +1,4 @@
+import logging
 import xarray as xr
 from odc.stac import load
 from pystac import Item
@@ -10,6 +11,7 @@ from scipy.ndimage import sobel
 from shapely.geometry import box
 from ldn.grids import get_gadm
 
+logger = logging.getLogger(__name__)
 
 def scale_offset_landsat(band):
     """Scale Landsat reflectance values and mask nodata.
@@ -77,15 +79,15 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
     """
     assert len(region_polygon_gdf.geometry) == 1, "region_polygon_gdf must contain at one multipolygon"
 
-    print(region_polygon_gdf.geometry[0].bounds)
+    logger.info(region_polygon_gdf.geometry[0].bounds)
 
     geomad_items = search_sync(stac_geoparquet, bbox=list(region_polygon_gdf.total_bounds), datetime=year)
 
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
-    print(f"Found {len(geomad_items)} GeoMAD items for this region and year")
+    logger.info(f"Found {len(geomad_items)} GeoMAD items for this region and year")
 
     bands = [b for b in geomad_items[0].assets.keys() if b != "count"]
-    print(f"Available bands (excluding count): {bands}")
+    logger.info(f"Available bands (excluding count): {bands}")
 
     geomad_ds = load(
         geomad_items,
@@ -95,10 +97,10 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
         bands=bands, # Only load the bands we need (exclude count).
     )
 
-    print(f"GeoMAD dataset loaded CRS (should be native): {geomad_ds.odc.crs.epsg}")
-    print(f"GeoMAD bands loaded: {list(geomad_ds.data_vars)}")
+    logger.info(f"GeoMAD dataset loaded CRS (should be native): {geomad_ds.odc.crs.epsg}")
+    logger.info(f"GeoMAD bands loaded: {list(geomad_ds.data_vars)}")
     geomad_ds = geomad_ds.squeeze().load()
-    print(f"GeoMAD dataset shape: {geomad_ds.dims}")
+    logger.info(f"GeoMAD dataset shape: {geomad_ds.dims}")
 
     # Scale + indices
     band_names_geomad = [b for b in bands if b.endswith('mad')]
@@ -117,7 +119,7 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
         # datetime="2021"
     )
     dem_items = list(dem_items.items())
-    print(f"Found {len(dem_items)} DEM items for this AOI")
+    logger.info(f"Found {len(dem_items)} DEM items for this AOI")
 
     dem = load(
         dem_items,

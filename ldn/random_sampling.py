@@ -1,7 +1,11 @@
 # Forked from https://github.com/frontiersi/FAO_LC_workshop_Rwanda/blob/main/random_sampling.py
+import logging
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
+
 def random_sampling(da,
                     n,
                     min_sample_n=5,
@@ -76,7 +80,7 @@ def random_sampling(da,
                             'n_available':df[class_attr].value_counts(normalize=False),
                             'class':df[class_attr].value_counts(normalize=True).keys()
                          })
-    print(class_ratio)
+    logger.info(class_ratio)
     if sampling == 'stratified_random':
         for _class in class_ratio['class']:
             # Use relative proportions of classes to sample df
@@ -85,10 +89,10 @@ def random_sampling(da,
             if n_available>=max([min_sample_n, no_of_points]):
                 no_of_points = max([min_sample_n, no_of_points])
                 # Random sample each class
-                print('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + 'locations')
+                logger.info('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + 'locations')
             else:
                 no_of_points=n_available
-                print('Class '+ str(_class)+ ': not enough pixels as requested, sampling at all '+str(int(no_of_points))+' locations')
+                logger.info('Class '+ str(_class)+ ': not enough pixels as requested, sampling at all '+str(int(no_of_points))+' locations')
             sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
             samples.append(sample_loc)   
 
@@ -101,27 +105,27 @@ def random_sampling(da,
             n_available=class_ratio[class_ratio['class']==_class]['n_available'].values[0]
             if n_available>=no_of_points:
                 sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
-                print('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + ' locations')
+                logger.info('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + ' locations')
             else:
                 no_of_points=n_available
-                print('Class '+ str(_class)+ ': not enough pixels as requested, sampling at all '+str(int(no_of_points))+' locations')
+                logger.info('Class '+ str(_class)+ ': not enough pixels as requested, sampling at all '+str(int(no_of_points))+' locations')
             sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
             samples.append(sample_loc)   
             
 #             # Random sample each classes
 #             try:
 #                 sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
-#                 print('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + ' locations')
+#                 logger.info('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + ' locations')
 #                 samples.append(sample_loc)
             
 #             except ValueError:
-#                         print('Requested more sample points than population of pixels for class '+ str(_class)+', skipping')
+#                         logger.info('Requested more sample points than population of pixels for class '+ str(_class)+', skipping')
 #                         pass
     
     if sampling == 'random':
         no_of_points = n
         # Random sample entire df
-        print('Randomly sampling dataArray at '+ str(round(no_of_points)) + ' locations')
+        logger.info('Randomly sampling dataArray at '+ str(round(no_of_points)) + ' locations')
         sample_loc = df.dropna().sample(n=int(round(no_of_points)))
         samples.append(sample_loc)
     
@@ -141,20 +145,20 @@ def random_sampling(da,
                     no_of_points = manual_class_ratios.get(str(_class))
                     n_available=class_ratio[class_ratio['class']==_class]['n_available'].values[0]
                     if n_available>=no_of_points:
-                        print('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + ' locations')
+                        logger.info('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + ' locations')
                     else:
                         no_of_points=n_available
-                        print('Class '+ str(_class)+ ': not enough pixels as requested, sampling at all '+str(int(no_of_points))+' locations')
+                        logger.info('Class '+ str(_class)+ ': not enough pixels as requested, sampling at all '+str(int(no_of_points))+' locations')
                     sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
                     samples.append(sample_loc)  
                     
 #                     try:
 #                         sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
-#                         print('Class '+ str(_class)+ ': sampled at '+ str(round(no_of_points)) + ' locations')
+#                         logger.info('Class '+ str(_class)+ ': sampled at '+ str(round(no_of_points)) + ' locations')
 #                         samples.append(sample_loc)
                         
 #                     except ValueError:
-#                         print('Requested more sample points than population of pixels for class '+ str(_class)+', skipping')
+#                         logger.info('Requested more sample points than population of pixels for class '+ str(_class)+', skipping')
 #                         pass
 
             else:
