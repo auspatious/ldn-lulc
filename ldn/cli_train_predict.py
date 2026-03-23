@@ -42,5 +42,11 @@ def _predict(
     ) -> None:
     if int(year) < 2000 or int(year) > 2024:
         raise ValueError("Year must be between 2000 and 2024.")
+    # Steps:
+    # 1. Load geomad and dem data for the tile and year.
+    # 2. Load model for region and version.
+    # 3. Predict LULC for tile and year.
+    # 4. Write predicted LULC as COG to S3.
+    # 5. Update STAC-Geoparquet in S3 with new metadata.
     
     raise NotImplementedError("This command is not implemented yet.")
