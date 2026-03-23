@@ -36,27 +36,23 @@ from ldn.cli_grid import cli_grid_app
 from ldn.grids import get_gridspec
 
 app = typer.Typer()
+logger = logging.getLogger(__name__)
 
 # All files will inherit this logging configuration so we only write once
-# Set the default logging level to ERROR to avoid info logs from libraries
+# Set the default logging level to WARNING to avoid info logs from libraries
 logging.basicConfig(
-    level=logging.ERROR,
+    level=logging.WARNING,  # Package logging level.
     format="%(asctime)s | %(levelname)s | %(module)s | %(name)s:%(funcName)s:%(lineno)d - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     stream=sys.stderr,
     force=True,
 )
-# Set our own logger level to INFO
-logging.getLogger("ldn").setLevel(logging.INFO)
-# Suppress warnings from libraries to avoid cluttering the output
-warnings.filterwarnings("ignore", category=FutureWarning) # Should we update the code to avoid these, rather than ignore them?
-warnings.filterwarnings("ignore", category=NotGeoreferencedWarning) # This seems like something we should fix, not ignore.
+logging.getLogger("ldn").setLevel(logging.INFO)  # Our logging level.
 
 # Add the subcommands
 app.add_typer(
     cli_grid_app, name="grid", help="Commands for working with the ODC Geo Grid."
 )
-
 
 # Work for version and --version
 @app.command()
@@ -79,7 +75,7 @@ def print_tasks(
     grids: Annotated[Literal["all", "pacific", "non-pacific"], typer.Option()] = "all",
 ) -> None:
     """Print all tasks for given years for either all grids, or just the Pacific or non-Pacific grid."""
-    logging.info(f"Generating tasks for years: {years} and grids: {grids}")
+    logger.info(f"Generating tasks for years: {years} and grids: {grids}")
 
     years_list = []
     if "," in years:
@@ -95,7 +91,7 @@ def print_tasks(
 
     tiles = get_grid_tiles(format="list", grids=grids, overwrite=False)
 
-    logging.info(
+    logger.info(
         f"Number of tasks: {len(years_list) * len(tiles)} (years: {len(years_list)}, tiles: {len(tiles)})"
     )
 
@@ -281,7 +277,7 @@ def geomad(
             n_workers=n_workers,
             threads_per_worker=threads_per_worker,
             memory_limit=memory_limit,
-            silence_logs=logging.ERROR,
+            # silence_logs=logger.ERROR,
         ):
             paths = Task(
                 itempath=itempath,

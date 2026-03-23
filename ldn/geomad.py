@@ -1,5 +1,6 @@
 from datetime import datetime
 from logging import Logger, getLogger
+import logging
 from typing import Iterable, Tuple
 
 from datacube_compute import geomedian_with_mads
@@ -15,6 +16,9 @@ from geopandas import GeoDataFrame
 import numpy as np
 from odc.algo import erase_bad, mask_cleanup
 from xarray import DataArray, Dataset
+
+logger = logging.getLogger(__name__)
+
 
 TaskID = str
 
