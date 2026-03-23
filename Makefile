@@ -1,6 +1,6 @@
 # Here we will store commands for working with the grid, GeoMAD, training data, and ML models.
 
-VERSION ?= 0.0.2
+VERSION ?= 0-0-1
 DECIMATED ?= --decimated
 YEAR ?= 2024
 
@@ -148,14 +148,12 @@ geomad-2000-2025:
 	done
 
 
+create-training-data-singapore-2020:
+	ldn train-predict create-training-data \
+	--tile-id 333_112
 
-
-# End goal: per tile and year, predict LULC.
-# predict-lulc-singapore-2020:
-# 	ldn predict \
-# 	--tile-id 333_112 \
-# 	--year 2020
-
+train-model:
+	ldn train-predict train-model
 
 # Visualisation
 make-mosaic-all-2020:
@@ -170,3 +168,11 @@ make-mosaic-prediction-2020:
 	ldn make-mosaics \
 	--dataset prediction \
 	--years "2020"
+
+# Prediction
+predict-lulc-singapore-2020:
+	ldn train-predict predict \
+	--tile-id 333_112 \
+	--year 2020 \
+	--version 0-0-1 \
+	--region non-pacific \
