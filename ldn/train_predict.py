@@ -184,6 +184,9 @@ def get_buffered_country(country_of_interest: dict, wgs84: str, analysis_crs: st
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
     print(f"Found {len(geomad_items)} GeoMAD items for this country in 2020. Clipping country to the first item while developing.")
     geomad_bbox = geomad_items[0].bbox
+    # For Fiji 2nd tile, use a different item.
+    # geomad_bbox = geomad_items[1].bbox # TODO: Fix this bbox. Bounds are -179.999995, -16.82498, 180.0, -16.079684.
+
     country_gadm = country_gadm.clip(box(*geomad_bbox))
 
     # Buffer country polygon to include coastal zones.
