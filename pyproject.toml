@@ -31,6 +31,11 @@ dependencies = [
     "xarray (>=2025.12.0,<2026.0.0)",
     "zarr (>=3.1.5,<4.0.0)",
     "cogeo-mosaic (>=9.1.0,<10.0.0)",
+    "fastapi (>=0.135.2,<0.136.0)",
+    "uvicorn (>=0.42.0,<0.43.0)",
+    "titiler-mosaic (>=2.0.0,<3.0.0)",
+    "titiler-core (>=2.0.0,<3.0.0)",
+    "titiler-extensions (>=2.0.0,<3.0.0)",
 ]
 
 [project.scripts]
