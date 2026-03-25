@@ -1,6 +1,5 @@
 import logging
 import sys
-import warnings
 
 import boto3
 from dep_tools.namers import S3ItemPath
@@ -12,7 +11,6 @@ from dep_tools.stac_utils import StacCreator
 from ldn.geomad import AwsStacTask as Task
 from dep_tools.writers import AwsDsCogWriter
 from odc.stac import configure_s3_access
-from rasterio.errors import NotGeoreferencedWarning
 from typing import Literal
 
 import json
@@ -36,48 +34,19 @@ from ldn.cli_grid import cli_grid_app
 from ldn.grids import get_gridspec
 
 app = typer.Typer()
-
-# Configure logging so CLI output shows only ldn logs by default.
-LOG_FORMAT = "%(asctime)s | %(levelname)s | %(module)s | %(name)s:%(funcName)s:%(lineno)d - %(message)s"
-
-root_logger = logging.getLogger()
-root_logger.handlers.clear()
-root_logger.setLevel(logging.WARNING)
-
-ldn_handler = logging.StreamHandler(sys.stderr)
-ldn_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S"))
-
-logger = logging.getLogger("ldn")
-logger.handlers.clear()
-logger.addHandler(ldn_handler)
-logger.setLevel(logging.INFO)
-logger.propagate = False
-
 logger = logging.getLogger(__name__)
 
-# Reduce known noisy third-party warnings while keeping actionable logs visible.
-warnings.filterwarnings(
-    "ignore",
-    category=FutureWarning,
-    module=r"odc\.algo\._masking",
-    message=r"`binary_dilation` is deprecated since version 0\.26.*",
+# All files will inherit this logging configuration so we only write once
+# Set the default logging level to WARNING to avoid info logs from libraries
+logging.basicConfig(
+    level=logging.WARNING,  # Package logging level.
+    format="%(asctime)s | %(levelname)s | %(module)s | %(name)s:%(funcName)s:%(lineno)d - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stderr,
+    force=True,
 )
-warnings.filterwarnings(
-    "ignore",
-    category=FutureWarning,
-    module=r"odc\.algo\._masking",
-    message=r"`binary_erosion` is deprecated since version 0\.26.*",
-)
-warnings.filterwarnings(
-    "ignore",
-    category=NotGeoreferencedWarning,
-    module=r"rasterio\.warp",
-)
-logging.getLogger("rasterio._err").setLevel(logging.ERROR)
-logging.getLogger("dask").setLevel(logging.ERROR)
-logging.getLogger("distributed").setLevel(logging.ERROR)
-logging.getLogger("distributed.shuffle").setLevel(logging.ERROR)
-logging.getLogger("distributed.shuffle._scheduler_plugin").setLevel(logging.ERROR)
+logging.getLogger("ldn").setLevel(logging.INFO)  # Our logging level.
+
 
 # Add the subcommands
 app.add_typer(

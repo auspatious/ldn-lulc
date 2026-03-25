@@ -1,5 +1,5 @@
 from datetime import datetime
-from logging import Logger, getLogger
+import logging
 from typing import Iterable, Tuple
 
 from datacube_compute import geomedian_with_mads
@@ -16,6 +16,7 @@ import numpy as np
 from odc.algo import erase_bad, mask_cleanup
 from xarray import DataArray, Dataset
 
+logger = logging.getLogger(__name__)
 TaskID = str
 
 USGS_CATALOG = "https://earth-search.aws.element84.com/v1"
@@ -153,7 +154,7 @@ class AwsStacTask(AreaTask):
         loader: StacLoader,
         processor: Processor,
         post_processor: Processor | None = None,
-        logger: Logger = getLogger(),
+        logger: logging.Logger = logger,
         **kwargs,
     ):
         writer = kwargs.pop("writer", AwsDsCogWriter(itempath))
