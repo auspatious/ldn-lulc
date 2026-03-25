@@ -226,4 +226,7 @@ notebooks/training_data/*_samples.csv
 notebooks/training_data/training_data_*.geojson
 notebooks/training_data/training_data_*.csv
 
+notebooks/training_data/samples_*.geojson
+notebooks/training_data/samples_*.csv
+
 tasks.json
