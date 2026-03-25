@@ -11,11 +11,10 @@ Run:
 Map viewer (RGB):
     http://localhost:8081/mosaic/WebMercatorQuad/map.html?url=2020&assets=red&assets=green&assets=blue&rescale=5000,12000&rescale=5000,12000&rescale=5000,12000
 
-Single band with colormap:
+Single band with colormap (we will use this functionality for the predicted LULC COGs):
     http://localhost:8081/mosaic/WebMercatorQuad/map.html?url=2020&assets=red&rescale=5000,12000&colormap_name=reds
 """
 
-# TODO: Also support single-band e.g. predicted values.
 
 import logging
 import os
@@ -46,9 +45,7 @@ from titiler.mosaic.factory import MosaicTilerFactory
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
 # GDAL / rasterio environment — speeds up remote COG access significantly
-# ---------------------------------------------------------------------------
 
 os.environ.update(
     {
@@ -71,10 +68,8 @@ os.environ.update(
     }
 )
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 
+# Configuration
 STAC_GEOPARQUET_URL = (
     "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com"
     "/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet"
@@ -82,10 +77,8 @@ STAC_GEOPARQUET_URL = (
 MOSAIC_MINZOOM = 5
 MOSAIC_MAXZOOM = 14
 
-# ---------------------------------------------------------------------------
-# Build mosaic JSON files per year at startup
-# ---------------------------------------------------------------------------
 
+# Build mosaic JSON files per year at startup
 MOSAIC_DIR = Path(tempfile.mkdtemp(prefix="ldn_mosaics_"))
 MOSAIC_PATHS: dict[str, Path] = {}
 
@@ -151,11 +144,8 @@ for _year in [str(y) for y in range(2020, 2021)]: # TODO: Just for developing fa
 logger.info("Available years: %s", sorted(MOSAIC_PATHS.keys()))
 
 
-# ---------------------------------------------------------------------------
+
 # Custom path dependency — resolve "2020" → mosaic file path
-# ---------------------------------------------------------------------------
-
-
 def MosaicPathParams(
     url: Annotated[
         str,
@@ -181,10 +171,8 @@ def MosaicPathParams(
     return url
 
 
-# ---------------------------------------------------------------------------
-# FastAPI app
-# ---------------------------------------------------------------------------
 
+# FastAPI app
 app = FastAPI(
     title="LDN LULC Mosaic Viewer",
     description=(
@@ -203,10 +191,8 @@ app.add_middleware(
 )
 
 
-# ---------------------------------------------------------------------------
-# Server-side tile cache + Cache-Control headers for browser caching
-# ---------------------------------------------------------------------------
 
+# Server-side tile cache + Cache-Control headers for browser caching
 _TILE_CACHE: OrderedDict[str, tuple[bytes, str, dict]] = OrderedDict()
 _TILE_CACHE_MAX = 2048  # max cached tiles (~2k × ~50KB ≈ 100 MB)
 
@@ -254,14 +240,14 @@ class TileCacheMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(TileCacheMiddleware)
 
-# ---------------------------------------------------------------------------
+
 # /mosaic — STAC-backed RGB mosaic
 #
 # MosaicTilerFactory with STACReader reads each STAC item's per-band
 # COGs and composites them into RGB tiles.
 #
 # The built-in map.html viewer is included by default.
-# ---------------------------------------------------------------------------
+
 
 GDAL_ENV = {
     "GDAL_HTTP_MULTIPLEX": "YES",
@@ -287,11 +273,8 @@ add_exception_handlers(app, DEFAULT_STATUS_CODES)
 add_exception_handlers(app, MOSAIC_STATUS_CODES)
 
 
-# ---------------------------------------------------------------------------
+
 # Convenience endpoints
-# ---------------------------------------------------------------------------
-
-
 @app.get("/years", tags=["Info"])
 def list_years():
     """List available years."""
