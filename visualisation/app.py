@@ -12,8 +12,7 @@ Map viewer GeoMedian RGB:
     http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=geomad&year=2020&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500
 
 Predicted LULC:
-    # TODO: Update colormap to custom class values.
-    http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lucl&colormap_name=customTODO
+    http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lucl&colormap_name=lulc
 """
 
 
@@ -35,6 +34,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from pystac import ItemCollection
 from rio_tiler.io import STACReader
+from rio_tiler.colormap import cmap
 from rustac import search_sync
 from shapely.geometry import mapping, shape
 
@@ -45,6 +45,18 @@ from titiler.mosaic.factory import MosaicTilerFactory
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+LUCL_COLORMAP = {
+    0: (255, 255, 255, 0),    # No data    — white, transparent
+    1: (0,   100, 0,   255),  # Tree Cover — darkgreen
+    2: (50,  205, 50,  255),  # Grassland  — limegreen
+    3: (0,   255, 0,   255),  # Cropland   — lime
+    4: (64,  224, 208, 255),  # Wetland    — turquoise
+    5: (128, 128, 128, 255),  # Built-up   — gray
+    6: (0,   0,   255, 255),  # Water      — blue
+    7: (255, 255, 0,   255),  # Other      — yellow
+}
+cmap.register({"lulc": LUCL_COLORMAP})
 
 # GDAL / rasterio environment — speeds up remote COG access significantly
 os.environ.update(
@@ -87,9 +99,10 @@ MOSAIC_DIR = Path(tempfile.mkdtemp(prefix="ldn_mosaics"))
 MOSAIC_PATHS_GEOMAD: dict[str, Path] = {}
 MOSAIC_PATHS_PREDICTION: dict[str, Path] = {}
 
-datasets = [("geomad", STAC_GEOPARQUET_URL_GEOMAD, MOSAIC_PATHS_GEOMAD),
-            # ("prediction", STAC_GEOPARQUET_URL_PREDICTION, MOSAIC_PATHS_PREDICTION) # Commented until this dataset is ready.
-            ]
+datasets = [
+    ("prediction", STAC_GEOPARQUET_URL_PREDICTION, MOSAIC_PATHS_PREDICTION),
+    ("geomad", STAC_GEOPARQUET_URL_GEOMAD, MOSAIC_PATHS_GEOMAD),
+]
 
 
 def _stac_self_link(feature: dict) -> str:
@@ -145,7 +158,7 @@ def build_mosaic_for_year(dataset_name: str, year: str, stac_geoparquet_url: str
 
 # Pre-build mosaics for all years in the dataset
 for (dataset_name, stac_geoparquet_url, mosaic_paths) in datasets:
-  logger.info(f"Pre-building mosaics for '{dataset_name}' from '{stac_geoparquet_url}'")
+  logger.info(f"Pre-building mosaics for '{dataset_name}' dataset.")
   # for _year in [str(y) for y in range(2000, 2025)]: # TODO: For prod reenable this.
   for _year in [str(y) for y in range(2020, 2021)]: # TODO: Just for developing faster.
       mosaic_paths[_year] = build_mosaic_for_year(dataset_name, _year, stac_geoparquet_url)
@@ -263,7 +276,7 @@ GDAL_ENV = {
 }
 
 mosaic_factory = MosaicTilerFactory(
-    backend=MosaicBackend,
+    backend=MosaicBackend, # type: ignore
     dataset_reader=STACReader,
     path_dependency=MosaicPathParams,
     layer_dependency=AssetsExprParams,
@@ -302,6 +315,6 @@ def root():
             "/mosaic/WebMercatorQuad/map.html?dataset=geomad&year=2020&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500"
         ),
         "example_prediction": (
-            "/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lucl&colormap_name=customTODO"
+            "/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lucl&colormap_name=lulc"
         ),
     }
