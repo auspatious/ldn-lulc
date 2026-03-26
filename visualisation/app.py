@@ -9,40 +9,31 @@ Run:
     poetry run uvicorn app:app --host 0.0.0.0 --port 8081 --reload
 
 Map viewer GeoMedian RGB:
-    http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=geomad&year=2020&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500
+    http://localhost:8081/map?dataset=geomad&year=2020&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500
 
 Predicted LULC:
-    http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lulc&colormap_name=lulc
+    http://localhost:8081/map?dataset=prediction&year=2020&assets=lulc&colormap_name=lulc
 """
 
 
 import logging
 import os
-import tempfile
-from collections import OrderedDict
-from hashlib import md5
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 
 from cogeo_mosaic.backends import MosaicBackend
 from cogeo_mosaic.errors import MosaicNotFoundError
-from cogeo_mosaic.mosaic import MosaicJSON
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
-from pystac import ItemCollection
 from rio_tiler.io import STACReader
 from rio_tiler.colormap import cmap as default_cmap
 from titiler.core.dependencies import create_colormap_dependency
-from rustac import search_sync
-from shapely.geometry import mapping, shape
 from titiler.core.dependencies import AssetsExprParams
 from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
+from mangum import Mangum
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -84,94 +75,24 @@ os.environ.update(
     }
 )
 
+# TODO: Memory/Timeout.
+TITILER_STACK_MEMORY=3008
+timeout: int = 30
 
-# Configuration
-STAC_GEOPARQUET_URL_GEOMAD = (
-    "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com"
-    "/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet"
-)
-STAC_GEOPARQUET_URL_PREDICTION = (
-    "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com"
-    "/ausp_ls_prediction/0-0-1/ausp_ls_prediction.parquet"
-)
-MOSAIC_MINZOOM = 5
-MOSAIC_MAXZOOM = 14
+# TODO: Add caching with ElastiCache/CloudFront.
 
 
-# Build mosaic JSON files per dataset and year at startup
-MOSAIC_DIR = Path(tempfile.mkdtemp(prefix="ldn_mosaics"))
-MOSAIC_PATHS_GEOMAD: dict[str, Path] = {}
-MOSAIC_PATHS_PREDICTION: dict[str, Path] = {}
+# TODO: These need to be created by make_mosaics.ipynb
+MOSAIC_PATHS_GEOMAD: dict[str, Path] = {"2020": Path("https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/mosaics/geomad_2020_mosaic.json")}
+MOSAIC_PATHS_PREDICTION: dict[str, Path] = {"2020": Path("https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_prediction/0-0-1/mosaics/prediction_2020_mosaic.json")}
+
 
 datasets = [
-    ("prediction", STAC_GEOPARQUET_URL_PREDICTION, MOSAIC_PATHS_PREDICTION),
-    ("geomad", STAC_GEOPARQUET_URL_GEOMAD, MOSAIC_PATHS_GEOMAD),
+    ("geomad", "Landsat GeoMAD", MOSAIC_PATHS_GEOMAD),
+    ("prediction", "Predicted LULC", MOSAIC_PATHS_PREDICTION),
 ]
 
-
-def _stac_self_link(feature: dict) -> str:
-    """Extract the STAC item self-link URL."""
-    links = {link["rel"]: link["href"] for link in feature.get("links", [])}
-    return links.get("self", feature.get("id", ""))
-
-
-def build_mosaic_for_year(dataset_name: str, year: str, stac_geoparquet_url: str) -> Path:
-    """Read STAC-Geoparquet, filter by year, build mosaic.json."""
-    out_path = MOSAIC_DIR / dataset_name / f"mosaic_{year}.json"
-
-    # This never occurs?
-    # if out_path.exists():
-    #     return out_path
-
-    # Ensure the dataset subdirectory exists
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    logger.info(f"Building mosaic for year {year}")
-    item_collection = search_sync(stac_geoparquet_url, datetime=year)
-    items = ItemCollection(item_collection)
-    features = [f.to_dict() for f in items]
-
-    if not features:
-        raise MosaicNotFoundError(f"No STAC items found for year {year}")
-
-    logger.info(f"  {len(features)} features found")
-
-    # cogeo-mosaic requires Polygon geometries
-    for feat in features:
-        geom = shape(feat["geometry"])
-        if geom.geom_type != "Polygon":
-            geom = geom.convex_hull
-        feat["geometry"] = mapping(geom)
-
-    mosaic = MosaicJSON.from_features(
-        features,
-        minzoom=MOSAIC_MINZOOM,
-        maxzoom=MOSAIC_MAXZOOM,
-        accessor=_stac_self_link,
-    )
-
-    logger.info(
-        f"  quadkey_zoom={mosaic.quadkey_zoom}, {len(mosaic.tiles)} tile entries"
-    )
-
-    with MosaicBackend(str(out_path), mosaic_def=mosaic) as m:
-        m.write(overwrite=True)
-
-    return out_path
-
-
-# Pre-build mosaics for all years in the dataset
-for (dataset_name, stac_geoparquet_url, mosaic_paths) in datasets:
-  logger.info(f"Pre-building mosaics for '{dataset_name}' dataset.")
-  # for _year in [str(y) for y in range(2000, 2025)]: # TODO: For prod reenable this.
-  for _year in [str(y) for y in range(2020, 2021)]: # TODO: Just for developing faster.
-      mosaic_paths[_year] = build_mosaic_for_year(dataset_name, _year, stac_geoparquet_url)
-      logger.info(f"  {_year} built successfully.")
-
-  logger.info(f"Available years for '{dataset_name}': {sorted(mosaic_paths.keys())}")
-
-
-# Custom path dependency — resolve "2020" to mosaic file path
+# Custom path dependency
 def MosaicPathParams(
     year: Annotated[
         str,
@@ -200,7 +121,7 @@ app = FastAPI(
     description=(
         "Mosaic viewer for Landsat GeoMedian/GeoMAD and LULC Prediction data. "
         "Pass a dataset as `dataset` (e.g. `dataset=geomad` or `dataset=prediction`) and year as `year` (e.g. `year=2020`) and band assets as "
-        "`assets=red&assets=green&assets=blue`."
+        "`assets=red&assets=green&assets=blue` or `assets=lulc`."
     ),
     version="1.0.0",
 )
@@ -213,62 +134,6 @@ app.add_middleware(
 )
 
 
-
-# Server-side tile cache + Cache-Control headers for browser caching
-_TILE_CACHE: OrderedDict[str, tuple[bytes, str, dict]] = OrderedDict()
-_TILE_CACHE_MAX = 2048  # max cached tiles (~2k × ~50KB ≈ 100 MB)
-
-
-class TileCacheMiddleware(BaseHTTPMiddleware):
-    """In-memory LRU cache for tile responses + Cache-Control headers."""
-
-    async def dispatch(self, request: Request, call_next):
-        is_tile = "/tiles/" in request.url.path
-        cache_key = None
-
-        if is_tile:
-            cache_key = md5(str(request.url).encode()).hexdigest()
-            if cache_key in _TILE_CACHE:
-                body, media_type, headers = _TILE_CACHE[cache_key]
-                _TILE_CACHE.move_to_end(cache_key)  # LRU refresh
-                return Response(
-                    content=body,
-                    media_type=media_type,
-                    headers={**headers, "X-Tile-Cache": "HIT"},
-                )
-
-        response = await call_next(request)
-
-        # Add Cache-Control header for tile responses so browsers cache them
-        if is_tile and response.status_code == 200 and cache_key:
-            response.headers["Cache-Control"] = "public, max-age=86400"
-
-            # Buffer and cache the response body
-            body = b""
-            async for chunk in response.body_iterator:  # type: ignore[union-attr]
-                body += chunk
-            media_type = response.media_type or "image/png"
-            headers = dict(response.headers)
-            headers["X-Tile-Cache"] = "MISS"
-
-            _TILE_CACHE[cache_key] = (body, media_type, headers)
-            if len(_TILE_CACHE) > _TILE_CACHE_MAX:
-                _TILE_CACHE.popitem(last=False)  # evict oldest
-
-            return Response(content=body, media_type=media_type, headers=headers)
-
-        return response
-
-
-app.add_middleware(TileCacheMiddleware)
-
-
-# /mosaic — STAC-backed RGB mosaic
-#
-# MosaicTilerFactory with STACReader reads each STAC item's per-band
-# COGs and composites them into RGB tiles.
-#
-# The built-in map.html viewer is included by default.
 GDAL_ENV = {
     "GDAL_HTTP_MULTIPLEX": "YES",
     "GDAL_HTTP_MERGE_CONSECUTIVE_RANGES": "YES",
@@ -278,6 +143,10 @@ GDAL_ENV = {
     "GDAL_BAND_BLOCK_CACHE": "HASHSET",
     "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
 }
+
+# TODO: Load all the mosaics and add them to MosaicBackend? Or how does the app register the available mosaics? Currently MosaicPathParams resolves the mosaic path on each request, but maybe we want to pre-load them into MosaicBackend?
+# with MosaicBackend(str(out_path), mosaic_def=mosaic) as m:
+#     m.write(overwrite=True)
 
 mosaic_factory = MosaicTilerFactory(
     backend=MosaicBackend, # type: ignore
@@ -313,10 +182,10 @@ def root():
     years_prediction = sorted(MOSAIC_PATHS_PREDICTION.keys())
 
     def geomad_link(y):
-        return f'<a href="/mosaic/WebMercatorQuad/map.html?dataset=geomad&year={y}&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500">{y}</a>'
+        return f'<a href="/map?dataset=geomad&year={y}&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500">{y}</a>'
 
     def prediction_link(y):
-        return f'<a href="/mosaic/WebMercatorQuad/map.html?dataset=prediction&year={y}&assets=lulc&colormap_name=lulc">{y}</a>'
+        return f'<a href="/map?dataset=prediction&year={y}&assets=lulc&colormap_name=lulc">{y}</a>'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -346,3 +215,103 @@ def root():
 </html>"""
 
     return HTMLResponse(content=html)
+
+
+@app.get("/map", tags=["Viewer"])
+def map_viewer(
+    dataset: str = Query(...),
+    year: str = Query(...),
+    colormap_name: Optional[str] = Query(None),
+):
+    LULC_LEGEND = [
+        (0, "rgba(255,255,255,0)",   "No data"),
+        (1, "rgb(0,100,0)",          "Tree Cover"),
+        (2, "rgb(50,205,50)",        "Grassland"),
+        (3, "rgb(0,255,0)",          "Cropland"),
+        (4, "rgb(64,224,208)",       "Wetland"),
+        (5, "rgb(128,128,128)",      "Built-up"),
+        (6, "rgb(0,0,255)",          "Water"),
+        (7, "rgb(255,255,0)",        "Other"),
+    ]
+
+    if dataset == "geomad":
+        tile_url = (
+            f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}"
+            "&assets=red&assets=green&assets=blue"
+            "&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500"
+        )
+        legend_html = ""
+    else:
+        tile_url = (
+            f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}"
+            f"&assets=lulc&colormap_name={colormap_name or 'lulc'}"
+        )
+        legend_items = "".join(
+            f"""<div class="legend-item">
+                  <span class="swatch" style="background:{color};border:1px solid #ccc;"></span>
+                  <span>{label}</span>
+                </div>"""
+            for _, color, label in LULC_LEGEND
+        )
+        legend_html = f"""
+        <div id="legend">
+          <div class="legend-title">Land Cover</div>
+          {legend_items}
+        </div>"""
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>LDN {dataset} {year}</title>
+  <style>
+    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+    html, body {{ height: 100%; }}
+    iframe {{ width: 100%; height: 100%; border: none; display: block; }}
+
+    #legend {{
+      position: fixed;
+      bottom: 50px;
+      right: 10px;
+      z-index: 9999;
+      background: #FFF;
+      border: 2px solid rgba(0, 0, 0, 0.2);
+      border-radius: 4px;
+      padding: 12px 14px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #000;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+    }}
+    .legend-title {{
+      font-weight: bold;
+      margin-bottom: 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }}
+    .legend-item {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+    }}
+    .legend-item:last-child {{ margin-bottom: 0; }}
+    .swatch {{
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }}
+  </style>
+</head>
+<body>
+  <iframe src="{tile_url}"></iframe>
+  {legend_html}
+</body>
+</html>"""
+
+    return HTMLResponse(content=html)
+
+handler = Mangum(app, enable_lifespan=False)
