@@ -22,12 +22,12 @@ import tempfile
 from collections import OrderedDict
 from hashlib import md5
 from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal
 
 from cogeo_mosaic.backends import MosaicBackend
 from cogeo_mosaic.errors import MosaicNotFoundError
 from cogeo_mosaic.mosaic import MosaicJSON
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -35,36 +35,10 @@ from starlette.requests import Request
 from starlette.responses import Response
 from pystac import ItemCollection
 from rio_tiler.io import STACReader
-from rio_tiler.colormap import cmap
+from rio_tiler.colormap import cmap as default_cmap
+from titiler.core.dependencies import create_colormap_dependency
 from rustac import search_sync
 from shapely.geometry import mapping, shape
-
-# Need to register colormap before importing TiTiler.
-lulc_COLORMAP = {
-    0: (255, 255, 255, 0),    # No data    — white, transparent
-    1: (0,   100, 0,   255),  # Tree Cover — darkgreen
-    2: (50,  205, 50,  255),  # Grassland  — limegreen
-    3: (0,   255, 0,   255),  # Cropland   — lime
-    4: (64,  224, 208, 255),  # Wetland    — turquoise
-    5: (128, 128, 128, 255),  # Built-up   — gray
-    6: (0,   0,   255, 255),  # Water      — blue
-    7: (255, 255, 0,   255),  # Other      — yellow
-}
-cmap.register({"lulc": lulc_COLORMAP})
-# Override the dependency that titiler bakes the Literal into
-def ColorMapParams(
-    colormap_name: Optional[str] = Query(None, description="Colormap name")
-):
-    if colormap_name is None:
-        return None
-    try:
-        return cmap.get(colormap_name)
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail=f"XXX Invalid colormap '{colormap_name}'. Available: {list(cmap.list())}"
-        )
-
 from titiler.core.dependencies import AssetsExprParams
 from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 from titiler.mosaic.errors import MOSAIC_STATUS_CODES
@@ -74,6 +48,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+cmap = default_cmap.register({
+    "lulc": {
+        0: (255, 255, 255, 0),    # No data    — transparent
+        1: (0,   100, 0,   255),  # Tree Cover — darkgreen
+        2: (50,  205, 50,  255),  # Grassland  — limegreen
+        3: (0,   255, 0,   255),  # Cropland   — lime
+        4: (64,  224, 208, 255),  # Wetland    — turquoise
+        5: (128, 128, 128, 255),  # Built-up   — gray
+        6: (0,   0,   255, 255),  # Water      — blue
+        7: (255, 255, 0,   255),  # Other      — yellow
+    }
+})
+ColorMapParams = create_colormap_dependency(cmap)
 
 # GDAL / rasterio environment — speeds up remote COG access significantly
 os.environ.update(
@@ -118,7 +105,7 @@ MOSAIC_PATHS_PREDICTION: dict[str, Path] = {}
 
 datasets = [
     ("prediction", STAC_GEOPARQUET_URL_PREDICTION, MOSAIC_PATHS_PREDICTION),
-    # ("geomad", STAC_GEOPARQUET_URL_GEOMAD, MOSAIC_PATHS_GEOMAD),
+    ("geomad", STAC_GEOPARQUET_URL_GEOMAD, MOSAIC_PATHS_GEOMAD),
 ]
 
 
