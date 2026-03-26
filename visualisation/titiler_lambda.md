@@ -7,14 +7,11 @@ dataset reader, allowing RGB composites from separate per-band COGs via STAC ite
   cd /Users/wj/Projects/ldn-lulc/ldn-lulc/visualisation && poetry run uvicorn app:app --host 0.0.0.0 --port 8081 --reload
 ```
 
-The mosaic.json must contain STAC item self-link URLs (not COG URLs).
-Regenerate with `make_mosaic_json.ipynb` which now uses the `self` link accessor.
+RGB GeoMedian:
+http://localhost:8081/mosaic/WebMercatorQuad/map.html?url=/Users/wj/Downloads/mosaics/mosaic_2020.json&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500
 
-RGB mosaic:
-http://localhost:8081/mosaic/WebMercatorQuad/map.html?url=/Users/wj/Downloads/mosaics/mosaic_2020.json&assets=red&assets=green&assets=blue&rescale=5000,12000&rescale=5000,12000&rescale=5000,12000
-
-Single band with colormap:
-http://localhost:8081/mosaic/WebMercatorQuad/map.html?url=/Users/wj/Downloads/mosaics/mosaic_2020.json&assets=red&rescale=5000,12000&colormap_name=reds
+Predicted LULC:
+http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lucl&colormap_name=customTODO
 
 # Deploying with Lambda
 

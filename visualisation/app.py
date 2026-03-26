@@ -1,18 +1,19 @@
 """
-LDN LULC Mosaic Viewer
+LDN GeoMedian/GeoMAD and Predicted LULC Mosaic Viewer
 -----------------------
-Reads a STAC-Geoparquet, builds a mosaic index per year, and serves RGB
+Reads a STAC-Geoparquet (either GeoMedian/GeoMAD or predicted LULC), builds a mosaic index per year, and serves RGB or single band
 tiles from separate per-band COGs using TiTiler + STACReader.
 
 Run:
     cd visualisation
     poetry run uvicorn app:app --host 0.0.0.0 --port 8081 --reload
 
-Map viewer (RGB):
-    http://localhost:8081/mosaic/WebMercatorQuad/map.html?url=2020&assets=red&assets=green&assets=blue&rescale=5000,12000&rescale=5000,12000&rescale=5000,12000
+Map viewer GeoMedian RGB:
+    http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=geomad&year=2020&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500
 
-Single band with colormap (we will use this functionality for the predicted LULC COGs):
-    http://localhost:8081/mosaic/WebMercatorQuad/map.html?url=2020&assets=red&rescale=5000,12000&colormap_name=reds
+Predicted LULC:
+    # TODO: Update colormap to custom class values.
+    http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lucl&colormap_name=customTODO
 """
 
 
@@ -22,7 +23,7 @@ import tempfile
 from collections import OrderedDict
 from hashlib import md5
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from cogeo_mosaic.backends import MosaicBackend
 from cogeo_mosaic.errors import MosaicNotFoundError
@@ -46,7 +47,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # GDAL / rasterio environment — speeds up remote COG access significantly
-
 os.environ.update(
     {
         # GDAL HTTP settings
@@ -70,17 +70,26 @@ os.environ.update(
 
 
 # Configuration
-STAC_GEOPARQUET_URL = (
+STAC_GEOPARQUET_URL_GEOMAD = (
     "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com"
     "/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet"
+)
+STAC_GEOPARQUET_URL_PREDICTION = (
+    "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com"
+    "/ausp_ls_prediction/0-0-1/ausp_ls_prediction.parquet"
 )
 MOSAIC_MINZOOM = 5
 MOSAIC_MAXZOOM = 14
 
 
-# Build mosaic JSON files per year at startup
-MOSAIC_DIR = Path(tempfile.mkdtemp(prefix="ldn_mosaics_"))
-MOSAIC_PATHS: dict[str, Path] = {}
+# Build mosaic JSON files per dataset and year at startup
+MOSAIC_DIR = Path(tempfile.mkdtemp(prefix="ldn_mosaics"))
+MOSAIC_PATHS_GEOMAD: dict[str, Path] = {}
+MOSAIC_PATHS_PREDICTION: dict[str, Path] = {}
+
+datasets = [("geomad", STAC_GEOPARQUET_URL_GEOMAD, MOSAIC_PATHS_GEOMAD),
+            # ("prediction", STAC_GEOPARQUET_URL_PREDICTION, MOSAIC_PATHS_PREDICTION) # Commented until this dataset is ready.
+            ]
 
 
 def _stac_self_link(feature: dict) -> str:
@@ -89,21 +98,26 @@ def _stac_self_link(feature: dict) -> str:
     return links.get("self", feature.get("id", ""))
 
 
-def build_mosaic_for_year(year: str) -> Path:
+def build_mosaic_for_year(dataset_name: str, year: str, stac_geoparquet_url: str) -> Path:
     """Read STAC-Geoparquet, filter by year, build mosaic.json."""
-    out_path = MOSAIC_DIR / f"mosaic_{year}.json"
-    if out_path.exists():
-        return out_path
+    out_path = MOSAIC_DIR / dataset_name / f"mosaic_{year}.json"
 
-    logger.info("Building mosaic for year %s …", year)
-    item_collection = search_sync(STAC_GEOPARQUET_URL, datetime=year)
+    # This never occurs?
+    # if out_path.exists():
+    #     return out_path
+
+    # Ensure the dataset subdirectory exists
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Building mosaic for year {year}")
+    item_collection = search_sync(stac_geoparquet_url, datetime=year)
     items = ItemCollection(item_collection)
     features = [f.to_dict() for f in items]
 
     if not features:
         raise MosaicNotFoundError(f"No STAC items found for year {year}")
 
-    logger.info("  %d features found", len(features))
+    logger.info(f"  {len(features)} features found")
 
     # cogeo-mosaic requires Polygon geometries
     for feat in features:
@@ -120,9 +134,7 @@ def build_mosaic_for_year(year: str) -> Path:
     )
 
     logger.info(
-        "  quadkey_zoom=%d, %d tile entries",
-        mosaic.quadkey_zoom,
-        len(mosaic.tiles),
+        f"  quadkey_zoom={mosaic.quadkey_zoom}, {len(mosaic.tiles)} tile entries"
     )
 
     with MosaicBackend(str(out_path), mosaic_def=mosaic) as m:
@@ -132,52 +144,45 @@ def build_mosaic_for_year(year: str) -> Path:
 
 
 # Pre-build mosaics for all years in the dataset
-logger.info("Pre-building mosaics from %s", STAC_GEOPARQUET_URL)
-# for _year in [str(y) for y in range(2000, 2025)]: # TODO: For prod reenable this.
-for _year in [str(y) for y in range(2020, 2021)]: # TODO: Just for developing faster.
-    try:
-        MOSAIC_PATHS[_year] = build_mosaic_for_year(_year)
-        logger.info("  ✓ %s", _year)
-    except Exception as exc:
-        logger.debug("  ✗ %s: %s", _year, exc)
+for (dataset_name, stac_geoparquet_url, mosaic_paths) in datasets:
+  logger.info(f"Pre-building mosaics for '{dataset_name}' from '{stac_geoparquet_url}'")
+  # for _year in [str(y) for y in range(2000, 2025)]: # TODO: For prod reenable this.
+  for _year in [str(y) for y in range(2020, 2021)]: # TODO: Just for developing faster.
+      mosaic_paths[_year] = build_mosaic_for_year(dataset_name, _year, stac_geoparquet_url)
+      logger.info(f"  {_year} built successfully.")
 
-logger.info("Available years: %s", sorted(MOSAIC_PATHS.keys()))
+  logger.info(f"Available years for '{dataset_name}': {sorted(mosaic_paths.keys())}")
 
 
-
-# Custom path dependency — resolve "2020" → mosaic file path
+# Custom path dependency — resolve "2020" to mosaic file path
 def MosaicPathParams(
-    url: Annotated[
+    year: Annotated[
         str,
         Query(description="Year (e.g. '2020') or path to mosaic.json"),
     ],
+    dataset: Annotated[
+        Literal["geomad", "prediction"],
+        Query(description="Dataset name (e.g. 'geomad' or 'prediction')"),
+     ],
 ) -> str:
-    """Resolve a year string to a mosaic.json file path."""
-    if url in MOSAIC_PATHS:
-        return str(MOSAIC_PATHS[url])
-
-    # Try building on-the-fly for an unknown year
-    if url.isdigit() and len(url) == 4:
-        try:
-            path = build_mosaic_for_year(url)
-            MOSAIC_PATHS[url] = path
-            return str(path)
-        except Exception as exc:
-            raise MosaicNotFoundError(
-                f"Could not build mosaic for year {url}: {exc}"
-            )
-
-    # Literal file path or URL
-    return url
-
+    """Resolve dataset and year query parameters to a mosaic.json file path."""
+    dataset_set = next((d for d in datasets if d[0] == dataset), None)
+    if not dataset_set:
+        raise MosaicNotFoundError(f"Unknown dataset '{dataset}'. Valid options: {[d[0] for d in datasets]}")
+    
+    mocasic_paths = dataset_set[2]
+    if year in mocasic_paths:
+        return str(mocasic_paths[year])
+    else:
+        raise MosaicNotFoundError(f"No mosaic found for year '{year}' in dataset '{dataset}'. Available years: {sorted(mocasic_paths.keys())}")
 
 
 # FastAPI app
 app = FastAPI(
     title="LDN LULC Mosaic Viewer",
     description=(
-        "Mosaic viewer for Landsat GeoMAD data. "
-        "Pass a year as `url` (e.g. `url=2020`) and band assets as "
+        "Mosaic viewer for Landsat GeoMedian/GeoMAD and LULC Prediction data. "
+        "Pass a dataset as `dataset` (e.g. `dataset=geomad` or `dataset=prediction`) and year as `year` (e.g. `year=2020`) and band assets as "
         "`assets=red&assets=green&assets=blue`."
     ),
     version="1.0.0",
@@ -247,8 +252,6 @@ app.add_middleware(TileCacheMiddleware)
 # COGs and composites them into RGB tiles.
 #
 # The built-in map.html viewer is included by default.
-
-
 GDAL_ENV = {
     "GDAL_HTTP_MULTIPLEX": "YES",
     "GDAL_HTTP_MERGE_CONSECUTIVE_RANGES": "YES",
@@ -275,28 +278,30 @@ add_exception_handlers(app, MOSAIC_STATUS_CODES)
 
 
 # Convenience endpoints
-@app.get("/years", tags=["Info"])
-def list_years():
-    """List available years."""
-    return {"years": sorted(MOSAIC_PATHS.keys())}
+@app.get("/years-geomad", tags=["Info"])
+def list_years_geomad():
+    """List available years for GeoMAD."""
+    return {"years": sorted(MOSAIC_PATHS_GEOMAD.keys())}
+
+@app.get("/years-prediction", tags=["Info"])
+def list_years_prediction():
+    """List available years for prediction."""
+    return {"years": sorted(MOSAIC_PATHS_PREDICTION.keys())}
 
 
 @app.get("/", tags=["Info"])
 def root():
     """Landing page with links."""
+    print(MOSAIC_PATHS_GEOMAD)
     return {
         "title": "LDN LULC Mosaic Viewer",
         "docs": "/docs",
-        "years": sorted(MOSAIC_PATHS.keys()),
-        "example_rgb": (
-            "/mosaic/WebMercatorQuad/map.html"
-            "?url=2020"
-            "&assets=red&assets=green&assets=blue"
-            "&rescale=5000,12000&rescale=5000,12000&rescale=5000,12000"
+        "years-geomad": sorted(MOSAIC_PATHS_GEOMAD.keys()),
+        "years-prediction": sorted(MOSAIC_PATHS_PREDICTION.keys()),
+        "example_geomad": (
+            "/mosaic/WebMercatorQuad/map.html?dataset=geomad&year=2020&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500"
         ),
-        "example_single_band": (
-            "/mosaic/WebMercatorQuad/map.html"
-            "?url=2020"
-            "&assets=red&rescale=5000,12000&colormap_name=reds"
+        "example_prediction": (
+            "/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lucl&colormap_name=customTODO"
         ),
     }
