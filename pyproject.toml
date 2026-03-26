@@ -36,7 +36,7 @@ dependencies = [
     "titiler-mosaic (>=2.0.0,<3.0.0)",
     "titiler-core (>=2.0.0,<3.0.0)",
     "titiler-extensions (>=2.0.0,<3.0.0)",
-    "magnum (>=21.0.1,<22.0.0)",
+    "mangum (>=0.21.0,<0.22.0)",
 ]
 
 [project.scripts]
