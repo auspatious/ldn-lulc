@@ -1,8 +1,8 @@
 """
 LDN GeoMedian/GeoMAD and Predicted LULC Mosaic Viewer
 -----------------------
-Reads a STAC-Geoparquet (either GeoMedian/GeoMAD or predicted LULC), builds a mosaic index per year, and serves RGB or single band
-tiles from separate per-band COGs using TiTiler + STACReader.
+Uses TiTiler to visualise a MosaicJSON of either GeoMedian/GeoMAD or predicted LULC. Can visualise single or multiple bands.
+Tiles from separate per-band COGs using TiTiler + STACReader.
 
 Run:
     cd visualisation
@@ -12,12 +12,10 @@ Run:
 
 import logging
 import os
-from pathlib import Path
 from typing import Annotated, Literal, Optional
 
 from cogeo_mosaic.backends import MosaicBackend
-from cogeo_mosaic.errors import MosaicNotFoundError
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from rio_tiler.io import STACReader
@@ -85,8 +83,8 @@ MOSAIC_PATHS_PREDICTION: dict[str, str] = {
 }
 
 datasets = [
-    ("geomad", "Landsat GeoMAD", MOSAIC_PATHS_GEOMAD),
-    ("prediction", "Predicted LULC", MOSAIC_PATHS_PREDICTION),
+    ("geomad", MOSAIC_PATHS_GEOMAD),
+    ("prediction", MOSAIC_PATHS_PREDICTION),
 ]
 
 # Custom path dependency
@@ -103,13 +101,13 @@ def MosaicPathParams(
     """Resolve dataset and year query parameters to a mosaic.json file path."""
     dataset_set = next((d for d in datasets if d[0] == dataset), None)
     if not dataset_set:
-        raise MosaicNotFoundError(f"Unknown dataset '{dataset}'. Valid options: {[d[0] for d in datasets]}")
+        raise HTTPException(status_code=404, detail=f"Unknown dataset '{dataset}'. Valid options: {[d[0] for d in datasets]}.")
     
-    mocasic_paths = dataset_set[2]
+    mocasic_paths = dataset_set[1]
     if year in mocasic_paths:
         return str(mocasic_paths[year])
     else:
-        raise MosaicNotFoundError(f"No mosaic found for year '{year}' in dataset '{dataset}'. Available years: {sorted(mocasic_paths.keys())}")
+        raise HTTPException(status_code=404, detail=f"No mosaic found for year '{year}' in dataset '{dataset}'. Available years: {sorted(mocasic_paths.keys())}.")
 
 
 # FastAPI app
@@ -140,10 +138,6 @@ GDAL_ENV = {
     "GDAL_BAND_BLOCK_CACHE": "HASHSET",
     "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
 }
-
-# TODO: Load all the mosaics and add them to MosaicBackend? Or how does the app register the available mosaics? Currently MosaicPathParams resolves the mosaic path on each request, but maybe we want to pre-load them into MosaicBackend?
-# with MosaicBackend(str(out_path), mosaic_def=mosaic) as m:
-#     m.write(overwrite=True)
 
 mosaic_factory = MosaicTilerFactory(
     backend=MosaicBackend, # type: ignore
