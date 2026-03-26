@@ -7,12 +7,6 @@ tiles from separate per-band COGs using TiTiler + STACReader.
 Run:
     cd visualisation
     poetry run uvicorn app:app --host 0.0.0.0 --port 8081 --reload
-
-Map viewer GeoMedian RGB:
-    http://localhost:8081/map?dataset=geomad&year=2020&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500
-
-Predicted LULC:
-    http://localhost:8081/map?dataset=prediction&year=2020&assets=lulc&colormap_name=lulc
 """
 
 
@@ -82,10 +76,13 @@ timeout: int = 30
 # TODO: Add caching with ElastiCache/CloudFront.
 
 
-# TODO: These need to be created by make_mosaics.ipynb
-MOSAIC_PATHS_GEOMAD: dict[str, Path] = {"2020": Path("https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/mosaics/geomad_2020_mosaic.json")}
-MOSAIC_PATHS_PREDICTION: dict[str, Path] = {"2020": Path("https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_prediction/0-0-1/mosaics/prediction_2020_mosaic.json")}
-
+# TODO: There will be many more years. For now I have just run 2020 for each.
+MOSAIC_PATHS_GEOMAD: dict[str, str] = {
+    "2020": "s3://data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/mosaics/geomad_2020_mosaic.json"
+}
+MOSAIC_PATHS_PREDICTION: dict[str, str] = {
+    "2020": "s3://data.ldn.auspatious.com/ausp_ls_prediction/0-0-1/mosaics/prediction_2020_mosaic.json"
+}
 
 datasets = [
     ("geomad", "Landsat GeoMAD", MOSAIC_PATHS_GEOMAD),
@@ -161,19 +158,6 @@ app.include_router(mosaic_factory.router, prefix="/mosaic", tags=["Mosaic"])
 
 add_exception_handlers(app, DEFAULT_STATUS_CODES)
 add_exception_handlers(app, MOSAIC_STATUS_CODES)
-
-
-
-# Convenience endpoints
-@app.get("/years-geomad", tags=["Info"])
-def list_years_geomad():
-    """List available years for GeoMAD."""
-    return {"years": sorted(MOSAIC_PATHS_GEOMAD.keys())}
-
-@app.get("/years-prediction", tags=["Info"])
-def list_years_prediction():
-    """List available years for prediction."""
-    return {"years": sorted(MOSAIC_PATHS_PREDICTION.keys())}
 
 
 @app.get("/", tags=["Info"])
@@ -260,58 +244,58 @@ def map_viewer(
         </div>"""
 
     html = f"""<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8"/>
-  <title>LDN {dataset} {year}</title>
-  <style>
-    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-    html, body {{ height: 100%; }}
-    iframe {{ width: 100%; height: 100%; border: none; display: block; }}
+    <html>
+    <head>
+      <meta charset="UTF-8"/>
+      <title>LDN {dataset} {year}</title>
+      <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        html, body {{ height: 100%; }}
+        iframe {{ width: 100%; height: 100%; border: none; display: block; }}
 
-    #legend {{
-      position: fixed;
-      bottom: 50px;
-      right: 10px;
-      z-index: 9999;
-      background: #FFF;
-      border: 2px solid rgba(0, 0, 0, 0.2);
-      border-radius: 4px;
-      padding: 12px 14px;
-      font-family: monospace;
-      font-size: 12px;
-      color: #000;
-      pointer-events: none;
-      backdrop-filter: blur(4px);
-    }}
-    .legend-title {{
-      font-weight: bold;
-      margin-bottom: 8px;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-    }}
-    .legend-item {{
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 5px;
-    }}
-    .legend-item:last-child {{ margin-bottom: 0; }}
-    .swatch {{
-      width: 14px;
-      height: 14px;
-      border-radius: 3px;
-      flex-shrink: 0;
-    }}
-  </style>
-</head>
-<body>
-  <iframe src="{tile_url}"></iframe>
-  {legend_html}
-</body>
-</html>"""
+        #legend {{
+          position: fixed;
+          bottom: 50px;
+          right: 10px;
+          z-index: 9999;
+          background: #FFF;
+          border: 2px solid rgba(0, 0, 0, 0.2);
+          border-radius: 4px;
+          padding: 12px 14px;
+          font-family: monospace;
+          font-size: 12px;
+          color: #000;
+          pointer-events: none;
+          backdrop-filter: blur(4px);
+        }}
+        .legend-title {{
+          font-weight: bold;
+          margin-bottom: 8px;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: .06em;
+        }}
+        .legend-item {{
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 5px;
+        }}
+        .legend-item:last-child {{ margin-bottom: 0; }}
+        .swatch {{
+          width: 14px;
+          height: 14px;
+          border-radius: 3px;
+          flex-shrink: 0;
+        }}
+      </style>
+    </head>
+    <body>
+      <iframe src="{tile_url}"></iframe>
+      {legend_html}
+    </body>
+    </html>"""
 
     return HTMLResponse(content=html)
 
-handler = Mangum(app, enable_lifespan=False)
+handler = Mangum(app, lifespan="off")
