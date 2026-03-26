@@ -1,0 +1,134 @@
+terraform {
+  required_version = ">= 1.5"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+
+  # Uncomment to store state in S3 (recommended for teams)
+  # backend "s3" {
+  #   bucket = "your-terraform-state-bucket"
+  #   key    = "ldn-tiler/terraform.tfstate"
+  #   region = "ap-southeast-2"
+  # }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+# ── ECR ────────────────────────────────────────────────────────────────────────
+
+resource "aws_ecr_repository" "app" {
+  name                 = var.function_name
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+# Keep only the last 5 images to avoid storage costs
+resource "aws_ecr_lifecycle_policy" "app" {
+  repository = aws_ecr_repository.app.name
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep last 5 images"
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = 5
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
+# ── IAM ────────────────────────────────────────────────────────────────────────
+
+resource "aws_iam_role" "lambda" {
+  name = "${var.function_name}-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "basic_execution" {
+  role       = aws_iam_role.lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# S3 read access for mosaic JSONs and COGs
+resource "aws_iam_role_policy" "s3_read" {
+  name = "${var.function_name}-s3-read"
+  role = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ]
+      Resource = [
+        "arn:aws:s3:::${var.s3_bucket}",
+        "arn:aws:s3:::${var.s3_bucket}/*"
+      ]
+    }]
+  })
+}
+
+# ── Lambda ─────────────────────────────────────────────────────────────────────
+
+resource "aws_lambda_function" "app" {
+  function_name = var.function_name
+  role          = aws_iam_role.lambda.arn
+  package_type  = "Image"
+  image_uri     = "${aws_ecr_repository.app.repository_url}:latest"
+  memory_size   = var.memory_size
+  timeout       = var.timeout
+
+  environment {
+    variables = {
+      GDAL_HTTP_MULTIPLEX             = "YES"
+      GDAL_HTTP_MERGE_CONSECUTIVE_RANGES = "YES"
+      GDAL_DISABLE_READDIR_ON_OPEN    = "EMPTY_DIR"
+      VSI_CACHE                       = "TRUE"
+      VSI_CACHE_SIZE                  = "536870912"
+      GDAL_CACHEMAX                   = "512"
+      PYTHONWARNINGS                  = "ignore"
+    }
+  }
+
+  depends_on = [aws_iam_role_policy_attachment.basic_execution]
+}
+
+# ── Function URL (public HTTP endpoint, no API Gateway needed) ─────────────────
+
+resource "aws_lambda_function_url" "app" {
+  function_name      = aws_lambda_function.app.function_name
+  authorization_type = "NONE"
+
+  cors {
+    allow_origins = ["*"]
+    allow_methods = ["GET"]
+  }
+}
+
+resource "aws_lambda_permission" "public_url" {
+  statement_id           = "FunctionURLAllowPublicAccess"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.app.function_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}

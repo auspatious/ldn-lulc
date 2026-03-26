@@ -230,3 +230,8 @@ notebooks/training_data/samples_*.geojson
 notebooks/training_data/samples_*.csv
 
 tasks.json
+
+# Visualisation Terraform files.
+visualisation/infra/.terraform/
+visualisation/infra/terraform.tfstate
+visualisation/infra/terraform.tfstate.backup
