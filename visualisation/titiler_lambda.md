@@ -11,7 +11,7 @@ RGB GeoMedian:
 http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=geomad&year=2020&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500
 
 Predicted LULC:
-http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lucl&colormap_name=lulc
+http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lulc&colormap_name=lulc
 
 # Deploying with Lambda
 

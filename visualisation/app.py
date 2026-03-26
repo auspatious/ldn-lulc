@@ -12,7 +12,7 @@ Map viewer GeoMedian RGB:
     http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=geomad&year=2020&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500
 
 Predicted LULC:
-    http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lucl&colormap_name=lulc
+    http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lulc&colormap_name=lulc
 """
 
 
@@ -22,13 +22,14 @@ import tempfile
 from collections import OrderedDict
 from hashlib import md5
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 
 from cogeo_mosaic.backends import MosaicBackend
 from cogeo_mosaic.errors import MosaicNotFoundError
 from cogeo_mosaic.mosaic import MosaicJSON
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -38,15 +39,8 @@ from rio_tiler.colormap import cmap
 from rustac import search_sync
 from shapely.geometry import mapping, shape
 
-from titiler.core.dependencies import AssetsExprParams
-from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
-from titiler.mosaic.errors import MOSAIC_STATUS_CODES
-from titiler.mosaic.factory import MosaicTilerFactory
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-LUCL_COLORMAP = {
+# Need to register colormap before importing TiTiler.
+lulc_COLORMAP = {
     0: (255, 255, 255, 0),    # No data    — white, transparent
     1: (0,   100, 0,   255),  # Tree Cover — darkgreen
     2: (50,  205, 50,  255),  # Grassland  — limegreen
@@ -56,7 +50,30 @@ LUCL_COLORMAP = {
     6: (0,   0,   255, 255),  # Water      — blue
     7: (255, 255, 0,   255),  # Other      — yellow
 }
-cmap.register({"lulc": LUCL_COLORMAP})
+cmap.register({"lulc": lulc_COLORMAP})
+# Override the dependency that titiler bakes the Literal into
+def ColorMapParams(
+    colormap_name: Optional[str] = Query(None, description="Colormap name")
+):
+    if colormap_name is None:
+        return None
+    try:
+        return cmap.get(colormap_name)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail=f"XXX Invalid colormap '{colormap_name}'. Available: {list(cmap.list())}"
+        )
+
+from titiler.core.dependencies import AssetsExprParams
+from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
+from titiler.mosaic.errors import MOSAIC_STATUS_CODES
+from titiler.mosaic.factory import MosaicTilerFactory
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
 
 # GDAL / rasterio environment — speeds up remote COG access significantly
 os.environ.update(
@@ -101,7 +118,7 @@ MOSAIC_PATHS_PREDICTION: dict[str, Path] = {}
 
 datasets = [
     ("prediction", STAC_GEOPARQUET_URL_PREDICTION, MOSAIC_PATHS_PREDICTION),
-    ("geomad", STAC_GEOPARQUET_URL_GEOMAD, MOSAIC_PATHS_GEOMAD),
+    # ("geomad", STAC_GEOPARQUET_URL_GEOMAD, MOSAIC_PATHS_GEOMAD),
 ]
 
 
@@ -282,6 +299,7 @@ mosaic_factory = MosaicTilerFactory(
     layer_dependency=AssetsExprParams,
     environment_dependency=lambda: GDAL_ENV,
     router_prefix="/mosaic",
+    colormap_dependency=ColorMapParams,
 )
 app.include_router(mosaic_factory.router, prefix="/mosaic", tags=["Mosaic"])
 
@@ -304,17 +322,40 @@ def list_years_prediction():
 
 @app.get("/", tags=["Info"])
 def root():
-    """Landing page with links."""
-    print(MOSAIC_PATHS_GEOMAD)
-    return {
-        "title": "LDN LULC Mosaic Viewer",
-        "docs": "/docs",
-        "years-geomad": sorted(MOSAIC_PATHS_GEOMAD.keys()),
-        "years-prediction": sorted(MOSAIC_PATHS_PREDICTION.keys()),
-        "example_geomad": (
-            "/mosaic/WebMercatorQuad/map.html?dataset=geomad&year=2020&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500"
-        ),
-        "example_prediction": (
-            "/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lucl&colormap_name=lulc"
-        ),
-    }
+    years_geomad = sorted(MOSAIC_PATHS_GEOMAD.keys())
+    years_prediction = sorted(MOSAIC_PATHS_PREDICTION.keys())
+
+    def geomad_link(y):
+        return f'<a href="/mosaic/WebMercatorQuad/map.html?dataset=geomad&year={y}&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500">{y}</a>'
+
+    def prediction_link(y):
+        return f'<a href="/mosaic/WebMercatorQuad/map.html?dataset=prediction&year={y}&assets=lulc&colormap_name=lulc">{y}</a>'
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>LDN LULC Mosaic Viewer</title>
+  <style>
+    body {{ font-family: monospace; max-width: 600px; margin: 60px auto; padding: 0 20px; }}
+    h1 {{ font-size: 1.2rem; margin-bottom: 2rem; }}
+    h2 {{ font-size: .85rem; text-transform: uppercase; color: #999; margin: 1.5rem 0 .5rem; }}
+    a {{ color: #2563eb; text-decoration: none; margin-right: .75rem; }}
+    a:hover {{ text-decoration: underline; }}
+    .meta {{ margin-top: 3rem; font-size: .75rem; color: #bbb; }}
+  </style>
+</head>
+<body>
+  <h1>LDN LULC Mosaic Viewer</h1>
+
+  <h2>GeoMAD</h2>
+  {''.join(geomad_link(y) for y in years_geomad)}
+
+  <h2>Prediction</h2>
+  {''.join(prediction_link(y) for y in years_prediction)}
+
+  <p class="meta"><a href="/docs">API docs</a></p>
+</body>
+</html>"""
+
+    return HTMLResponse(content=html)
