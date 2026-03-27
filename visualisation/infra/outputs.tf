@@ -3,6 +3,11 @@ output "api_url" {
   value       = aws_apigatewayv2_stage.default.invoke_url
 }
 
+output "function_name" {
+  description = "Name of the Lambda function and ECR repository"
+  value       = aws_ecr_repository.app.name
+}
+
 output "ecr_repository_url" {
   description = "ECR repository URL for pushing images"
   value       = aws_ecr_repository.app.repository_url

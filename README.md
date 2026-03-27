@@ -84,3 +84,40 @@ docker buildx build . --tag ldn-lulc:latest
 Once built, you can run any command in the container:
 
 `docker run --rm ldn-lulc:latest ldn grid list-countries`
+
+
+## Visualisation
+
+A tile server for viewing GeoMedian/GeoMAD and predicted LULC mosaics, built with
+[TiTiler](https://developmentseed.org/titiler/) and deployed as an AWS Lambda behind API Gateway.
+
+### Prerequisites
+
+- AWS credentials configured (`aws configure` or environment variables)
+- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
+- Docker
+
+### Deploy
+
+From the project root:
+```bash
+bash visualisation/deploy.sh
+```
+
+This will:
+1. Build mosaic JSON files and upload to S3
+2. Create an ECR repository (if it doesn't exist)
+3. Build and push the Docker image
+4. Deploy the Lambda + API Gateway via Terraform
+
+### Run locally
+
+```bash
+poetry install --with visualisation
+cd visualisation
+poetry run uvicorn app:app --host 0.0.0.0 --port 8081 --reload
+```
+
+### Current deployment
+
+https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
