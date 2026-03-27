@@ -22,7 +22,6 @@ ldn = "ldn.cli:app"
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
 antimeridian = "<0.4.5"
-boto3 = ">=1.42.31,<2.0.0"
 datacube-compute = { git = "https://github.com/auspatious/datacube-compute.git" }
 dep-tools = { git = "https://github.com/digitalearthpacific/dep-tools.git" }
 gdal = "3.12.2"
@@ -36,9 +35,10 @@ rustac = ">=0.9.6,<0.10.0"
 typer = ">=0.9.0"
 xarray = ">=2025.12.0,<2026.0.0"
 zarr = ">=3.1.5,<4.0.0"
-cogeo-mosaic = ">=9.1.0,<10.0.0"
 
 [tool.poetry.group.visualisation.dependencies]
+boto3 = ">=1.42.31,<2.0.0"
+cogeo-mosaic = ">=9.1.0,<10.0.0"
 fastapi = ">=0.135.2,<0.136.0"
 mangum = ">=0.21.0,<0.22.0"
 titiler-core = ">=2.0.0,<3.0.0"
