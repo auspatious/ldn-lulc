@@ -90,11 +90,18 @@ resource "aws_iam_role_policy" "s3_read" {
 
 # ── Lambda ─────────────────────────────────────────────────────────────────────
 
+# Look up the latest image digest so Terraform redeploys when a new image is pushed
+data "aws_ecr_image" "latest" {
+  repository_name = aws_ecr_repository.app.name
+  image_tag       = "latest"
+}
+
 resource "aws_lambda_function" "app" {
   function_name = var.function_name
   role          = aws_iam_role.lambda.arn
   package_type  = "Image"
-  image_uri     = "${aws_ecr_repository.app.repository_url}:latest"
+  image_uri     = "${aws_ecr_repository.app.repository_url}@${data.aws_ecr_image.latest.image_digest}"
+  architectures = ["arm64"]
   memory_size   = var.memory_size
   timeout       = var.timeout
 
@@ -113,22 +120,42 @@ resource "aws_lambda_function" "app" {
   depends_on = [aws_iam_role_policy_attachment.basic_execution]
 }
 
-# ── Function URL (public HTTP endpoint, no API Gateway needed) ─────────────────
+# ── API Gateway (HTTP API) ──────────────────────────────────────────────────────
+# Using API Gateway because public function URL was being blocked by broad account policy I think.
 
-resource "aws_lambda_function_url" "app" {
-  function_name      = aws_lambda_function.app.function_name
-  authorization_type = "NONE"
+resource "aws_apigatewayv2_api" "app" {
+  name          = var.function_name
+  protocol_type = "HTTP"
 
-  cors {
+  cors_configuration {
     allow_origins = ["*"]
     allow_methods = ["GET"]
   }
 }
 
-resource "aws_lambda_permission" "public_url" {
-  statement_id           = "FunctionURLAllowPublicAccess"
-  action                 = "lambda:InvokeFunctionUrl"
-  function_name          = aws_lambda_function.app.function_name
-  principal              = "*"
-  function_url_auth_type = "NONE"
+resource "aws_apigatewayv2_integration" "lambda" {
+  api_id                 = aws_apigatewayv2_api.app.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.app.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "catch_all" {
+  api_id    = aws_apigatewayv2_api.app.id
+  route_key = "$default"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_stage" "default" {
+  api_id      = aws_apigatewayv2_api.app.id
+  name        = "$default"
+  auto_deploy = true
+}
+
+resource "aws_lambda_permission" "apigw" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.app.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.app.execution_arn}/*/*"
 }

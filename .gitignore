@@ -233,5 +233,5 @@ tasks.json
 
 # Visualisation Terraform files.
 visualisation/infra/.terraform/
-visualisation/infra/terraform.tfstate
-visualisation/infra/terraform.tfstate.backup
+visualisation/infra/.terraform.lock.hcl
+visualisation/infra/terraform.tfstate*

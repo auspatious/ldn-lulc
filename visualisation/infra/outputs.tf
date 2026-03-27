@@ -1,6 +1,6 @@
-output "function_url" {
+output "api_url" {
   description = "Public URL for the tile server"
-  value       = aws_lambda_function_url.app.function_url
+  value       = aws_apigatewayv2_stage.default.invoke_url
 }
 
 output "ecr_repository_url" {

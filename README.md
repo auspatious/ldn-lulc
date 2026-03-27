@@ -20,17 +20,25 @@ export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
 3. Install Poetry if you don't have it already:
-  ```bash
+```bash
   pip install poetry
+```
 
 4. Create and activate a Poetry virtual environment pointing at Homebrew's Python 3.12 and install dependencies:
+This installs all groups (main, dev, visualisation). `cogeo-mosaic` and `boto3` are in the visualisation group but are needed in main too.
+```bash
   poetry env use $(brew --prefix python@3.12)/bin/python3.12
   poetry install
-  ```
+```
 
   For development dependencies:
 ```bash
    poetry install --with dev
+```
+
+  For visualisation dependencies:
+```bash
+   poetry install --no-root --only visualisation
 ```
 
 5. Run the CLI tool:

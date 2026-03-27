@@ -8,13 +8,15 @@ dataset reader, allowing RGB composites from separate per-band COGs via STAC ite
 ```
 
 RGB GeoMedian:
-http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=geomad&year=2020&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500
+http://localhost:8081/map?dataset=geomad&year=2020&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500
 
 Predicted LULC:
-http://localhost:8081/mosaic/WebMercatorQuad/map.html?dataset=prediction&year=2020&assets=lulc&colormap_name=lulc
+http://localhost:8081/map?dataset=prediction&year=2020&assets=lulc&colormap_name=lulc
 
-# Deploying with Lambda
+# Deploying with Docker to Lambda.
 
-Follow this: https://developmentseed.org/titiler/deployment/aws/lambda/
+We should look into enabling provisioned concurrency. Otherwise Lambda cold starts will make use very slow.
 
-https://github.com/developmentseed/titiler/tree/main/deployment/aws/lambda
+ECS Fargate is a good alternative.
+
+Deploying using Docker. See `visualisation/deploy.sh` and `visualisation/Dockerfile`.
