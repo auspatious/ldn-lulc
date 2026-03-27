@@ -380,8 +380,8 @@ def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
 
 @app.command()
 def make_mosaics(
-    years: Annotated[str, typer.Option(), "Comma-separated list of years (e.g. '2020,2021') to build mosaics for."],
-    dataset: Annotated[Literal["all", "geomad", "prediction"], typer.Option(), "Which dataset to build mosaics for, either 'all', 'geomad' or 'prediction'."],
+    years: Annotated[str, typer.Option(help="Comma-separated list of years (e.g. '2020,2021') to build mosaics for.")],
+    dataset: Annotated[Literal["all", "geomad", "prediction"], typer.Option(help="Which dataset to build mosaics for, either 'all', 'geomad' or 'prediction'.")],
 ) -> None:
     """ Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files. """
 

@@ -35,6 +35,8 @@ rustac = ">=0.9.6,<0.10.0"
 typer = ">=0.9.0"
 xarray = ">=2025.12.0,<2026.0.0"
 zarr = ">=3.1.5,<4.0.0"
+boto3 = ">=1.42.31,<2.0.0"
+cogeo-mosaic = ">=9.1.0,<10.0.0"
 
 [tool.poetry.group.visualisation.dependencies]
 boto3 = ">=1.42.31,<2.0.0"
@@ -45,6 +47,7 @@ titiler-core = ">=2.0.0,<3.0.0"
 titiler-extensions = ">=2.0.0,<3.0.0"
 titiler-mosaic = ">=2.0.0,<3.0.0"
 uvicorn = ">=0.42.0,<0.43.0"
+rio-tiler = "^9.0.4"
 
 [tool.poetry.group.dev.dependencies]
 contextily = ">=1.7.0,<2.0.0"

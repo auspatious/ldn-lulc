@@ -8,7 +8,7 @@ AWS_REGION=${AWS_REGION:-us-west-2}
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 echo "==> Building mosaics..."
-# TODO: Do all years when available.
+# TODO: make mosaics for all years (when available).
 poetry run ldn make-mosaics --dataset all --years 2020
 
 echo "==> Creating ECR repository..."
@@ -21,7 +21,7 @@ echo "==> Function name: ${FUNCTION_NAME}"
 poetry check --lock || { echo "poetry.lock is out of date. Run 'poetry lock' first."; exit 1; }
 
 echo "==> Building Docker image..."
-docker build --provenance=false -f visualisation/Dockerfile -t ${FUNCTION_NAME} .
+docker build --platform=linux/arm64 --provenance=false -f visualisation/Dockerfile -t ${FUNCTION_NAME} .
 
 echo "==> Pushing image to ECR..."
 ECR_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${FUNCTION_NAME}"

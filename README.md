@@ -25,7 +25,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
 4. Create and activate a Poetry virtual environment pointing at Homebrew's Python 3.12 and install dependencies:
-This installs all groups (main, dev, visualisation). `cogeo-mosaic` and `boto3` are in the visualisation group but are needed in main too.
+This installs main group. Deps like `cogeo-mosaic` and `boto3` are in both main and visualisation group.
 ```bash
   poetry env use $(brew --prefix python@3.12)/bin/python3.12
   poetry install
@@ -114,8 +114,7 @@ This will:
 
 ```bash
 poetry install --with visualisation
-cd visualisation
-poetry run uvicorn app:app --host 0.0.0.0 --port 8081 --reload
+poetry run uvicorn visualisation.app:app --host 0.0.0.0 --port 8081 --reload
 ```
 
 ### Current deployment

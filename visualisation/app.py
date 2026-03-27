@@ -12,8 +12,10 @@ Run:
 
 import logging
 import os
+import re
 from typing import Annotated, Literal, Optional
 
+import boto3
 from cogeo_mosaic.backends import MosaicBackend
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -67,20 +69,34 @@ os.environ.update(
     }
 )
 
-# TODO: Memory/Timeout.
-TITILER_STACK_MEMORY=3008
-timeout: int = 30
+MOSAIC_S3_BUCKET = "data.ldn.auspatious.com"
+GEOMAD_DATASET_PREFIX = "ausp_ls_geomad"
+GEOMAD_DATASET_VERSION = "0-0-2"
+PREDICTION_DATASET_PREFIX = "ausp_ls_prediction"
+PREDICTION_DATASET_VERSION = "0-0-1"
+MOSAIC_PATHS_GEOMAD: dict[str, str] = {}
+MOSAIC_PATHS_PREDICTION: dict[str, str] = {}
 
-# TODO: Add caching with ElastiCache/CloudFront.
+# Scan S3 for mosaic JSONs on startup and populate paths dicts.
+# Expects filenames like geomad_2020_mosaic.json or prediction_2020_mosaic.json.
+s3 = boto3.client("s3")
+MOSAIC_PATTERN = re.compile(r"(\w+)_(\d{4})_mosaic\.json$")
 
+for prefix, dataset_prefix, version, paths_dict in [
+    ("geomad", GEOMAD_DATASET_PREFIX, GEOMAD_DATASET_VERSION, MOSAIC_PATHS_GEOMAD),
+    ("prediction", PREDICTION_DATASET_PREFIX, PREDICTION_DATASET_VERSION, MOSAIC_PATHS_PREDICTION),
+]:
+    s3_prefix = f"{dataset_prefix}/{version}/mosaics/"
+    response = s3.list_objects_v2(Bucket=MOSAIC_S3_BUCKET, Prefix=s3_prefix)
+    for obj in response.get("Contents", []):
+        key = obj["Key"]
+        match = MOSAIC_PATTERN.search(key)
+        if match:
+            year = match.group(2)
+            paths_dict[year] = f"s3://{MOSAIC_S3_BUCKET}/{key}"
 
-# TODO: There will be many more years. For now I have just run 2020 for each.
-MOSAIC_PATHS_GEOMAD: dict[str, str] = {
-    "2020": "s3://data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/mosaics/geomad_2020_mosaic.json"
-}
-MOSAIC_PATHS_PREDICTION: dict[str, str] = {
-    "2020": "s3://data.ldn.auspatious.com/ausp_ls_prediction/0-0-1/mosaics/prediction_2020_mosaic.json"
-}
+logger.info(f"GeoMAD mosaics: {sorted(MOSAIC_PATHS_GEOMAD.keys())}")
+logger.info(f"Prediction mosaics: {sorted(MOSAIC_PATHS_PREDICTION.keys())}")
 
 datasets = [
     ("geomad", MOSAIC_PATHS_GEOMAD),
@@ -91,11 +107,11 @@ datasets = [
 def MosaicPathParams(
     year: Annotated[
         str,
-        Query(description="Year (e.g. '2020') or path to mosaic.json"),
+        Query(description="Year (e.g. '2020')", pattern=r"^\d{4}$"),
     ],
     dataset: Annotated[
         Literal["geomad", "prediction"],
-        Query(description="Dataset name (e.g. 'geomad' or 'prediction')"),
+        Query(description="Dataset name (must be either 'geomad' or 'prediction')"),
      ],
 ) -> str:
     """Resolve dataset and year query parameters to a mosaic.json file path."""
@@ -197,8 +213,8 @@ def root():
 
 @app.get("/map", tags=["Viewer"])
 def map_viewer(
-    dataset: str = Query(...),
-    year: str = Query(...),
+    dataset: Literal["geomad", "prediction"] = Query(...),
+    year: str = Query(..., pattern=r"^\d{4}$"),
     colormap_name: Optional[str] = Query(None),
 ):
     LULC_LEGEND = [
@@ -219,7 +235,7 @@ def map_viewer(
             "&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500"
         )
         legend_html = ""
-    else:
+    elif dataset == "prediction":
         tile_url = (
             f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}"
             f"&assets=lulc&colormap_name={colormap_name or 'lulc'}"
@@ -236,6 +252,8 @@ def map_viewer(
           <div class="legend-title">Land Cover</div>
           {legend_items}
         </div>"""
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown dataset '{dataset}'. Valid options: 'geomad' or 'prediction'.")
 
     html = f"""<!DOCTYPE html>
     <html>

@@ -255,7 +255,7 @@ version = "4.13.0"
 description = "High-level concurrency and networking framework on top of asyncio or Trio"
 optional = false
 python-versions = ">=3.10"
-groups = ["visualisation"]
+groups = ["main", "visualisation"]
 files = [
     {file = "anyio-4.13.0-py3-none-any.whl", hash = "sha256:08b310f9e24a9594186fd75b4f73f4a4152069e3853f1ed8bfbf58369f4ad708"},
     {file = "anyio-4.13.0.tar.gz", hash = "sha256:334b70e641fd2221c1505b3890c69882fe4a2df910cba14d97019b90b24439dc"},
@@ -790,7 +790,7 @@ version = "9.1.0"
 description = "CLI and Backends to work with MosaicJSON."
 optional = false
 python-versions = ">=3.11"
-groups = ["visualisation"]
+groups = ["main", "visualisation"]
 files = [
     {file = "cogeo_mosaic-9.1.0-py3-none-any.whl", hash = "sha256:b246182f12ae25d562ebc86987d2736617216e94a6a5d202460220faf7afc0d7"},
     {file = "cogeo_mosaic-9.1.0.tar.gz", hash = "sha256:f2102e68d3b1e7ee987ea85137ac198bf2f49d83739e4251a30265f4d5436828"},
@@ -823,7 +823,7 @@ version = "0.2.0"
 description = "Apply basic color-oriented image operations."
 optional = false
 python-versions = ">=3.9"
-groups = ["visualisation"]
+groups = ["main", "visualisation"]
 files = [
     {file = "color_operations-0.2.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:b5119c3136f0f18e470ac7ff95b0a92899b450d63a6bbe518f1b0ca6e2c88685"},
     {file = "color_operations-0.2.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:f92bdf4341c0516e1779ac3e3db83b871af2d989b210b6bd713ef46ead5705dd"},
@@ -2137,7 +2137,7 @@ version = "0.16.0"
 description = "A pure-Python, bring-your-own-I/O implementation of HTTP/1.1"
 optional = false
 python-versions = ">=3.8"
-groups = ["visualisation"]
+groups = ["main", "visualisation"]
 files = [
     {file = "h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"},
     {file = "h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1"},
@@ -2149,7 +2149,7 @@ version = "1.0.9"
 description = "A minimal low-level HTTP client."
 optional = false
 python-versions = ">=3.8"
-groups = ["visualisation"]
+groups = ["main", "visualisation"]
 files = [
     {file = "httpcore-1.0.9-py3-none-any.whl", hash = "sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"},
     {file = "httpcore-1.0.9.tar.gz", hash = "sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8"},
@@ -2171,7 +2171,7 @@ version = "0.28.1"
 description = "The next generation HTTP client."
 optional = false
 python-versions = ">=3.8"
-groups = ["visualisation"]
+groups = ["main", "visualisation"]
 files = [
     {file = "httpx-0.28.1-py3-none-any.whl", hash = "sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"},
     {file = "httpx-0.28.1.tar.gz", hash = "sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc"},
@@ -3172,7 +3172,7 @@ version = "7.0.3"
 description = "Construct and use map tile grids (a.k.a TileMatrixSet / TMS)."
 optional = false
 python-versions = ">=3.11"
-groups = ["visualisation"]
+groups = ["main", "visualisation"]
 files = [
     {file = "morecantile-7.0.3-py3-none-any.whl", hash = "sha256:747c6b8f3a8029ddaadb04d96c834f10d2796d1898ad893bed47c896a058ddc7"},
     {file = "morecantile-7.0.3.tar.gz", hash = "sha256:b44419c83f310b411b1f547df2d07c115dc6d194ab7c8a4c318a154490e938c1"},
@@ -4707,7 +4707,7 @@ version = "2.13.1"
 description = "Settings management using Pydantic"
 optional = false
 python-versions = ">=3.10"
-groups = ["visualisation"]
+groups = ["main", "visualisation"]
 files = [
     {file = "pydantic_settings-2.13.1-py3-none-any.whl", hash = "sha256:d56fd801823dbeae7f0975e1f8c8e25c258eb75d278ea7abb5d9cebb01b56237"},
     {file = "pydantic_settings-2.13.1.tar.gz", hash = "sha256:b4c11847b15237fb0171e1462bf540e294affb9b86db4d9aa5c01730bdbe4025"},
@@ -5403,7 +5403,7 @@ version = "9.0.4"
 description = "User friendly Rasterio plugin to read raster datasets."
 optional = false
 python-versions = ">=3.11"
-groups = ["visualisation"]
+groups = ["main", "visualisation"]
 files = [
     {file = "rio_tiler-9.0.4-py3-none-any.whl", hash = "sha256:4877844d5fd339496d94cd130737376403b09aa33563bf21aa048925f7b49dd1"},
     {file = "rio_tiler-9.0.4.tar.gz", hash = "sha256:5769e533f07c6d8cafafe84614b4fc9086cfefb7265eeda7849f0f927d299c2a"},
@@ -6268,7 +6268,7 @@ version = "0.1.2"
 description = "Extend the functionality of morecantile with additional commands."
 optional = false
 python-versions = ">=3.8"
-groups = ["visualisation"]
+groups = ["main", "visualisation"]
 files = [
     {file = "supermorecado-0.1.2-py3-none-any.whl", hash = "sha256:5116b9ff8c8aa0b0da235cb5962449dc878515c8155adf1440268c3cf271bed6"},
     {file = "supermorecado-0.1.2.tar.gz", hash = "sha256:b51664d2eb12326e657a9d80c6849857c42ef3876545515ef988e266e6cc9654"},
@@ -6972,4 +6972,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "d842435d2ec6d48b57e0a36c9481ce11b8e81f74510a812dbd894b9a137b962f"
+content-hash = "05aa3f076467112634bbcbd3beb353eb8a0ffb7d63c4c420b02e62c3616d2d74"
