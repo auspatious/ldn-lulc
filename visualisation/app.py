@@ -3,10 +3,6 @@ LDN GeoMedian/GeoMAD and Predicted LULC Mosaic Viewer
 -----------------------
 Uses TiTiler to visualise a MosaicJSON of either GeoMedian/GeoMAD or predicted LULC. Can visualise single or multiple bands.
 Tiles from separate per-band COGs using TiTiler + STACReader.
-
-Run:
-    cd visualisation
-    poetry run uvicorn app:app --host 0.0.0.0 --port 8081 --reload
 """
 
 
