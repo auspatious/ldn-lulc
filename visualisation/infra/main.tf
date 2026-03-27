@@ -7,12 +7,13 @@ terraform {
     }
   }
 
-  # Uncomment to store state in S3 (recommended for teams)
-  # backend "s3" {
-  #   bucket = "your-terraform-state-bucket"
-  #   key    = "ldn-tiler/terraform.tfstate"
-  #   region = "ap-southeast-2"
-  # }
+  # Store state in S3.
+  backend "s3" {
+    # Using private bucket.
+    bucket = "auspatious-ldn-terraform-state"
+    key    = "ldn-tiler/terraform.tfstate"
+    region = "us-west-2"
+  }
 }
 
 provider "aws" {
