@@ -8,7 +8,8 @@
 # 5. Run make-mosaic for geomad and prediction datasets
 # 6. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
-VERSION ?= 0-0-2b
+VERSION_GEOMAD ?= 0-0-2b
+VERSION_PREDICTION ?= 0-0-1
 DECIMATED ?= --decimated
 YEAR ?= 2020
 
@@ -29,119 +30,37 @@ grid-list-countries-non-pacific:
 print-tasks-2000-2024-all-grids:
 	ldn print-tasks --years="2000-2024" --grids="all"
 
-# Geomad tile
-geomad-non-pacific-test-carribbean-atolls-belize:
-	ldn geomad \
-	--tile-id 119_126 \
-	--year $(YEAR) \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--product-owner ausp \
-	--no-all-bands \
-	--region non-pacific
+# Test case sites as tile_id:region pairs.
+KIRIBATI_ATOLLS      := 58_43:pacific
+FIJI_VOLCANIC        := 63_20:pacific
+FIJI_ANTIMERIDIAN    := 66_22:pacific
+BELIZE_ATOLLS        := 119_126:non-pacific
+SURINAME             := 152_110:non-pacific
+CAPE_VERDE           := 185_125:non-pacific
+COMOROS              := 251_88:non-pacific
+SINGAPORE            := 312_105:non-pacific 312_106:non-pacific
 
-geomad-non-pacific-test-carribbean-land-suriname:
-	ldn geomad \
-	--tile-id 152_110 \
-	--year $(YEAR) \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--product-owner ausp \
-	--all-bands \
-	--region non-pacific
+GEOMAD_SITES := $(KIRIBATI_ATOLLS) $(FIJI_VOLCANIC) $(FIJI_ANTIMERIDIAN) \
+	$(BELIZE_ATOLLS) $(SURINAME) $(CAPE_VERDE) $(COMOROS) $(SINGAPORE)
 
-geomad-non-pacific-test-cape-verde:
-	ldn geomad \
-	--tile-id 185_125 \
-	--year $(YEAR) \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--product-owner ausp \
-	--all-bands \
-	--region non-pacific
-
-geomad-non-pacific-test-comoros:
-	ldn geomad \
-	--tile-id 251_88 \
-	--year $(YEAR) \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--product-owner ausp \
-	--all-bands \
-	--region non-pacific
-
-geomad-pacific-test-fiji-antimeridian:
-	ldn geomad \
-	--tile-id 66_22 \
-	--year $(YEAR) \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--product-owner ausp \
-	--all-bands \
-	--region pacific
-
-geomad-pacific-test-fiji-volcanic:
-	ldn geomad \
-	--tile-id 63_20 \
-	--year $(YEAR) \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--product-owner ausp \
-	--all-bands \
-	--region pacific
-
-geomad-pacific-test-kiribati-atolls:
-	ldn geomad \
-	--tile-id 58_43 \
-	--year $(YEAR) \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--product-owner ausp \
-	--all-bands \
-	--region pacific
-
-geomad-singapore:
-	ldn geomad \
-	--tile-id 312_106 \
-	--year $(YEAR) \
-	--version $(VERSION) \
-	--overwrite \
-	--all-bands \
-	$(DECIMATED) \
-	--product-owner ausp \
-	--region non-pacific
-
-geomad-singapore-2:
-	ldn geomad \
-	--tile-id 312_105 \
-	--year $(YEAR) \
-	--version $(VERSION) \
-	--overwrite \
-	--all-bands \
-	$(DECIMATED) \
-	--product-owner ausp \
-	--region non-pacific
-
-
+# Run geomad for all test case sites for the one YEAR.
 geomad-test-case-sites-2020:
-	$(MAKE) geomad-pacific-test-kiribati-atolls
-	$(MAKE) geomad-pacific-test-fiji-volcanic
-	$(MAKE) geomad-pacific-test-fiji-antimeridian
-	$(MAKE) geomad-non-pacific-test-carribbean-atolls-belize
-	$(MAKE) geomad-non-pacific-test-carribbean-land-suriname
-	$(MAKE) geomad-non-pacific-test-cape-verde
-	$(MAKE) geomad-non-pacific-test-comoros
+	for site in $(GEOMAD_SITES); do \
+		tile_id=$${site%%:*}; \
+		region=$${site##*:}; \
+		ldn geomad \
+			--tile-id $$tile_id \
+			--region $$region \
+			--year $(YEAR) \
+			--version $(VERSION_GEOMAD) \
+			--product-owner ausp \
+			$(DECIMATED) \
+			--overwrite; \
+	done
 
-
+# Run geomad for all test case sites for years 2000-2025.
 geomad-2000-2025:
-	for site in 58_43:pacific 63_20:pacific 66_22:pacific 119_126:non-pacific 152_110:non-pacific 185_125:non-pacific 251_88:non-pacific 312_105:non-pacific 312_106:non-pacific; do \
+	for site in $(GEOMAD_SITES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site##*:}; \
 		for year in $$(seq 2000 2025); do \
@@ -149,7 +68,7 @@ geomad-2000-2025:
 				--tile-id $$tile_id \
 				--region $$region \
 				--year $$year \
-				--version $(VERSION) \
+				--version $(VERSION_GEOMAD) \
 				--product-owner ausp \
 				--overwrite; \
 		done; \
@@ -161,7 +80,7 @@ index-geomad:
 	ldn index-to-stac-geoparquet \
 	--prefix "ausp_ls_geomad" \
 	--output-filename "ausp_ls_geomad" \
-	--version "0-0-2"
+	--version $(VERSION_GEOMAD)
 
 
 ###### Train and Predict
@@ -178,7 +97,7 @@ predict-lulc-pacific-test-tiles-2020:
 		ldn train-predict predict \
 		--tile-id $$site \
 		--year $(YEAR) \
-		--version 0-0-1 \
+		--version $(VERSION_PREDICTION) \
 		--region pacific \
 		--output-bucket="data.ldn.auspatious.com" \
 		--model-path="ldn/lulc_random_forest_model.joblib" \
@@ -193,7 +112,7 @@ predict-lulc-pacific-test-tiles-2020:
 # 		ldn train-predict predict \
 # 		--tile-id $$site \
 # 		--year $(YEAR) \
-# 		--version 0-0-1 \
+# 		--version $(VERSION_PREDICTION) \
 # 		--region non-pacific \
 # 		--output-bucket="data.ldn.auspatious.com" \
 # 		--model-path="ldn/lulc_random_forest_model.joblib" \
@@ -209,18 +128,24 @@ index-predictions:
 	ldn index-to-stac-geoparquet \
 	--prefix "ausp_ls_lulc_prediction" \
 	--output-filename "ausp_ls_lulc_prediction" \
-	--version "0-0-1"
+	--version $(VERSION_PREDICTION)
 
 # Visualisation
 make-mosaic-all-2020:
 	ldn make-mosaics \
 	--dataset all \
-	--years $(YEAR)
+	--years $(YEAR) \
+	--version-geomad $(VERSION_GEOMAD) \
+	--version-prediction $(VERSION_PREDICTION)
 make-mosaic-geomad-2020:
 	ldn make-mosaics \
 	--dataset geomad \
-	--years $(YEAR)
+	--years $(YEAR) \
+	--version-geomad $(VERSION_GEOMAD) \
+	--version-prediction $(VERSION_PREDICTION)
 make-mosaic-prediction-2020:
 	ldn make-mosaics \
 	--dataset prediction \
-	--years $(YEAR)
+	--years $(YEAR) \
+	--version-geomad $(VERSION_GEOMAD) \
+	--version-prediction $(VERSION_PREDICTION)

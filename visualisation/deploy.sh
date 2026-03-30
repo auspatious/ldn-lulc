@@ -9,7 +9,7 @@ AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 echo "==> Building mosaics..."
 # TODO: make mosaics for all years (when available).
-poetry run ldn make-mosaics --dataset all --years 2020
+poetry run ldn make-mosaics --dataset all --years 2020 --version-geomad 0-0-2b --version-prediction 0-0-1
 
 echo "==> Creating ECR repository..."
 terraform -chdir=visualisation/infra init

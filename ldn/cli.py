@@ -456,6 +456,8 @@ def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
 def make_mosaics(
     years: Annotated[str, typer.Option(help="Comma-separated list of years (e.g. '2020,2021') to build mosaics for.")],
     dataset: Annotated[Literal["all", "geomad", "prediction"], typer.Option(help="Which dataset to build mosaics for, either 'all', 'geomad' or 'prediction'.")],
+    version_geomad: Annotated[str, typer.Option(help="Version string to use for the GeoMAD mosaic files, e.g. '0-0-1'.")],
+    version_prediction: Annotated[str, typer.Option(help="Version string to use for the Prediction mosaic files, e.g. '0-0-1'.")],
 ) -> None:
     """ Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files. """
 
@@ -463,17 +465,17 @@ def make_mosaics(
     years_list = [y.strip() for y in years.split(",")]
 
     # MosaicBackend needs s3:// style paths.
-    output_path_geomad = "s3://data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/mosaics/"
-    output_path_prediction = "s3://data.ldn.auspatious.com/ausp_ls_lulc_prediction/0-0-1/mosaics/"
+    output_path_geomad = f"s3://data.ldn.auspatious.com/ausp_ls_geomad/{version_geomad}/mosaics/"
+    output_path_prediction = f"s3://data.ldn.auspatious.com/ausp_ls_lulc_prediction/{version_prediction}/mosaics/"
 
     datasets = []
     if dataset in ["prediction", "all"]:
         datasets.append(
-            ("prediction", "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_lulc_prediction/0-0-1/ausp_ls_lulc_prediction.parquet", output_path_prediction)
+            ("prediction", f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_lulc_prediction/{version_prediction}/ausp_ls_lulc_prediction.parquet", output_path_prediction)
         )
     if dataset in ["geomad", "all"]:
         datasets.append(
-            ("geomad", "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet", output_path_geomad)
+            ("geomad", f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/{version_geomad}/ausp_ls_geomad.parquet", output_path_geomad)
         )
 
     # Build mosaics for all years in the dataset
