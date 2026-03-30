@@ -341,7 +341,12 @@ def geomad(
 def _stac_self_link(feature: dict) -> str:
     """Extract the STAC item self-link URL."""
     links = {link["rel"]: link["href"] for link in feature.get("links", [])}
-    return links.get("self", feature.get("id", ""))
+    self_link = links.get("self")
+    if self_link is None:
+        raise ValueError(
+            f"Feature {feature.get('id', 'unknown')} has no self link, cannot determine STAC item URL."
+        )
+    return self_link
 
 
 def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:

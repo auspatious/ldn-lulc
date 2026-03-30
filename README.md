@@ -58,7 +58,7 @@ poetry add "datacube-compute@git+https://github.com/auspatious/datacube-compute.
 
 ### To run tests
 
-Simply run: `pytest`
+Simply run: `poetry run pytest` or for a specific file: `poetry run pytest ldn/tests/test_mosaic.py`
 
 
 ## Running Commands
