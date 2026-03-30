@@ -8,11 +8,9 @@
 # 5. Run make-mosaic for geomad and prediction datasets
 # 6. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
-# TODO: Update non-pacific grid indexes because the grid size was updated so they no longer target the desired locations.
-
-VERSION ?= 0-0-1
+VERSION ?= 0-0-2b
 DECIMATED ?= --decimated
-YEAR ?= 2024
+YEAR ?= 2020
 
 # Get grid tiles - all
 grid-get-tiles-all:
@@ -32,104 +30,107 @@ print-tasks-2000-2024-all-grids:
 	ldn print-tasks --years="2000-2024" --grids="all"
 
 # Geomad tile
-# TODO: Update tile index because of new non-pacific grid.
 geomad-non-pacific-test-carribbean-atolls-belize:
 	ldn geomad \
-	--tile-id 127_134 \
-	--year 2024 \
+	--tile-id 119_126 \
+	--year $(YEAR) \
 	--version $(VERSION) \
 	--overwrite \
 	$(DECIMATED) \
+	--product-owner ausp \
 	--no-all-bands \
 	--region non-pacific
 
 geomad-non-pacific-test-carribbean-land-suriname:
-# TODO: Update tile index because of new non-pacific grid.
 	ldn geomad \
-	--tile-id 162_117 \
-	--year 2024 \
+	--tile-id 152_110 \
+	--year $(YEAR) \
 	--version $(VERSION) \
 	--overwrite \
 	$(DECIMATED) \
+	--product-owner ausp \
 	--all-bands \
 	--region non-pacific
 
 geomad-non-pacific-test-cape-verde:
-# TODO: Update tile index because of new non-pacific grid.
 	ldn geomad \
-	--tile-id 197_133 \
-	--year 2024 \
+	--tile-id 185_125 \
+	--year $(YEAR) \
 	--version $(VERSION) \
 	--overwrite \
 	$(DECIMATED) \
+	--product-owner ausp \
 	--all-bands \
 	--region non-pacific
 
 geomad-non-pacific-test-comoros:
-# TODO: Update tile index because of new non-pacific grid.
 	ldn geomad \
-	--tile-id 268_94 \
-	--year 2024 \
+	--tile-id 251_88 \
+	--year $(YEAR) \
 	--version $(VERSION) \
 	--overwrite \
 	$(DECIMATED) \
+	--product-owner ausp \
 	--all-bands \
 	--region non-pacific
 
 geomad-pacific-test-fiji-antimeridian:
 	ldn geomad \
 	--tile-id 66_22 \
-	--year 2024 \
+	--year $(YEAR) \
 	--version $(VERSION) \
 	--overwrite \
 	$(DECIMATED) \
+	--product-owner ausp \
 	--all-bands \
 	--region pacific
 
 geomad-pacific-test-fiji-volcanic:
 	ldn geomad \
 	--tile-id 63_20 \
-	--year 2024 \
+	--year $(YEAR) \
 	--version $(VERSION) \
 	--overwrite \
 	$(DECIMATED) \
+	--product-owner ausp \
 	--all-bands \
 	--region pacific
 
 geomad-pacific-test-kiribati-atolls:
 	ldn geomad \
 	--tile-id 58_43 \
-	--year 2024 \
+	--year $(YEAR) \
 	--version $(VERSION) \
 	--overwrite \
 	$(DECIMATED) \
+	--product-owner ausp \
 	--all-bands \
 	--region pacific
 
 geomad-singapore:
-# TODO: Update tile index because of new non-pacific grid.
 	ldn geomad \
-	--tile-id 333_113 \
-	--year 2020 \
+	--tile-id 312_106 \
+	--year $(YEAR) \
 	--version $(VERSION) \
 	--overwrite \
 	--all-bands \
 	$(DECIMATED) \
+	--product-owner ausp \
 	--region non-pacific
 
 geomad-singapore-2:
-# TODO: Update tile index because of new non-pacific grid.
 	ldn geomad \
-	--tile-id 333_112 \
-	--year 2020 \
+	--tile-id 312_105 \
+	--year $(YEAR) \
 	--version $(VERSION) \
 	--overwrite \
 	--all-bands \
 	$(DECIMATED) \
+	--product-owner ausp \
 	--region non-pacific
 
 
-geomad-test-case-sites:
+geomad-test-case-sites-2020:
 	$(MAKE) geomad-pacific-test-kiribati-atolls
 	$(MAKE) geomad-pacific-test-fiji-volcanic
 	$(MAKE) geomad-pacific-test-fiji-antimeridian
@@ -138,20 +139,9 @@ geomad-test-case-sites:
 	$(MAKE) geomad-non-pacific-test-cape-verde
 	$(MAKE) geomad-non-pacific-test-comoros
 
-# TODO: Update tile index because of new non-pacific grid.
-# 333_112, 333_113 is Singapore
-# 63,20 is SW Fiji
-# GEOMAD_CASE_STUDY_TILE_ID ?= 63_20
-# GEOMAD_CASE_STUDY_REGION ?= pacific
-# GEOMAD_CASE_STUDY_TILE_ID ?= 333_112
-# GEOMAD_CASE_STUDY_REGION ?= non-pacific
-GEOMAD_CASE_STUDY_TILE_ID ?= 333_113
-GEOMAD_CASE_STUDY_REGION ?= non-pacific
 
-
-# TODO: Update tile index because of new non-pacific grid.
 geomad-2000-2025:
-	for site in 58_43:pacific 63_20:pacific 66_22:pacific 127_134:non-pacific 162_117:non-pacific 197_133:non-pacific 268_94:non-pacific; do \
+	for site in 58_43:pacific 63_20:pacific 66_22:pacific 119_126:non-pacific 152_110:non-pacific 185_125:non-pacific 251_88:non-pacific 312_105:non-pacific 312_106:non-pacific; do \
 		tile_id=$${site%%:*}; \
 		region=$${site##*:}; \
 		for year in $$(seq 2000 2025); do \
@@ -187,7 +177,7 @@ predict-lulc-pacific-test-tiles-2020:
 	for site in 66_22 58_43 63_20; do \
 		ldn train-predict predict \
 		--tile-id $$site \
-		--year 2020 \
+		--year $(YEAR) \
 		--version 0-0-1 \
 		--region pacific \
 		--output-bucket="data.ldn.auspatious.com" \
@@ -199,10 +189,10 @@ predict-lulc-pacific-test-tiles-2020:
 
 # TODO: No non-pacific tile will work until we redo the geomad, stac-geoparquet, and tile index.
 # predict-lulc-non-pacific-test-tiles-2020:
-# 	for site in 127_134 162_117 197_133 268_94; do \
+# 	for site in 119_126 152_110 185_125 251_88; do \
 # 		ldn train-predict predict \
 # 		--tile-id $$site \
-# 		--year 2020 \
+# 		--year $(YEAR) \
 # 		--version 0-0-1 \
 # 		--region non-pacific \
 # 		--output-bucket="data.ldn.auspatious.com" \
@@ -225,12 +215,12 @@ index-predictions:
 make-mosaic-all-2020:
 	ldn make-mosaics \
 	--dataset all \
-	--years "2020"
+	--years $(YEAR)
 make-mosaic-geomad-2020:
 	ldn make-mosaics \
 	--dataset geomad \
-	--years "2020"
+	--years $(YEAR)
 make-mosaic-prediction-2020:
 	ldn make-mosaics \
 	--dataset prediction \
-	--years "2020"
+	--years $(YEAR)
