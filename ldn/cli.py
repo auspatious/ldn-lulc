@@ -18,6 +18,12 @@ import json
 from dep_tools.exceptions import EmptyCollectionError
 from dask.distributed import Client as DaskClient
 
+from cogeo_mosaic.backends import MosaicBackend
+from cogeo_mosaic.mosaic import MosaicJSON
+from pystac import ItemCollection
+from rustac import search_sync
+from shapely.geometry import mapping, shape
+
 from ldn.geomad import (
     GeoMADProcessor,
     LANDSAT_SCALE,
@@ -299,3 +305,89 @@ def geomad(
     typer.echo(f"Finished writing to {stac_document}")
 
     return
+
+
+def _stac_self_link(feature: dict) -> str:
+    """Extract the STAC item self-link URL."""
+    links = {link["rel"]: link["href"] for link in feature.get("links", [])}
+    self_link = links.get("self")
+    if self_link is None:
+        raise ValueError(
+            f"Feature {feature.get('id', 'unknown')} has no self link, cannot determine STAC item URL."
+        )
+    return self_link
+
+
+def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
+    """Read STAC-Geoparquet, filter by year, build mosaic.json."""
+
+    logger.info(f"Building mosaic for year {year}")
+    item_collection = search_sync(stac_geoparquet_url, datetime=year)
+    items = ItemCollection(item_collection)
+    features = [f.to_dict() for f in items]
+
+    if not features:
+        raise ValueError(f"No STAC items found for year {year}")
+
+    logger.info(f"  {len(features)} features found")
+
+    # cogeo-mosaic requires Polygon geometries
+    for feat in features:
+        geom = shape(feat["geometry"])
+        if geom.geom_type != "Polygon":
+            geom = geom.convex_hull
+        feat["geometry"] = mapping(geom)
+
+    mosaic = MosaicJSON.from_features(
+        features,
+        minzoom=5,
+        maxzoom=14,
+        accessor=_stac_self_link,
+    )
+
+    logger.info(
+        f"  quadkey_zoom={mosaic.quadkey_zoom}, {len(mosaic.tiles)} tile entries"
+    )
+
+    return mosaic
+
+
+@app.command()
+def make_mosaics(
+    years: Annotated[str, typer.Option(help="Comma-separated list of years (e.g. '2020,2021') to build mosaics for.")],
+    dataset: Annotated[Literal["all", "geomad", "prediction"], typer.Option(help="Which dataset to build mosaics for, either 'all', 'geomad' or 'prediction'.")],
+) -> None:
+    """ Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files. """
+
+    logger.info(f"Making mosaics for dataset '{dataset}' and years: {years}")
+    years_list = [y.strip() for y in years.split(",")]
+
+    # MosaicBackend needs s3:// style paths.
+    output_path_geomad = "s3://data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/mosaics/"
+    output_path_prediction = "s3://data.ldn.auspatious.com/ausp_ls_prediction/0-0-1/mosaics/"
+
+    datasets = []
+    if dataset in ["prediction", "all"]:
+        datasets.append(
+            ("prediction", "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_prediction/0-0-1/ausp_ls_prediction.parquet", output_path_prediction)
+        )
+    if dataset in ["geomad", "all"]:
+        datasets.append(
+            ("geomad", "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet", output_path_geomad)
+        )
+
+    # Build mosaics for all years in the dataset
+    for (dataset_name, stac_geoparquet_url, output_path) in datasets:
+        logger.info(f"Building mosaics for '{dataset_name}' dataset.")
+        for _year in years_list:
+            mosaic = _build_mosaic_for_year(_year, stac_geoparquet_url)
+            logger.info(f"  {_year} built successfully.")
+            # Write to S3.
+            out_path = f"{output_path}{dataset_name}_{_year}_mosaic.json"
+
+            with MosaicBackend(out_path, mosaic_def=mosaic) as m:
+                m.write(overwrite=True)
+
+            logger.info(f"  {_year} written to {out_path}")
+
+    logger.info("Finished writing mosaics.")

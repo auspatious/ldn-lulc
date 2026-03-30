@@ -155,3 +155,18 @@ geomad-2000-2025:
 # 	ldn predict \
 # 	--tile-id 333_112 \
 # 	--year 2020
+
+
+# Visualisation
+make-mosaic-all-2020:
+	ldn make-mosaics \
+	--dataset all \
+	--years "2020"
+make-mosaic-geomad-2020:
+	ldn make-mosaics \
+	--dataset geomad \
+	--years "2020"
+make-mosaic-prediction-2020:
+	ldn make-mosaics \
+	--dataset prediction \
+	--years "2020"
