@@ -3,7 +3,7 @@ from typing import Literal
 
 import typer
 
-from train_predict import run_predict_task
+from ldn.train_predict import run_predict_task
 
 train_predict_app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -16,6 +16,8 @@ def _train_model() -> None:
     # 2. Again filter by outliers per class.
     # 3. Train a random forest model. 
     # 4. Write model to S3.
+
+    # TODO: Adapt from notebooks/training_data/1_Train_Predict.ipynb.
     raise NotImplementedError("This command is not implemented yet.")
 
 @train_predict_app.command("predict")
@@ -24,8 +26,8 @@ def _predict(
     year: str = typer.Option(..., help="Year to predict LULC for."),
     version: str = typer.Option(..., help="Version of the model to use e.g. '0-0-1'."),
     region: Literal["pacific", "non-pacific"] = typer.Option(..., help="Region to predict LULC for. Can be 'pacific' or 'non-pacific'."),
-    output_bucket: str = typer.Option(..., help="S3 bucket to write predictions to."),
-    model_path: str = typer.Option(..., help="Model to use for prediction."),
+    output_bucket: str = typer.Option("data.ldn.auspatious.com", help="S3 bucket to write predictions to."),
+    model_path: str = typer.Option("ldn/lulc_random_forest_model.joblib", help="Model to use for prediction."),
     xy_chunk_size: int = typer.Option(1024, help="Chunk size in pixels for x and y dimensions when predicting. Larger chunk sizes may be faster but use more memory."),
     asset_url_prefix: str | None = typer.Option(None, help="Prefix for asset URLs."),
     decimated: bool = typer.Option(False, help="Whether to use decimated data for prediction. Decimated data is faster to predict but less accurate."),
@@ -33,17 +35,6 @@ def _predict(
     ) -> None:
     if int(year) < 2000 or int(year) > 2024:
         raise ValueError("Year must be between 2000 and 2024.")
-    
-    # TODO: When we do this, we need to use the dep-tools, like we do for the geomad. https://github.com/digitalearthpacific/dep-tools.
-    # Set up predict command (Will). Use DEP Tooling (look at Seagrass example because it is another ML case https://github.com/digitalearthpacific/dep-seagrass, it is a bit messy)
-    # https://github.com/digitalearthpacific/dep-seagrass/blob/main/classification/run_task.py
-
-    # Steps:
-    # 1. Load geomad and dem data for the tile and year.
-    # 2. Load model from S3 for region and version.
-    # 3. Predict LULC for tile and year.
-    # 4. Write predicted LULC as COG to S3.
-    # 5. Update STAC-Geoparquet in S3 with new metadata.
 
     run_predict_task(
         tile_id, 

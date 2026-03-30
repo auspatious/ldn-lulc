@@ -171,10 +171,20 @@ make-mosaic-prediction-2020:
 train-model:
 	ldn train-predict train-model
 # 3. Predict LULC for a tile and year.
-# TODO: Update parameters.
-predict-lulc-singapore-2020:
+predict-lulc-fiji-2020:
 	ldn train-predict predict \
-	--tile-id 333_112 \
+	--tile-id 63_20 \
 	--year 2020 \
 	--version 0-0-1 \
-	--region non-pacific \
+	--region pacific \
+	--output-bucket="data.ldn.auspatious.com" \
+	--model-path="ldn/lulc_random_forest_model.joblib" \
+	--xy-chunk-size 1024 \
+	--decimated \
+	--overwrite
+# 	--asset_url_prefix="ausp_ls_prediction" \ # TODO: I am not sure about this one
+
+# 4. Update the STAC-Geoparquet index after all tiles/years have run.
+# TODO: Update the index STAC-Geoparquet after all tiles/years have run.
+update-prediction-stac-geoparquet:
+	echo "TODO."
