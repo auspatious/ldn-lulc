@@ -164,6 +164,7 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     catalog = PyStacClient.open(DEM_CATALOG)
     bbox = list(geobox.geographic_extent.boundingbox)
 
+    # TODO: For antimeridian-crossing tiles like Pacific 66_22 (Fiji) this gives "Found 235 DEM items". Need to fix this like I did for CSDR. It works decimated but is inneficient.
     dem_items = list(catalog.search(collections=[DEM_COLLECTION], bbox=bbox).items())
     logger.info(f"Found {len(dem_items)} DEM items")
 

@@ -1,5 +1,6 @@
 import logging
 import sys
+import json
 
 import boto3
 from dep_tools.namers import S3ItemPath
@@ -12,8 +13,8 @@ from ldn.geomad import AwsStacTask as Task
 from dep_tools.writers import AwsDsCogWriter
 from odc.stac import configure_s3_access
 from typing import Literal
-
-import json
+import obstore
+from rustac import write_sync
 
 from dep_tools.exceptions import EmptyCollectionError
 from dask.distributed import Client as DaskClient
@@ -309,6 +310,101 @@ def geomad(
     typer.echo(f"Finished writing to {stac_document}")
 
     return
+
+
+
+def _find_stac_items_s3(
+    bucket: str,
+    prefix: str,
+    aws_region: str,
+    suffix: str = ".stac-item.json",
+    chunk_size: int = 200,
+) -> list[str]:
+    """List S3 keys ending in suffix under bucket/prefix.
+
+    Args:
+        bucket: S3 bucket name.
+        prefix: Key prefix to search under.
+        aws_region: AWS region of the bucket.
+        suffix: File suffix to match.
+        chunk_size: Number of objects per listing page.
+
+    Returns:
+        List of S3 keys (without the s3://bucket/ prefix) that match.
+    """
+    store = obstore.store.S3Store(bucket=bucket, region=aws_region)
+    matches: list[str] = []
+    stream = obstore.list(store, prefix=prefix.lstrip("/"), chunk_size=chunk_size)
+
+    for chunk in stream:
+        for obj in chunk:
+            path = obj.get("path", "")
+            if path.endswith(suffix):
+                matches.append(path)
+
+    return matches
+
+
+def _load_stac_docs(
+    bucket: str,
+    keys: list[str],
+    aws_region: str,
+) -> list[dict]:
+    """Load STAC item JSON documents from S3 into memory.
+
+    Args:
+        bucket: S3 bucket name.
+        keys: S3 object keys to load.
+        aws_region: AWS region of the bucket.
+
+    Returns:
+        List of parsed STAC item dictionaries.
+    """
+    store = obstore.store.S3Store(bucket=bucket, region=aws_region)
+    docs: list[dict] = []
+
+    for key in keys:
+        raw = obstore.get(store, key)
+        payload = raw.bytes()
+        if hasattr(payload, "to_bytes"):
+            payload = payload.to_bytes()
+        elif not isinstance(payload, (bytes, bytearray)):
+            payload = bytes(payload)
+        docs.append(json.loads(payload.decode("utf-8")))
+
+    return docs
+
+
+@app.command("index-to-stac-geoparquet")
+def _index_to_stac_geoparquet(
+    prefix: str = typer.Option("ausp_ls_lulc_prediction", help="S3 path prefix to search for STAC items to index."),
+    output_filename: str = typer.Option("ausp_ls_lulc_prediction", help="Output filename for the STAC-Geoparquet index."),
+    version: str = typer.Option("0-0-1", help="Prediction version string e.g. '0-0-1'."),
+    bucket: str = typer.Option("data.ldn.auspatious.com", help="S3 bucket containing predictions."),
+    aws_region: str = typer.Option("us-west-2", help="AWS region of the bucket."),
+) -> None:
+    """Build a STAC-Geoparquet index from all prediction STAC items on S3."""
+    prefix = f"{prefix}/{version}"
+    parquet_key = f"{prefix}/{output_filename}.parquet"
+
+    logger.info(f"Listing STAC items under s3://{bucket}/{prefix}")
+    keys = _find_stac_items_s3(bucket, prefix, aws_region)
+    logger.info(f"Found {len(keys)} STAC items")
+
+    if len(keys) == 0:
+        logger.warning("No STAC items found, nothing to index.")
+        raise typer.Exit(code=1)
+
+    logger.info("Loading STAC item documents into memory")
+    docs = _load_stac_docs(bucket, keys, aws_region)
+    logger.info(f"Loaded {len(docs)} STAC documents")
+
+    logger.info(f"Writing STAC-Geoparquet to s3://{bucket}/{parquet_key}")
+    store = obstore.store.S3Store(bucket=bucket, region=aws_region)
+    write_sync(parquet_key, docs, store=store)
+
+    logger.info(f"Wrote index with {len(docs)} items to s3://{bucket}/{parquet_key}")
+
 
 
 def _stac_self_link(feature: dict) -> str:

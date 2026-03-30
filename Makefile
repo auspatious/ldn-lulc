@@ -1,6 +1,14 @@
 # Here we will store commands for working with the grid, GeoMAD, training data, and ML models.
 
-# TODO: Update non-pacific grid indexes because the grid size was updated so they no longer target the dessired locations.
+# Workflow:
+# 1. Run GeoMAD for all tiles/years
+# 2. Run index GeoMAD (STAC-Geoparquet)
+# 3. Run prediction for all tiles/years
+# 4. Run index prediction (STAC-Geoparquet)
+# 5. Run make-mosaic for geomad and prediction datasets
+# 6. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
+
+# TODO: Update non-pacific grid indexes because the grid size was updated so they no longer target the desired locations.
 
 VERSION ?= 0-0-1
 DECIMATED ?= --decimated
@@ -24,6 +32,7 @@ print-tasks-2000-2024-all-grids:
 	ldn print-tasks --years="2000-2024" --grids="all"
 
 # Geomad tile
+# TODO: Update tile index because of new non-pacific grid.
 geomad-non-pacific-test-carribbean-atolls-belize:
 	ldn geomad \
 	--tile-id 127_134 \
@@ -35,6 +44,7 @@ geomad-non-pacific-test-carribbean-atolls-belize:
 	--region non-pacific
 
 geomad-non-pacific-test-carribbean-land-suriname:
+# TODO: Update tile index because of new non-pacific grid.
 	ldn geomad \
 	--tile-id 162_117 \
 	--year 2024 \
@@ -45,6 +55,7 @@ geomad-non-pacific-test-carribbean-land-suriname:
 	--region non-pacific
 
 geomad-non-pacific-test-cape-verde:
+# TODO: Update tile index because of new non-pacific grid.
 	ldn geomad \
 	--tile-id 197_133 \
 	--year 2024 \
@@ -55,6 +66,7 @@ geomad-non-pacific-test-cape-verde:
 	--region non-pacific
 
 geomad-non-pacific-test-comoros:
+# TODO: Update tile index because of new non-pacific grid.
 	ldn geomad \
 	--tile-id 268_94 \
 	--year 2024 \
@@ -95,6 +107,7 @@ geomad-pacific-test-kiribati-atolls:
 	--region pacific
 
 geomad-singapore:
+# TODO: Update tile index because of new non-pacific grid.
 	ldn geomad \
 	--tile-id 333_113 \
 	--year 2020 \
@@ -105,6 +118,7 @@ geomad-singapore:
 	--region non-pacific
 
 geomad-singapore-2:
+# TODO: Update tile index because of new non-pacific grid.
 	ldn geomad \
 	--tile-id 333_112 \
 	--year 2020 \
@@ -124,6 +138,7 @@ geomad-test-case-sites:
 	$(MAKE) geomad-non-pacific-test-cape-verde
 	$(MAKE) geomad-non-pacific-test-comoros
 
+# TODO: Update tile index because of new non-pacific grid.
 # 333_112, 333_113 is Singapore
 # 63,20 is SW Fiji
 # GEOMAD_CASE_STUDY_TILE_ID ?= 63_20
@@ -134,6 +149,7 @@ GEOMAD_CASE_STUDY_TILE_ID ?= 333_113
 GEOMAD_CASE_STUDY_REGION ?= non-pacific
 
 
+# TODO: Update tile index because of new non-pacific grid.
 geomad-2000-2025:
 	for site in 58_43:pacific 63_20:pacific 66_22:pacific 127_134:non-pacific 162_117:non-pacific 197_133:non-pacific 268_94:non-pacific; do \
 		tile_id=$${site%%:*}; \
@@ -150,6 +166,14 @@ geomad-2000-2025:
 	done
 
 
+# TODO: Might have to do this per 2 regions (pacific and non-pacific) because the prefix is different.
+index-geomad:
+	ldn index-to-stac-geoparquet \
+	--prefix "ausp_ls_geomad" \
+	--output-filename "ausp_ls_geomad" \
+	--version "0-0-2"
+
+
 ###### Train and Predict
 
 # 1. Training data is created in notebooks/training_data/0_Generate_Training_Points.ipynb.
@@ -157,48 +181,45 @@ geomad-2000-2025:
 # 2. Train a model with the training data made in the notebook above.
 train-model:
 	ldn train-predict train-model
-# 3. Predict LULC for a tile and year.
-predict-lulc-fiji-2020:
-	ldn train-predict predict \
-	--tile-id 63_20 \
-	--year 2020 \
-	--version 0-0-1 \
-	--region pacific \
-	--output-bucket="data.ldn.auspatious.com" \
-	--model-path="ldn/lulc_random_forest_model.joblib" \
-	--xy-chunk-size 1024 \
-	--decimated \
-	--overwrite
 
-predict-lulc-kiribati-2020:
-	ldn train-predict predict \
-	--tile-id 58_43 \
-	--year 2020 \
-	--version 0-0-1 \
-	--region pacific \
-	--output-bucket="data.ldn.auspatious.com" \
-	--model-path="ldn/lulc_random_forest_model.joblib" \
-	--xy-chunk-size 1024 \
-	--decimated \
-	--overwrite
+# 3. Predict LULC for a tile and year.
+predict-lulc-pacific-test-tiles-2020:
+	for site in 66_22 58_43 63_20; do \
+		ldn train-predict predict \
+		--tile-id $$site \
+		--year 2020 \
+		--version 0-0-1 \
+		--region pacific \
+		--output-bucket="data.ldn.auspatious.com" \
+		--model-path="ldn/lulc_random_forest_model.joblib" \
+		--xy-chunk-size 1024 \
+		--decimated \
+		--overwrite; \
+	done
 
 # TODO: No non-pacific tile will work until we redo the geomad, stac-geoparquet, and tile index.
-# predict-lulc-cape-verde-2020:
-# 	ldn train-predict predict \
-# 	--tile-id 197_133 \
-# 	--year 2020 \
-# 	--version 0-0-1 \
-# 	--region non-pacific \
-# 	--output-bucket="data.ldn.auspatious.com" \
-# 	--model-path="ldn/lulc_random_forest_model.joblib" \
-# 	--xy-chunk-size 1024 \
-# 	--decimated \
-# 	--overwrite
+# predict-lulc-non-pacific-test-tiles-2020:
+# 	for site in 127_134 162_117 197_133 268_94; do \
+# 		ldn train-predict predict \
+# 		--tile-id $$site \
+# 		--year 2020 \
+# 		--version 0-0-1 \
+# 		--region non-pacific \
+# 		--output-bucket="data.ldn.auspatious.com" \
+# 		--model-path="ldn/lulc_random_forest_model.joblib" \
+# 		--xy-chunk-size 1024 \
+# 		--decimated \
+# 		--overwrite; \
+# 	done
+
 
 # 4. Update the STAC-Geoparquet index after all tiles/years have run.
 # TODO: Update the index STAC-Geoparquet after all tiles/years have run.
 index-predictions:
-	ldn train-predict index-predictions
+	ldn index-to-stac-geoparquet \
+	--prefix "ausp_ls_lulc_prediction" \
+	--output-filename "ausp_ls_lulc_prediction" \
+	--version "0-0-1"
 
 # Visualisation
 make-mosaic-all-2020:
