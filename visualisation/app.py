@@ -68,7 +68,7 @@ os.environ.update(
 MOSAIC_S3_BUCKET = "data.ldn.auspatious.com"
 GEOMAD_DATASET_PREFIX = "ausp_ls_geomad"
 GEOMAD_DATASET_VERSION = "0-0-2"
-PREDICTION_DATASET_PREFIX = "ausp_ls_prediction"
+PREDICTION_DATASET_PREFIX = "dep_landsat_lulc_prediction"
 PREDICTION_DATASET_VERSION = "0-0-1"
 MOSAIC_PATHS_GEOMAD: dict[str, str] = {}
 MOSAIC_PATHS_PREDICTION: dict[str, str] = {}

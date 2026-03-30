@@ -368,12 +368,12 @@ def make_mosaics(
 
     # MosaicBackend needs s3:// style paths.
     output_path_geomad = "s3://data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/mosaics/"
-    output_path_prediction = "s3://data.ldn.auspatious.com/ausp_ls_prediction/0-0-1/mosaics/"
+    output_path_prediction = "s3://data.ldn.auspatious.com/dep_landsat_lulc_prediction/0-0-1/mosaics/"
 
     datasets = []
     if dataset in ["prediction", "all"]:
         datasets.append(
-            ("prediction", "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_prediction/0-0-1/ausp_ls_prediction.parquet", output_path_prediction)
+            ("prediction", "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/dep_landsat_lulc_prediction/0-0-1/dep_landsat_lulc_prediction.parquet", output_path_prediction)
         )
     if dataset in ["geomad", "all"]:
         datasets.append(

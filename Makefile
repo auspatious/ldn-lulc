@@ -182,7 +182,6 @@ predict-lulc-fiji-2020:
 	--xy-chunk-size 1024 \
 	--decimated \
 	--overwrite
-# 	--asset_url_prefix="ausp_ls_prediction" \ # TODO: I am not sure about this one
 
 # 4. Update the STAC-Geoparquet index after all tiles/years have run.
 # TODO: Update the index STAC-Geoparquet after all tiles/years have run.

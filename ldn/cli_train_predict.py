@@ -47,6 +47,13 @@ def _predict(
         asset_url_prefix=asset_url_prefix,
         decimated=decimated,
         overwrite=overwrite,
+        # probability_threshold
     )
-    
-    raise NotImplementedError("This command is a work in progress.")
+
+
+# TODO: Add a command here to make the prediction/classification STAC-Geoparquet.
+# update-prediction-stac-geoparquet
+
+# Get all stac items like https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/dep_landsat_lulc_prediction/0-0-1/63_20/2020/dep_landsat_lulc_prediction_63_20_2020.stac-item.json
+
+# Write stac-geoparquet to here: "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/dep_landsat_lulc_prediction/0-0-1/dep_landsat_lulc_prediction.parquet" (get this from cli.py:376)
