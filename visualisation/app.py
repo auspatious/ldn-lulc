@@ -68,7 +68,7 @@ os.environ.update(
 MOSAIC_S3_BUCKET = "data.ldn.auspatious.com"
 GEOMAD_DATASET_PREFIX = "ausp_ls_geomad"
 GEOMAD_DATASET_VERSION = "0-0-2"
-PREDICTION_DATASET_PREFIX = "dep_landsat_lulc_prediction"
+PREDICTION_DATASET_PREFIX = "ausp_ls_lulc_prediction"
 PREDICTION_DATASET_VERSION = "0-0-1"
 MOSAIC_PATHS_GEOMAD: dict[str, str] = {}
 MOSAIC_PATHS_PREDICTION: dict[str, str] = {}
@@ -128,7 +128,7 @@ app = FastAPI(
     description=(
         "Mosaic viewer for Landsat GeoMedian/GeoMAD and LULC Prediction data. "
         "Pass a dataset as `dataset` (e.g. `dataset=geomad` or `dataset=prediction`) and year as `year` (e.g. `year=2020`) and band assets as "
-        "`assets=red&assets=green&assets=blue` or `assets=lulc`."
+        "`assets=red&assets=green&assets=blue` or `assets=classification`."
     ),
     version="1.0.0",
 )
@@ -175,7 +175,7 @@ def root():
         return f'<a href="/map?dataset=geomad&year={y}&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500">{y}</a>'
 
     def prediction_link(y):
-        return f'<a href="/map?dataset=prediction&year={y}&assets=lulc&colormap_name=lulc">{y}</a>'
+        return f'<a href="/map?dataset=prediction&year={y}&assets=classification&colormap_name=lulc">{y}</a>'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -234,7 +234,7 @@ def map_viewer(
     elif dataset == "prediction":
         tile_url = (
             f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}"
-            f"&assets=lulc&colormap_name={colormap_name or 'lulc'}"
+            f"&assets=classification&colormap_name={colormap_name or 'lulc'}"
         )
         legend_items = "".join(
             f"""<div class="legend-item">

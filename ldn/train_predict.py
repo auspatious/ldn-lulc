@@ -320,10 +320,11 @@ def do_prediction(ds: xr.Dataset, model, #probability_threshold
 
 # STAC-Geoparquet URLs for our GeoMAD products.
 # TODO: Just singapore is uses the CI file for now.
-GEOMAD_STAC_GEOPARQUET = {
-    "pacific": "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet",
-    "non-pacific": "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ci_ls_geomad/0-0-2/ci_ls_geomad.parquet",
-}
+# GEOMAD_STAC_GEOPARQUET = {
+#     "pacific": "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet",
+#     "non-pacific": "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ci_ls_geomad/0-0-2/ci_ls_geomad.parquet",
+# }
+GEOMAD_STAC_GEOPARQUET = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet"
 
 
 class LulcProcessor(Processor):
@@ -505,8 +506,9 @@ def run_predict_task(
         asset_url_prefix = f"https://s3.{region_name}.amazonaws.com/{output_bucket}/"
 
     itempath = S3ItemPath(
+        prefix="ausp",
         bucket=output_bucket,
-        sensor="landsat",
+        sensor="ls",
         dataset_id="lulc_prediction",
         version=version,
         time=datetime,
@@ -522,7 +524,8 @@ def run_predict_task(
 
     # Search GeoMAD STAC-Geoparquet for this tile's area and year
     logger.info("Defining GeoMAD searcher.")
-    stac_geoparquet_url = GEOMAD_STAC_GEOPARQUET[region]
+    # stac_geoparquet_url = GEOMAD_STAC_GEOPARQUET[region] # TODO: Implement this once GeoMAD has been run and indexed.
+    stac_geoparquet_url = GEOMAD_STAC_GEOPARQUET
     searcher = StacGeoparquetSearcher(
         stac_geoparquet_url=stac_geoparquet_url,
         datetime=datetime,

@@ -1,5 +1,7 @@
 # Here we will store commands for working with the grid, GeoMAD, training data, and ML models.
 
+# TODO: Update non-pacific grid indexes because the grid size was updated so they no longer target the dessired locations.
+
 VERSION ?= 0-0-1
 DECIMATED ?= --decimated
 YEAR ?= 2024
@@ -148,21 +150,6 @@ geomad-2000-2025:
 	done
 
 
-# Visualisation
-make-mosaic-all-2020:
-	ldn make-mosaics \
-	--dataset all \
-	--years "2020"
-make-mosaic-geomad-2020:
-	ldn make-mosaics \
-	--dataset geomad \
-	--years "2020"
-make-mosaic-prediction-2020:
-	ldn make-mosaics \
-	--dataset prediction \
-	--years "2020"
-
-
 ###### Train and Predict
 
 # 1. Training data is created in notebooks/training_data/0_Generate_Training_Points.ipynb.
@@ -183,7 +170,46 @@ predict-lulc-fiji-2020:
 	--decimated \
 	--overwrite
 
+predict-lulc-kiribati-2020:
+	ldn train-predict predict \
+	--tile-id 58_43 \
+	--year 2020 \
+	--version 0-0-1 \
+	--region pacific \
+	--output-bucket="data.ldn.auspatious.com" \
+	--model-path="ldn/lulc_random_forest_model.joblib" \
+	--xy-chunk-size 1024 \
+	--decimated \
+	--overwrite
+
+# TODO: No non-pacific tile will work until we redo the geomad, stac-geoparquet, and tile index.
+# predict-lulc-cape-verde-2020:
+# 	ldn train-predict predict \
+# 	--tile-id 197_133 \
+# 	--year 2020 \
+# 	--version 0-0-1 \
+# 	--region non-pacific \
+# 	--output-bucket="data.ldn.auspatious.com" \
+# 	--model-path="ldn/lulc_random_forest_model.joblib" \
+# 	--xy-chunk-size 1024 \
+# 	--decimated \
+# 	--overwrite
+
 # 4. Update the STAC-Geoparquet index after all tiles/years have run.
 # TODO: Update the index STAC-Geoparquet after all tiles/years have run.
-update-prediction-stac-geoparquet:
-	echo "TODO."
+index-predictions:
+	ldn train-predict index-predictions
+
+# Visualisation
+make-mosaic-all-2020:
+	ldn make-mosaics \
+	--dataset all \
+	--years "2020"
+make-mosaic-geomad-2020:
+	ldn make-mosaics \
+	--dataset geomad \
+	--years "2020"
+make-mosaic-prediction-2020:
+	ldn make-mosaics \
+	--dataset prediction \
+	--years "2020"
