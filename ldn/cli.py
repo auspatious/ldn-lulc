@@ -301,7 +301,7 @@ def geomad(
             typer.echo(f"Wrote {len(paths)} files...")
     except EmptyCollectionError:
         typer.echo("No items found for this tile")
-        raise typer.Exit()  # Exit with success
+        raise typer.Exit()  # Exit successfully
     except Exception as e:
         typer.echo(f"Failed to process with error: {e}")
         raise typer.Exit(code=1)

@@ -171,6 +171,7 @@ make-mosaic-prediction-2020:
 train-model:
 	ldn train-predict train-model
 # 3. Predict LULC for a tile and year.
+# TODO: Update parameters.
 predict-lulc-singapore-2020:
 	ldn train-predict predict \
 	--tile-id 333_112 \

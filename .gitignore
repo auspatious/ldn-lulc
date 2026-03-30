@@ -227,9 +227,11 @@ notebooks/training_data/samples_*.csv
 notebooks/training_data/samples_*.geojson
 notebooks/training_data/samples_*.csv
 
-tasks.json
-
 # Visualisation Terraform files.
 visualisation/infra/.terraform/
 visualisation/infra/.terraform.lock.hcl
 visualisation/infra/terraform.tfstate*
+tasks.json
+
+# Model files
+*.joblib

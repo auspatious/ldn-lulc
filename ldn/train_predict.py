@@ -1,63 +1,111 @@
 import logging
+from typing import Literal
 import xarray as xr
 from odc.stac import load
 from pystac import Item
-from pystac_client import Client
+from pystac_client import Client as PyStacClient
 from rustac import search_sync
 import numpy as np
 from planetary_computer import sign_url
 from geopandas import GeoDataFrame
 from scipy.ndimage import sobel
 from shapely.geometry import box
-from ldn.grids import get_gadm
+from ldn.grids import get_gadm, get_gridspec
 
 logger = logging.getLogger(__name__)
 
-def scale_offset_landsat(band):
-    """Scale Landsat reflectance values and mask nodata.
+from pathlib import Path
+import re
+from zipfile import ZipFile
+
+import boto3
+from joblib import load as joblib_load
+import requests
+import typer
+from dask.distributed import Client as DaskClient
+from dep_tools.aws import object_exists
+from dep_tools.exceptions import EmptyCollectionError
+from dep_tools.loaders import OdcLoader
+from dep_tools.namers import S3ItemPath
+from dep_tools.searchers import PystacSearcher
+from dep_tools.stac_utils import StacCreator
+from dep_tools.task import AwsStacTask as Task
+from dep_tools.utils import get_logger
+from odc.stac import configure_s3_access
+from typing_extensions import Annotated
+
+
+from logging import Logger, getLogger
+logger = getLogger(__name__)
+
+from dep_tools.processors import Processor
+
+
+
+def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
+    """Scale Landsat Collection 2 reflectance values and mask nodata.
+
+    Applies the USGS scaling formula: scaled = raw * 0.0000275 - 0.2,
+    clips to [0, 1], and replaces nodata pixels with NaN.
+
+    Modifies the dataset in place and returns it.
 
     Args:
-        band: Input xarray band with Landsat-style integer reflectance values.
+        data: Input dataset with Landsat integer reflectance bands.
+            Expected nodata values are 0 and 65535.
 
     Returns:
-        A scaled band clipped to [0, 1] with nodata values replaced by NaN.
+        The same dataset with bands scaled to float32 in [0, 1].
     """
-    nodata = (band == 0) | (band == 65535)
-    band = band * 0.0000275 + -0.2
-    band = band.clip(0, 1)
-    return band.where(~nodata, other=np.nan)
+    # Landsat Collection 2 scaling constants (USGS)
+    scale_factor = 0.0000275
+    offset = -0.2
+    nodata_values = (0, 65_535)
+
+    bands_to_scale = [band for band in data.data_vars if band not in ["count", "emad", "smad", "bcmad"]]
+
+    for band in bands_to_scale:
+        raw = data[band]
+        nodata = (raw == nodata_values[0]) | (raw == nodata_values[1])
+        scaled = (raw * scale_factor + offset).clip(0, 1).astype("float32")
+        data[band] = scaled.where(~nodata, other=np.nan)
+    return data
 
 
-def make_indices(geomad: xr.Dataset) -> xr.Dataset:
-        """Compute spectral indices from scaled geomedian bands and append them to a GeoMAD dataset.
+def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
+    """Compute spectral indices from scaled geomedian bands.
 
-        Args:
-            geomad: GeoMAD dataset containing at least `nir08`, `red`, `green`,
-                `blue`, `swir16`, and `swir22` bands.
+    Adds index bands to the dataset in place. Division-by-zero cases
+    (e.g. when both bands are 0 or NaN) will produce NaN values.
 
-        Returns:
-            The input dataset with additional index bands (`ndvi`, `ndwi`,
-            `mndwi`, `ndti`, `bsi`, `mbi`, `baei`, and `bui`).
-        """
-        nir = geomad.nir08
-        red = geomad.red
-        green = geomad.green
-        blue = geomad.blue
-        swir1 = geomad.swir16
-        swir2 = geomad.swir22
-        geomad["ndvi"]  = (nir - red)   / (nir + red)
-        geomad["ndwi"]  = (green - nir)  / (green + nir)
-        geomad["mndwi"] = (green - swir1) / (green + swir1)
-        geomad["ndti"]  = (red - green)  / (red + green)
-        geomad["bsi"]   = ((swir1 + red) - (nir + blue)) / ((swir1 + red) + (nir + blue))
-        geomad["mbi"]   = ((swir1 - swir2 - nir) / (swir1 + swir2 + nir)) + 0.5
-        geomad["baei"]  = (red + 0.3) / (green + swir1)
-        ndbi = (swir1 - nir) / (swir1 + nir)
-        geomad["bui"]   = ndbi - geomad["ndvi"]
-        return geomad
+    Args:
+        geomad: GeoMedian/GeoMAD dataset containing at least `nir08`, `red`, `green`,
+            `blue`, `swir16`, and `swir22` bands (scaled to [0, 1]).
+
+    Returns:
+        The same dataset with additional bands: `ndvi`, `ndwi`, `mndwi`,
+        `ndti`, `bsi`, `mbi`, `baei`, and `bui`.
+    """
+    nir = geomad.nir08
+    red = geomad.red
+    green = geomad.green
+    blue = geomad.blue
+    swir1 = geomad.swir16
+    swir2 = geomad.swir22
+    geomad["ndvi"] = (nir - red) / (nir + red)
+    geomad["ndwi"] = (green - nir) / (green + nir)
+    geomad["mndwi"] = (green - swir1) / (green + swir1)
+    geomad["ndti"] = (red - green) / (red + green)
+    geomad["bsi"] = ((swir1 + red) - (nir + blue)) / ((swir1 + red) + (nir + blue))
+    geomad["mbi"] = ((swir1 - swir2 - nir) / (swir1 + swir2 + nir)) + 0.5
+    geomad["baei"] = (red + 0.3) / (green + swir1)
+    ndbi = (swir1 - nir) / (swir1 + nir)  # intermediate, not stored
+    geomad["bui"] = ndbi - geomad["ndvi"]
+    return geomad
 
 
-def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: str, year: str, catalog: Client) -> xr.Dataset:
+# TODO: Refactor this to use PystacSearcher, OdcLoader
+def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: str, year: str, catalog: PyStacClient) -> xr.Dataset:
     """Load Geomedian, GeoMAD, and DEM data for a region and compute terrain/spectral features.
 
     The function loads GeoMAD bands for a regional AOI and year, applies
@@ -103,14 +151,9 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
     logger.info(f"GeoMAD dataset shape: {geomad_ds.dims}")
 
     # Scale + indices
-    band_names_geomad = [b for b in bands if b.endswith('mad')]
-    band_names_geomedian = [b for b in bands if b not in band_names_geomad]
+    geomad_ds = scale_offset_landsat(geomad_ds)
 
-    for band in band_names_geomedian:
-        # Replace 0 values with NaN.
-        geomad_ds[band] = scale_offset_landsat(geomad_ds[band])
-
-    geomad_ds = make_indices(geomad_ds)
+    geomad_ds = calculate_indices(geomad_ds)
 
     # Now for DEM data do per bbox search and load to avoid loading the whole world for Fiji.
     dem_items = catalog.search(
@@ -194,4 +237,343 @@ def get_buffered_country(country_of_interest: dict, wgs84: str, analysis_crs: st
     return GeoDataFrame(
         geometry=country_gadm.to_crs(analysis_crs).buffer(buffer_m).to_crs(wgs84),
         crs=wgs84
+    )
+
+
+# def probability_binary(
+#     probability_da: xr.DataArray,
+#     threshold: int | float,
+#     nodata_value: int = 255,
+# ) -> xr.DataArray:
+#     """
+#     Converts a probability raster into a binary classification raster based on a threshold.
+
+#     - Pixels with probability >= threshold are set to 1.
+#     - Pixels with probability < threshold (but are valid data) are set to 0.
+#     - Pixels that were originally NoData (NaN) remain NoData (converted to `nodata_value`
+#       if `output_dtype` is an integer type).
+
+#     Parameters:
+#     - probability_da (xr.DataArray): Input DataArray with probability values (e.g., 0-100).
+#                                     Expected to have spatial dimensions (e.g., 'x', 'y').
+#     - threshold (float): The threshold value to apply. Pixels with probability >= threshold
+#                          will be classified as 1.
+#     - output_dtype (str): The desired output data type. Use 'float32' or 'float64'
+#                           to preserve NaN values. If an integer type (e.g., 'uint8', 'int16'),
+#                           original NaNs will be converted to `nodata_value`.
+#     - nodata_value (int): The value to use for NoData if output_dtype is an integer type.
+#                           Must be within the range of the chosen integer `output_dtype`.
+#                           Default is 255.
+
+#     Returns:
+#     - xr.DataArray: A new DataArray with binary classification (1 for above threshold,
+#                     0 for below threshold, and `nodata_value` for NoData areas).
+#     """
+#     mask = probability_da == 255
+#     above_threshold = probability_da >= threshold
+
+#     final_output = xr.where(above_threshold, 1, 0)
+#     final_output = xr.where(mask, nodata_value, final_output).astype("uint8")
+
+#     return final_output
+
+
+# def extract_single_class(
+#     classification: xr.DataArray, target_class_id: int, nodata_value: int = 255
+# ) -> xr.DataArray:
+#     one_class = classification == target_class_id
+#     one_class = one_class.where(one_class == 1, 0)
+#     one_class = one_class.where(~(classification == nodata_value), nodata_value).astype(
+#         "uint8"
+#     )
+
+#     return one_class
+
+
+def do_prediction(ds, model, target_class_id: int = 4):
+    """Predicts the model on the dataset and adds the prediction as a new variable.
+
+    Args:
+        ds (Dataset): Dataset to predict on
+        model (RegressorMixin): Model to predict with
+        target_class_id (int): ID of the target class for prediction
+
+    Returns:
+        Dataset: Dataset with the prediction as a new variable
+    """
+    # Store the original mask
+    mask = ds.red.isnull()  # Probably should check more bands
+
+    # Convert to a stacked array of observations
+    stacked_arrays = ds.to_array().stack(dims=["y", "x"])
+
+    # Replace any infinities with NaN
+    stacked_arrays = stacked_arrays.where(stacked_arrays != float("inf"))
+    stacked_arrays = stacked_arrays.where(stacked_arrays != float("-inf"))
+
+    # Replace any NaN values with 0 and transpose to the right shape
+    stacked_arrays = stacked_arrays.squeeze().fillna(0).transpose().to_pandas()
+
+    # Sort the columns by name
+    stacked_arrays = stacked_arrays.reindex(sorted(stacked_arrays.columns), axis=1)
+
+    # Remove the all-zero rows
+    # This should make it MUCH MUCH faster, as we're not processing masked areas
+    zero_mask = (stacked_arrays == 0).all(axis=1)
+    non_zero_df = stacked_arrays.loc[~zero_mask]
+
+    # Create a new array to hold the predictions
+    full_predictions = pd.Series(np.nan, index=stacked_arrays.index)
+    full_probabilities = pd.Series(np.nan, index=stacked_arrays.index)
+
+    # Only run the prediction if there are non-zero rows
+    if not non_zero_df.empty:
+        # Predict the classes
+        predictions = model.predict(non_zero_df)
+        full_predictions.loc[~zero_mask] = predictions
+
+        # Do the same for the probabilities
+        probabilities = model.predict_proba(non_zero_df)
+        target_class_index = list(model.classes_).index(target_class_id)
+        target_probabilities = probabilities[:, target_class_index]
+        target_probabilities_scaled = target_probabilities * 100
+        full_probabilities.loc[~zero_mask] = target_probabilities_scaled
+
+    # Reshape the results
+    predicted = reshape_array_to_2d(full_predictions, ds, mask)
+    probabilities = reshape_array_to_2d(full_probabilities, ds, mask)
+
+    # Results should both be uint8 with 255 as nodata
+    return predicted, probabilities
+
+
+class LulcProcessor(Processor):
+    def __init__(
+        self,
+        model,
+        # probability_threshold: int = 60,
+        nodata_value: int = 255,
+        target_class_id: int = 4,
+        # fast_mode: bool = True,
+        logger: Logger | None = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self._model = model
+        # self._probability_threshold = probability_threshold
+        self._nodata_value = nodata_value
+        self._target_class_id = target_class_id
+        # self._fast_mode = fast_mode
+
+        if logger is None:
+            self._logger = Logger("LULC_processor")
+        else:
+            self._logger = logger
+
+    def process(self, input_data: xr.Dataset) -> xr.Dataset:
+        self._logger.info("Starting processing of input data")
+        # Scale data to values of 0-1 so that we can calculate indices properly
+        scaled_data = scale_offset_landsat(input_data).squeeze(drop=True)
+
+        # Load data into memory here
+        self._logger.info("Loading data into memory...")
+        # TODO: Should we delay loading?
+        loaded_data = scaled_data.compute()
+
+        # Compute indices
+        self._logger.info("Computing band indices...")
+        data = calculate_indices(loaded_data)
+
+        # Run the prediction
+        self._logger.info("Running prediction and probability process...")
+        classification, probability = do_prediction(
+            data, self._model, self._target_class_id
+        )
+
+        lulc_threshold = probability_binary(
+            probability,
+            self._probability_threshold,
+            nodata_value=self._nodata_value,
+        )
+
+        lulc_class = extract_single_class(
+            classification,
+            self._target_class_id,
+        )
+
+        output = xr.Dataset(
+            {
+                "classification": classification,
+                "lulc_probability": probability,
+                "lulc_threshold_60": lulc_threshold,
+                "lulc": lulc_class,
+            }
+        )
+
+        for var in output.data_vars:
+            output[var].odc.nodata = self._nodata_value
+            output[var].attrs["_FillValue"] = self._nodata_value
+
+        return output
+    
+
+def _load_joblib_model(model_path: str): # TODO: Type return to joblib model 
+    if model_path.startswith("https://"):
+        # Download the model.
+        model_local = "classification/models/" + model_path.split("/")[-1]
+        if not Path(model_local).exists():
+            logger.info(f"Downloading model from {model_path} to {model_local}")
+            r = requests.get(model_path)
+            with open(model_local, "wb") as f:
+                f.write(r.content)
+        model = model_local
+
+    elif model_path.endswith(".zip"):
+        # Unzip.
+        unzipped = "classification/models/" + model_path.split("/")[-1].replace(".zip", "")
+        if not Path(unzipped).exists():
+            logger.info("Unzipping model")
+            with ZipFile(model_path, "r") as zip_ref:
+                zip_ref.extractall(path="classification/models/")
+        model = unzipped
+        logger.info(f"Unzipped model to {model}")
+
+    elif model_path.endswith(".joblib"):
+        logger.info("Model path is a local joblib file, using directly.")
+        model = model_path
+
+    else:
+        raise ValueError(f"Model path must be a '.joblib' file, a URL to a '.joblib' file, or a '.zip' file, not {model_path}")
+
+    # Make sure we can open the model
+    try:
+        joblib_load(model)
+        return model
+    except Exception as e:
+        logger.exception(f"Failed to load model from {model}: {e}")
+        typer.Exit(code=1)
+
+
+def run_predict_task(
+    tile_id: Annotated[str, typer.Option()],
+    datetime: Annotated[str, typer.Option()],
+    version: Annotated[str, typer.Option()],
+    region: Literal["pacific", "non-pacific"],
+    output_bucket: str,
+    # model_path: str = "classification/models/20250902c-alex.model", # Seagrass model
+    model_path: str = "lulc_random_forest_model.joblib",
+    # probability_threshold: int = 60,
+    # fast_mode: bool = True,
+    xy_chunk_size: int = 1024,
+    asset_url_prefix: str | None = None,
+    decimated: bool = False,
+    overwrite: Annotated[bool, typer.Option()] = False,
+) -> None:
+    # logger = get_logger(tile_id, "LULC_prediction")
+    logger.info("Starting processing")
+
+    # Split by any of [",", "-", "_"] to be robust.
+    tile_id_parts = [int(i) for i in re.split(r"[,\-_]", tile_id)]
+    if len(tile_id_parts) != 2:
+        raise ValueError(f"Tile ID must split into 2 integers, got {tile_id_parts} from tile_id '{tile_id}'")
+    tile_id_tuple: tuple[int, int] = (tile_id_parts[0], tile_id_parts[1])
+
+    # Get grid based on region.
+    grid = get_gridspec(region)
+    geobox = grid.tile_geobox(tile_id_tuple)
+
+    if decimated:
+        geobox = geobox.zoom_out(10)
+
+    # Make sure we can access S3
+    logger.info("Configuring S3 access")
+    configure_s3_access(cloud_defaults=True)
+
+    client = boto3.client("s3")
+
+    loaded_model = _load_joblib_model(model_path)
+
+    # # TODO: Why can output_bucket be None?
+    # if output_bucket is None:
+    #     logger.warning("Output bucket is None, skipping S3 existence check and STAC writing. ")
+
+    itempath = S3ItemPath(
+        bucket=output_bucket,
+        sensor="landsat",
+        dataset_id="lulc_prediction",
+        version=version,
+        time=datetime,
+        full_path_prefix=asset_url_prefix,
+    )
+    stac_url = itempath.stac_path(tile_id)
+
+    # If we don't want to overwrite, and the destination file already exists, skip it
+    if not overwrite and object_exists(output_bucket, stac_url, client=client):
+        logger.info(f"Item already exists at {itempath.stac_path(tile_id, absolute=True)}")
+        raise typer.Exit() # Exit successfully.
+
+    # searcher = PystacSearcher(
+    #     # catalog="https://stac.digitalearthpacific.org",
+    #     # collections=["dep_s2_geomad"],
+    #     catalog=
+    #     datetime=datetime,
+    # )
+
+    # loader = OdcLoader(
+    #     chunks=dict(x=xy_chunk_size, y=xy_chunk_size),
+    #     fail_on_error=False,
+    #     measurements=[
+    #         # TODO: Validate bands.
+    #         "nir",
+    #         "red",
+    #         "blue",
+    #         "green",
+    #         "emad",
+    #         "smad",
+    #         "bcmad",
+    #         "green",
+    #         "nir08",
+    #         "nir09",
+    #         "swir16",
+    #         "swir22",
+    #     ],  # List measurements so we don't get count
+    # )
+
+    # The actual processor, doing the work
+    processor = LulcProcessor(
+        model=loaded_model,
+        # probability_threshold=probability_threshold,
+        nodata_value=255,
+        # fast_mode=fast_mode,
+        logger=logger,
+    )
+
+    stac_creator = StacCreator(itempath=itempath, with_raster=True)
+
+    # TODO: Do the equivalent of get_geomad_dem_indices in a processor.
+    # TODO: The DEP Seagrass setup has 1 of searcher, loader, processor, but get_geomad_dem_indices does 2 search and load, and 1 process. I think I should set up another processor.
+    try:
+        client = DaskClient(n_workers=4, threads_per_worker=16, memory_limit="12GB")
+        logger.info(("Started dask client"))
+        paths = Task(
+            itempath=itempath,
+            id=tile_id,
+            area=geobox,
+            searcher=searcher,
+            loader=loader,
+            processor=processor,
+            logger=logger,
+            stac_creator=stac_creator,
+        ).run()
+    except EmptyCollectionError:
+        logger.info("No items found for this tile")
+        raise typer.Exit()  # Exit successfully
+    except Exception as e:
+        logger.exception(f"Failed to process with error: {e}")
+        raise typer.Exit(code=1)
+    finally:
+        client.close()
+
+    logger.info(
+        f"Completed processing. Wrote {len(paths)} items to {itempath.stac_path(tile_id, absolute=True)}"
     )

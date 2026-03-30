@@ -17,7 +17,6 @@ from odc.algo import erase_bad, mask_cleanup
 from xarray import DataArray, Dataset
 
 logger = logging.getLogger(__name__)
-TaskID = str
 
 USGS_CATALOG = "https://earth-search.aws.element84.com/v1"
 USGS_COLLECTION = "landsat-c2-l2"
@@ -148,7 +147,7 @@ class AwsStacTask(AreaTask):
     def __init__(
         self,
         itempath: S3ItemPath,
-        id: TaskID,
+        id: str,
         area: GeoDataFrame,
         searcher: Searcher,
         loader: StacLoader,
