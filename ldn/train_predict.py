@@ -2,7 +2,6 @@ import re
 import logging
 from pathlib import Path
 from typing import Literal
-from zipfile import ZipFile
 
 import boto3
 import numpy as np
@@ -235,16 +234,14 @@ def probability_binary(
 
     - Pixels with probability >= threshold are set to 1.
     - Pixels with probability < threshold (but are valid data) are set to 0.
-    - Pixels that were originally NoData (NaN) remain NoData (converted to `nodata_value`
-      if `output_dtype` is an integer type).
+    - Pixels that were originally NoData (NaN) remain NoData (converted to `nodata_value`).
 
     Parameters:
     - probability_da (xr.DataArray): Input DataArray with probability values (e.g., 0-100).
                                     Expected to have spatial dimensions (e.g., 'x', 'y').
     - threshold (float): The threshold value to apply. Pixels with probability >= threshold
                          will be classified as 1.
-    - nodata_value (int): The value to use for NoData if output_dtype is an integer type.
-                          Must be within the range of the chosen integer `output_dtype`.
+    - nodata_value (int): The value to use for NoData.
 
     Returns:
     - xr.DataArray: A new DataArray with binary classification (1 for above threshold,
@@ -269,51 +266,47 @@ def do_prediction(ds: xr.Dataset, model, probability_threshold: float, nodata_va
         ds: Feature dataset with y/x spatial dimensions.
         model: Fitted scikit-learn classifier with predict/predict_proba.
         probability_threshold: Confidence threshold (0-100) for the binary mask.
+        nodata_value: Integer nodata value for output bands.
 
     Returns:
         A (classification, probability, probability_mask) tuple of uint8
-        DataArrays with the specified nodata_value for nodata pixels.
+        DataArrays with nodata_value for masked pixels.
     """
-    # Store the original nodata mask
-    # TODO: Check if any band is nan.
-    mask = ds.red.isnull()
+    stacked = ds.to_array().stack(dims=["y", "x"])
 
-    # Convert to a stacked array of observations
-    stacked_arrays = ds.to_array().stack(dims=["y", "x"])
+    # Nodata mask: True for pixels where ANY band is NaN.
+    nodata_mask = stacked.isnull().any(dim="variable")
 
-    # Replace infinities with NaN
-    # TODO: Fix infinity values upstream. They shouldn't be here.
-    stacked_arrays = stacked_arrays.where(stacked_arrays != float("inf"))
-    stacked_arrays = stacked_arrays.where(stacked_arrays != float("-inf"))
+    # Build observation table: fill NaN with nodata_value (masked pixels are excluded below).
+    obs = stacked.squeeze().fillna(nodata_value).transpose().to_pandas()
 
-    # Replace NaN with 0 and transpose to (pixels, bands)
-    # TODO: Why replace nans?? Zeroes are misleading.
-    stacked_arrays = stacked_arrays.squeeze().fillna(0).transpose().to_pandas()
+    # Validate that all model features are present before reindexing.
+    missing = set(model.feature_names_in_) - set(obs.columns)
+    if missing:
+        raise ValueError(
+            f"Dataset is missing features required by the model: {sorted(missing)}"
+        )
+    obs = obs.reindex(columns=model.feature_names_in_)
 
-    # Reorder columns to match the feature names the model was trained with.
-    stacked_arrays = stacked_arrays.reindex(columns=model.feature_names_in_)
+    # Flatten the spatial nodata mask to match the observation index.
+    valid = ~nodata_mask.values
 
-    # Skip all-zero rows (masked areas) for performance
-    zero_mask = (stacked_arrays == 0).all(axis=1)
-    non_zero_df = stacked_arrays.loc[~zero_mask]
+    full_predictions = pd.Series(nodata_value, index=obs.index, dtype=np.float32)
+    full_probabilities = pd.Series(nodata_value, index=obs.index, dtype=np.float32)
 
-    full_predictions = pd.Series(np.nan, index=stacked_arrays.index)
-    full_probabilities = pd.Series(np.nan, index=stacked_arrays.index)
+    if valid.any():
+        valid_df = obs.loc[valid]
+        full_predictions.loc[valid] = model.predict(valid_df).astype(np.float32)
+        full_probabilities.loc[valid] = (model.predict_proba(valid_df).max(axis=1) * 100).astype(np.float32)
 
-    if not non_zero_df.empty:
-        predictions = model.predict(non_zero_df)
-        full_predictions.loc[~zero_mask] = predictions
-
-        # Max probability across all classes = confidence of the predicted class.
-        probabilities = model.predict_proba(non_zero_df)
-        max_probabilities = probabilities.max(axis=1) * 100
-        full_probabilities.loc[~zero_mask] = max_probabilities
-
-    predicted = reshape_array_to_2d(full_predictions, ds, mask, nodata_value=nodata_value)
-    probability = reshape_array_to_2d(full_probabilities, ds, mask, nodata_value=nodata_value)
+    # Reshape back to 2D; nodata_mask stamps nodata_value over masked pixels.
+    nodata_mask_2d = nodata_mask.unstack("dims")
+    classification_unfiltered = reshape_array_to_2d(full_predictions, ds, nodata_mask_2d, nodata_value=nodata_value)
+    probability = reshape_array_to_2d(full_probabilities, ds, nodata_mask_2d, nodata_value=nodata_value)
     probability_mask = probability_binary(probability, probability_threshold, nodata_value=nodata_value)
-
-    return predicted, probability, probability_mask
+    # Keep predictions only where probability_mask == 1 (above threshold).
+    classification = classification_unfiltered.where(probability_mask == 1, nodata_value).astype("uint8")
+    return classification, classification_unfiltered, probability
 
 
 class LulcProcessor(Processor):
@@ -368,15 +361,15 @@ class LulcProcessor(Processor):
         merged = xr.merge([data, dem_ds])
 
         self._logger.info("Running prediction")
-        classification, probability, probability_mask = do_prediction(
+        classification, classification_unfiltered, probability = do_prediction(
             merged, self._model, self._probability_threshold, self._nodata_value
         )
 
         output = xr.Dataset(
             {
                 "classification": classification,
-                "lulc_probability": probability,
-                "lulc_probability_mask": probability_mask,
+                "classification_unfiltered": classification_unfiltered,
+                "classification_probability": probability,
             }
         )
 
@@ -388,31 +381,29 @@ class LulcProcessor(Processor):
 
 
 def _load_joblib_model(model_path: str):
-    """Load a joblib model from a local file, URL, or zip archive.
+    """Load a joblib model from a local file or URL.
 
     Args:
-        model_path: Path or URL to the model file.
+        model_path: Local path or HTTPS URL to a .joblib model file.
 
     Returns:
         The path to the local model file (verified loadable).
-    """
-    if model_path.startswith("https://"):
-        model_local = "classification/models/" + model_path.split("/")[-1]
-        if not Path(model_local).exists():
-            logger.info(f"Downloading model from {model_path} to {model_local}")
-            r = requests.get(model_path)
-            with open(model_local, "wb") as f:
-                f.write(r.content)
-        model = model_local
 
-    elif model_path.endswith(".zip"):
-        unzipped = "classification/models/" + model_path.split("/")[-1].replace(".zip", "")
-        if not Path(unzipped).exists():
-            logger.info("Unzipping model")
-            with ZipFile(model_path, "r") as zip_ref:
-                zip_ref.extractall(path="classification/models/")
-        model = unzipped
-        logger.info(f"Unzipped model to {model}")
+    Raises:
+        ValueError: If model_path is not a .joblib file or HTTPS URL.
+        typer.Exit: If the downloaded or local model cannot be loaded.
+    """
+    models_dir = Path("classification/models")
+
+    if model_path.startswith("https://"):
+        models_dir.mkdir(parents=True, exist_ok=True)
+        model_local = models_dir / model_path.split("/")[-1]
+        if not model_local.exists():
+            logger.info(f"Downloading model from {model_path} to {model_local}")
+            r = requests.get(model_path, timeout=120)
+            r.raise_for_status()
+            model_local.write_bytes(r.content)
+        model = str(model_local)
 
     elif model_path.endswith(".joblib"):
         logger.info("Model path is a local joblib file, using directly.")
@@ -420,8 +411,8 @@ def _load_joblib_model(model_path: str):
 
     else:
         raise ValueError(
-            f"Model path must be a '.joblib' file, a URL to a '.joblib' file,"
-            f" or a '.zip' file, not {model_path}"
+            f"Model path must be a '.joblib' file or a URL to a '.joblib' file,"
+            f" not {model_path}"
         )
 
     try:

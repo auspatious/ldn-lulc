@@ -187,30 +187,63 @@ def root():
         return f'<a href="/map?dataset=prediction&year={y}&assets=classification">{y}</a>'
 
     html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <title>LDN LULC Mosaic Viewer</title>
-  <style>
-    body {{ font-family: monospace; max-width: 60vh; margin: 60px auto; padding: 0 20px; }}
-    a {{ margin-right: .75rem; }}
-    .docs {{ margin-top: 3rem; }}
-    .logo {{ height: 160px; margin-bottom: 1rem; }}
-  </style>
-</head>
-<body>
-  <a href="https://auspatious.com/" target="_blank" rel="noopener noreferrer"><img class="logo" src="https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/as-logo-horz-tag-colour.svg" alt="Auspatious logo"/></a>
-  <h1>LDN LULC Mosaic Viewer</h1>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8"/>
+        <title>LDN LULC Mosaic Viewer</title>
+        <style>
+          body {{ font-family: monospace; max-width: 70vh; margin: 60px auto; padding: 0 20px; }}
+          h1 {{ text-align: center; }}
+          a {{ margin-right: .75rem; }}
+          .item {{ margin-top: 2rem;  margin-bottom: 2rem; border-bottom: 2px solid #e7e7e7; padding-bottom: 1rem; }}
+          .logo {{ height: 160px; margin: auto; display: block; margin-bottom: 1rem; }}
+        </style>
+      </head>
+      <body>
+        <a href="https://auspatious.com/" target="_blank" rel="noopener noreferrer"><img class="logo" src="https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/as-logo-horz-tag-colour.svg" alt="Auspatious logo"/></a>
 
-  <h2>GeoMedian/GeoMAD</h2>
-  {''.join(geomad_link(y) for y in years_geomad)}
+        <div class="item">
+          <h1>LDN LULC Mosaic Viewer</h1>
+        </div>
 
-  <h2>Prediction</h2>
-  {''.join(prediction_link(y) for y in years_prediction)}
+        <div class="item">
+          <h2>GeoMedian/GeoMAD</h2>
+          <h4>Available Years:</h4>
+          {''.join(geomad_link(y) for y in years_geomad)}
 
-  <p class="docs"><a href="/docs">API docs</a></p>
-</body>
-</html>"""
+          <h4>Available Assets:</h4>
+          <ol>
+            <li>blue (geomedian visible reflectance values)</li>
+            <li>green (geomedian visible reflectance values)</li>
+            <li>red (geomedian visible reflectance values)</li>
+            <li>nir08 (near infrared)</li>
+            <li>swir16 (short wave infrared)</li>
+            <li>swir22 (short wave infrared)</li>
+            <li>smad (MAD statistics)</li>
+            <li>bcmad (MAD statistics)</li>
+            <li>emad (MAD statistics)</li>
+            <li>count (number of observations used to create GeoMedian/GeoMAD)</li>
+          </ol>
+        </div>
+
+        <div class="item">
+          <h2>Prediction</h2>
+          <h4>Available Years:</h4>
+          {''.join(prediction_link(y) for y in years_prediction)}
+
+          <h4>Available Assets:</h4>
+          <ol>
+            <li>classification (predicted land cover classes)</li>
+            <li>classification_unfiltered (includes pixels below classification confidence threshold values)</li>
+            <li>classification_probability (probability of predicted classes 0-100 range)</li>
+          </ol>
+        </div>
+
+        <div class="item">
+          <p class="docs"><a href="/docs">API docs</a></p>
+        </div>
+      </body>
+      </html>"""
 
     return HTMLResponse(content=html)
 

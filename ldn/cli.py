@@ -344,6 +344,7 @@ def _find_stac_items_s3(
     return matches
 
 
+# TODO: Add chunking/streaming to prevent loading too much data into memory at once.
 def _load_stac_docs(
     bucket: str,
     keys: list[str],
@@ -376,13 +377,13 @@ def _load_stac_docs(
 
 @app.command("index-to-stac-geoparquet")
 def _index_to_stac_geoparquet(
-    prefix: str = typer.Option("ausp_ls_lulc_prediction", help="S3 path prefix to search for STAC items to index."),
+    prefix: str = typer.Option("ausp_ls_lulc_prediction", help="S3 path prefix to search for STAC items to index (e.g. for a given dataset)."),
     output_filename: str = typer.Option("ausp_ls_lulc_prediction", help="Output filename for the STAC-Geoparquet index."),
-    version: str = typer.Option("0-0-1", help="Prediction version string e.g. '0-0-1'."),
-    bucket: str = typer.Option("data.ldn.auspatious.com", help="S3 bucket containing predictions."),
+    version: str = typer.Option("0-0-1", help="Dataset version string e.g. '0-0-1'."),
+    bucket: str = typer.Option("data.ldn.auspatious.com", help="S3 bucket containing STAC items."),
     aws_region: str = typer.Option("us-west-2", help="AWS region of the bucket."),
 ) -> None:
-    """Build a STAC-Geoparquet index from all STAC items available in a path in S3."""
+    """Build a STAC-Geoparquet index from all STAC items under a given S3 prefix and version."""
     prefix = f"{prefix}/{version}"
     parquet_key = f"{prefix}/{output_filename}.parquet"
 
