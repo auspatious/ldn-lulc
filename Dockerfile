@@ -18,7 +18,7 @@ RUN pip install --break-system-packages poetry
 WORKDIR /code
 
 COPY pyproject.toml poetry.lock ./
-# Install dependencies first to leverage Docker caching. 
+# Install dependencies first to leverage Docker caching.
 # Keep layer separate from installing the package itself to avoid re-building dependencies when our code changes.
 # Make venv in-project (in container's working directory).
 RUN poetry config virtualenvs.in-project true && \

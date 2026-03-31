@@ -10,7 +10,7 @@ from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
 from dep_tools.stac_utils import StacCreator
 from dep_tools.task import AreaTask
-from dep_tools.writers import AwsDsCogWriter, AwsStacWriter, Writer
+from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from geopandas import GeoDataFrame
 import numpy as np
 from odc.algo import erase_bad, mask_cleanup

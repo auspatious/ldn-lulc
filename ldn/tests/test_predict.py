@@ -62,11 +62,13 @@ class TestScaleOffsetLandsat:
 
     def test_multiple_bands(self):
         """All reflectance bands in the dataset should be scaled."""
-        ds = _make_dataset({
-            "red": [[10000]],
-            "green": [[10000]],
-            "blue": [[10000]],
-        })
+        ds = _make_dataset(
+            {
+                "red": [[10000]],
+                "green": [[10000]],
+                "blue": [[10000]],
+            }
+        )
         result = scale_offset_landsat(ds)
         expected = 10000 * 0.0000275 - 0.2
         for band in ["red", "green", "blue"]:
@@ -76,11 +78,13 @@ class TestScaleOffsetLandsat:
 
     def test_skips_excluded_bands(self):
         """Bands like 'count', 'emad', 'smad', 'bcmad' should not be scaled."""
-        ds = _make_dataset({
-            "red": [[10000]],
-            "count": [[42]],
-            "emad": [[100]],
-        })
+        ds = _make_dataset(
+            {
+                "red": [[10000]],
+                "count": [[42]],
+                "emad": [[100]],
+            }
+        )
         result = scale_offset_landsat(ds)
         assert result["count"].values[0, 0] == 42
         assert result["emad"].values[0, 0] == 100
@@ -110,14 +114,16 @@ def _make_geomad_dataset(
     swir22: float,
 ) -> xr.Dataset:
     """Create a minimal GeoMAD dataset with the required reflectance bands."""
-    return _make_dataset({
-        "nir08": [[nir08]],
-        "red": [[red]],
-        "green": [[green]],
-        "blue": [[blue]],
-        "swir16": [[swir16]],
-        "swir22": [[swir22]],
-    })
+    return _make_dataset(
+        {
+            "nir08": [[nir08]],
+            "red": [[red]],
+            "green": [[green]],
+            "blue": [[blue]],
+            "swir16": [[swir16]],
+            "swir22": [[swir22]],
+        }
+    )
 
 
 class TestCalculateIndices:
@@ -157,7 +163,9 @@ class TestCalculateIndices:
         ds = _make_geomad_dataset(0.3, 0.1, green, 0.15, swir1, 0.2)
         result = calculate_indices(ds)
         expected = (green - swir1) / (green + swir1)
-        np.testing.assert_almost_equal(result["mndwi"].values[0, 0], expected, decimal=5)
+        np.testing.assert_almost_equal(
+            result["mndwi"].values[0, 0], expected, decimal=5
+        )
 
     def test_bui_equals_ndbi_minus_ndvi(self):
         """BUI = NDBI - NDVI, where NDBI = (swir1 - nir) / (swir1 + nir)."""
@@ -193,7 +201,6 @@ class TestCalculateIndices:
         for band in ["ndvi", "ndwi", "mndwi", "ndti", "bsi"]:
             val = float(result[band].values[0, 0])
             assert np.isnan(val), f"{band} = {val}"
-
 
 
 # TODO: Add tests for further prediction functions.

@@ -146,7 +146,7 @@ def geomad(
     geomad_threads: Annotated[int, typer.Option()] = 10,
 ) -> None:
     """Run GeoMAD processing on Landsat data.
-    
+
     Example command is:
 
     ldn geomad --tile-id 136_142 --year 2025 --version 0.0.0 \
@@ -230,7 +230,7 @@ def geomad(
     # If we don't want to overwrite, and the destination file already exists, skip it
     if not overwrite and object_exists(bucket, stac_key, client=client):
         typer.echo(f"Item already exists at {stac_document}")
-        raise typer.Exit() # Exit successfully.
+        raise typer.Exit()  # Exit successfully.
     else:
         if not overwrite:
             typer.echo(f"Item does not exist at {stac_document}, processing tile.")
@@ -311,7 +311,6 @@ def geomad(
     return
 
 
-
 def _find_stac_items_s3(
     bucket: str,
     prefix: str,
@@ -377,10 +376,17 @@ def _load_stac_docs(
 
 @app.command("index-to-stac-geoparquet")
 def _index_to_stac_geoparquet(
-    prefix: str = typer.Option("ausp_ls_lulc_prediction", help="S3 path prefix to search for STAC items to index (e.g. for a given dataset)."),
-    output_filename: str = typer.Option("ausp_ls_lulc_prediction", help="Output filename for the STAC-Geoparquet index."),
+    prefix: str = typer.Option(
+        "ausp_ls_lulc_prediction",
+        help="S3 path prefix to search for STAC items to index (e.g. for a given dataset).",
+    ),
+    output_filename: str = typer.Option(
+        "ausp_ls_lulc_prediction", help="Output filename for the STAC-Geoparquet index."
+    ),
     version: str = typer.Option("0-0-1", help="Dataset version string e.g. '0-0-1'."),
-    bucket: str = typer.Option("data.ldn.auspatious.com", help="S3 bucket containing STAC items."),
+    bucket: str = typer.Option(
+        "data.ldn.auspatious.com", help="S3 bucket containing STAC items."
+    ),
     aws_region: str = typer.Option("us-west-2", help="AWS region of the bucket."),
 ) -> None:
     """Build a STAC-Geoparquet index from all STAC items under a given S3 prefix and version."""
@@ -404,7 +410,6 @@ def _index_to_stac_geoparquet(
     write_sync(parquet_key, docs, store=store)
 
     logger.info(f"Wrote index with {len(docs)} items to s3://{bucket}/{parquet_key}")
-
 
 
 def _stac_self_link(feature: dict) -> str:
@@ -454,32 +459,62 @@ def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
 
 @app.command()
 def make_mosaics(
-    years: Annotated[str, typer.Option(help="Comma-separated list of years (e.g. '2020,2021') to build mosaics for.")],
-    dataset: Annotated[Literal["all", "geomad", "prediction"], typer.Option(help="Which dataset to build mosaics for, either 'all', 'geomad' or 'prediction'.")],
-    version_geomad: Annotated[str, typer.Option(help="Version string to use for the GeoMAD mosaic files, e.g. '0-0-1'.")],
-    version_prediction: Annotated[str, typer.Option(help="Version string to use for the Prediction mosaic files, e.g. '0-0-1'.")],
+    years: Annotated[
+        str,
+        typer.Option(
+            help="Comma-separated list of years (e.g. '2020,2021') to build mosaics for."
+        ),
+    ],
+    dataset: Annotated[
+        Literal["all", "geomad", "prediction"],
+        typer.Option(
+            help="Which dataset to build mosaics for, either 'all', 'geomad' or 'prediction'."
+        ),
+    ],
+    version_geomad: Annotated[
+        str,
+        typer.Option(
+            help="Version string to use for the GeoMAD mosaic files, e.g. '0-0-1'."
+        ),
+    ],
+    version_prediction: Annotated[
+        str,
+        typer.Option(
+            help="Version string to use for the Prediction mosaic files, e.g. '0-0-1'."
+        ),
+    ],
 ) -> None:
-    """ Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files. """
+    """Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files."""
 
     logger.info(f"Making mosaics for dataset '{dataset}' and years: {years}")
     years_list = [y.strip() for y in years.split(",")]
 
     # MosaicBackend needs s3:// style paths.
-    output_path_geomad = f"s3://data.ldn.auspatious.com/ausp_ls_geomad/{version_geomad}/mosaics/"
+    output_path_geomad = (
+        f"s3://data.ldn.auspatious.com/ausp_ls_geomad/{version_geomad}/mosaics/"
+    )
     output_path_prediction = f"s3://data.ldn.auspatious.com/ausp_ls_lulc_prediction/{version_prediction}/mosaics/"
 
     datasets = []
     if dataset in ["prediction", "all"]:
         datasets.append(
-            ("prediction", f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_lulc_prediction/{version_prediction}/ausp_ls_lulc_prediction.parquet", output_path_prediction)
+            (
+                "prediction",
+                f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_lulc_prediction/{version_prediction}/ausp_ls_lulc_prediction.parquet",
+                output_path_prediction,
+            )
         )
     if dataset in ["geomad", "all"]:
         datasets.append(
-            ("geomad", f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/{version_geomad}/ausp_ls_geomad.parquet", output_path_geomad)
+            (
+                "geomad",
+                f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/{version_geomad}/ausp_ls_geomad.parquet",
+                output_path_geomad,
+            )
         )
 
     # Build mosaics for all years in the dataset
-    for (dataset_name, stac_geoparquet_url, output_path) in datasets:
+    for dataset_name, stac_geoparquet_url, output_path in datasets:
         logger.info(f"Building mosaics for '{dataset_name}' dataset.")
         for _year in years_list:
             mosaic = _build_mosaic_for_year(_year, stac_geoparquet_url)

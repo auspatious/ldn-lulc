@@ -104,9 +104,7 @@ def test_build_mosaic_for_year_converts_multipolygon_to_convex_hull(
                 [[[2, 2], [3, 2], [3, 3], [2, 3], [2, 2]]],
             ],
         },
-        "links": [
-            {"rel": "self", "href": "https://example.com/items/multi-item"}
-        ],
+        "links": [{"rel": "self", "href": "https://example.com/items/multi-item"}],
         "properties": {"datetime": "2020-06-01T00:00:00Z"},
         "assets": {},
     }
@@ -132,9 +130,20 @@ def test_make_mosaics_geomad_single_year(mock_build, mock_backend):
     mock_backend.return_value.__enter__ = MagicMock(return_value=mock_backend_instance)
     mock_backend.return_value.__exit__ = MagicMock(return_value=False)
 
-    result = runner.invoke(app, ["make-mosaics", "--years", "2020", "--dataset", "geomad", 
-	"--version-geomad", version_geomad, 
-	"--version-prediction", version_prediction])
+    result = runner.invoke(
+        app,
+        [
+            "make-mosaics",
+            "--years",
+            "2020",
+            "--dataset",
+            "geomad",
+            "--version-geomad",
+            version_geomad,
+            "--version-prediction",
+            version_prediction,
+        ],
+    )
 
     assert result.exit_code == 0, result.output
     mock_build.assert_called_once_with(
@@ -154,9 +163,20 @@ def test_make_mosaics_prediction_single_year(mock_build, mock_backend):
     mock_backend.return_value.__enter__ = MagicMock(return_value=MagicMock())
     mock_backend.return_value.__exit__ = MagicMock(return_value=False)
 
-    result = runner.invoke(app, ["make-mosaics", "--years", "2020", "--dataset", "prediction", 
-	"--version-geomad", version_geomad, 
-	"--version-prediction", version_prediction])
+    result = runner.invoke(
+        app,
+        [
+            "make-mosaics",
+            "--years",
+            "2020",
+            "--dataset",
+            "prediction",
+            "--version-geomad",
+            version_geomad,
+            "--version-prediction",
+            version_prediction,
+        ],
+    )
 
     assert result.exit_code == 0, result.output
     mock_build.assert_called_once()
@@ -171,9 +191,20 @@ def test_make_mosaics_all_builds_both_datasets(mock_build, mock_backend):
     mock_backend.return_value.__enter__ = MagicMock(return_value=MagicMock())
     mock_backend.return_value.__exit__ = MagicMock(return_value=False)
 
-    result = runner.invoke(app, ["make-mosaics", "--years", "2020", "--dataset", "all", 
-	"--version-geomad", version_geomad, 
-	"--version-prediction", version_prediction])
+    result = runner.invoke(
+        app,
+        [
+            "make-mosaics",
+            "--years",
+            "2020",
+            "--dataset",
+            "all",
+            "--version-geomad",
+            version_geomad,
+            "--version-prediction",
+            version_prediction,
+        ],
+    )
 
     assert result.exit_code == 0, result.output
     assert mock_build.call_count == 2
@@ -190,9 +221,20 @@ def test_make_mosaics_multiple_years(mock_build, mock_backend):
     mock_backend.return_value.__enter__ = MagicMock(return_value=MagicMock())
     mock_backend.return_value.__exit__ = MagicMock(return_value=False)
 
-    result = runner.invoke(app, ["make-mosaics", "--years", "2020,2021", "--dataset", "geomad", 
-	"--version-geomad", version_geomad, 
-	"--version-prediction", version_prediction])
+    result = runner.invoke(
+        app,
+        [
+            "make-mosaics",
+            "--years",
+            "2020,2021",
+            "--dataset",
+            "geomad",
+            "--version-geomad",
+            version_geomad,
+            "--version-prediction",
+            version_prediction,
+        ],
+    )
 
     assert result.exit_code == 0, result.output
     assert mock_build.call_count == 2
@@ -215,9 +257,20 @@ def test_make_mosaics_writes_with_overwrite(mock_build, mock_backend):
     mock_backend.return_value.__enter__ = MagicMock(return_value=mock_writer)
     mock_backend.return_value.__exit__ = MagicMock(return_value=False)
 
-    result = runner.invoke(app, ["make-mosaics", "--years", "2020", "--dataset", "geomad", 
-	"--version-geomad", version_geomad, 
-	"--version-prediction", version_prediction])
+    result = runner.invoke(
+        app,
+        [
+            "make-mosaics",
+            "--years",
+            "2020",
+            "--dataset",
+            "geomad",
+            "--version-geomad",
+            version_geomad,
+            "--version-prediction",
+            version_prediction,
+        ],
+    )
 
     assert result.exit_code == 0, result.output
     mock_writer.write.assert_called_once_with(overwrite=True)

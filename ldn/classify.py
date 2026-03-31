@@ -56,7 +56,11 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     offset = -0.2
     nodata_values = (0, 65_535)
 
-    bands_to_scale = [band for band in data.data_vars if band not in ["count", "emad", "smad", "bcmad"]]
+    bands_to_scale = [
+        band
+        for band in data.data_vars
+        if band not in ["count", "emad", "smad", "bcmad"]
+    ]
 
     for band in bands_to_scale:
         raw = data[band]
@@ -99,7 +103,17 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
 
 
 # GeoMAD output bands that the prediction pipeline needs (excludes "count").
-GEOMAD_BANDS = ["nir08", "red", "green", "blue", "swir16", "swir22", "smad", "bcmad", "emad"]
+GEOMAD_BANDS = [
+    "nir08",
+    "red",
+    "green",
+    "blue",
+    "swir16",
+    "swir22",
+    "smad",
+    "bcmad",
+    "emad",
+]
 
 # Copernicus DEM collection on Element 84 Earth Search.
 DEM_CATALOG = "https://earth-search.aws.element84.com/v1/"
@@ -203,7 +217,10 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
 
 
 def reshape_array_to_2d(
-    stacked_array: pd.Series, template_ds: xr.Dataset, original_mask: xr.DataArray, nodata_value: int
+    stacked_array: pd.Series,
+    template_ds: xr.Dataset,
+    original_mask: xr.DataArray,
+    nodata_value: int,
 ) -> xr.DataArray:
     """Reshape a 1D stacked array back to a 2D DataArray.
 
@@ -256,7 +273,9 @@ def probability_binary(
     return final_output
 
 
-def do_prediction(ds: xr.Dataset, model, probability_threshold: float, nodata_value: int) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
+def do_prediction(
+    ds: xr.Dataset, model, probability_threshold: float, nodata_value: int
+) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
     """Run random forest prediction and extract target class probability.
 
     Converts the dataset to a flat observation table, runs the model,
@@ -297,15 +316,25 @@ def do_prediction(ds: xr.Dataset, model, probability_threshold: float, nodata_va
     if valid.any():
         valid_df = obs.loc[valid]
         full_predictions.loc[valid] = model.predict(valid_df).astype(np.float32)
-        full_probabilities.loc[valid] = (model.predict_proba(valid_df).max(axis=1) * 100).astype(np.float32)
+        full_probabilities.loc[valid] = (
+            model.predict_proba(valid_df).max(axis=1) * 100
+        ).astype(np.float32)
 
     # Reshape back to 2D; nodata_mask stamps nodata_value over masked pixels.
     nodata_mask_2d = nodata_mask.unstack("dims")
-    classification_unfiltered = reshape_array_to_2d(full_predictions, ds, nodata_mask_2d, nodata_value=nodata_value)
-    probability = reshape_array_to_2d(full_probabilities, ds, nodata_mask_2d, nodata_value=nodata_value)
-    probability_mask = probability_binary(probability, probability_threshold, nodata_value=nodata_value)
+    classification_unfiltered = reshape_array_to_2d(
+        full_predictions, ds, nodata_mask_2d, nodata_value=nodata_value
+    )
+    probability = reshape_array_to_2d(
+        full_probabilities, ds, nodata_mask_2d, nodata_value=nodata_value
+    )
+    probability_mask = probability_binary(
+        probability, probability_threshold, nodata_value=nodata_value
+    )
     # Keep predictions only where probability_mask == 1 (above threshold).
-    classification = classification_unfiltered.where(probability_mask == 1, nodata_value).astype("uint8")
+    classification = classification_unfiltered.where(
+        probability_mask == 1, nodata_value
+    ).astype("uint8")
     return classification, classification_unfiltered, probability
 
 
@@ -455,7 +484,9 @@ def run_classify_task(
         probability_threshold: Confidence threshold (0-100) for the binary mask.
         nodata_value: Integer nodata value for output bands.
     """
-    logger.info(f"Starting processing. Tile ID: {tile_id}, Year: {datetime}, Region: {region}, Version: {version}.")
+    logger.info(
+        f"Starting processing. Tile ID: {tile_id}, Year: {datetime}, Region: {region}, Version: {version}."
+    )
 
     # Split by any of [",", "-", "_"] to be robust.
     tile_id_parts = [int(i) for i in re.split(r"[,\-_]", tile_id)]
@@ -482,10 +513,14 @@ def run_classify_task(
     logger.info("Loading model")
     loaded_model = _load_joblib_model(model_path)
 
-    aws_region_name = boto3.client("s3").head_bucket(Bucket=output_bucket)["BucketRegion"]
+    aws_region_name = boto3.client("s3").head_bucket(Bucket=output_bucket)[
+        "BucketRegion"
+    ]
 
     if asset_url_prefix is None:
-        asset_url_prefix = f"https://s3.{aws_region_name}.amazonaws.com/{output_bucket}/"
+        asset_url_prefix = (
+            f"https://s3.{aws_region_name}.amazonaws.com/{output_bucket}/"
+        )
 
     itempath = S3ItemPath(
         prefix="ausp",
@@ -499,10 +534,14 @@ def run_classify_task(
     stac_url = itempath.stac_path(tile_id)
 
     if not overwrite and object_exists(output_bucket, stac_url, client=s3_client):
-        logger.info(f"Item already exists at {itempath.stac_path(tile_id, absolute=True)}")
-        raise typer.Exit() # Exit successfully.
-    
-    logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
+        logger.info(
+            f"Item already exists at {itempath.stac_path(tile_id, absolute=True)}"
+        )
+        raise typer.Exit()  # Exit successfully.
+
+    logger.info(
+        "Either item does not exist or overwrite is True, proceeding with processing."
+    )
 
     # Search GeoMAD STAC-Geoparquet for this tile's area and year
     logger.info("Defining GeoMAD searcher.")
@@ -518,7 +557,7 @@ def run_classify_task(
     loader = OdcLoader(
         bands=GEOMAD_BANDS,
         chunks={"x": xy_chunk_size, "y": xy_chunk_size},
-        fail_on_error=False, #TODO: Validate this.
+        fail_on_error=False,  # TODO: Validate this.
     )
 
     logger.info("Defining LULC Processor.")
@@ -559,15 +598,13 @@ def run_classify_task(
     )
 
 
-
-
-
-
-
-
-
 # get_geomad_dem_indices and get_buffered_country are now just for the notebooks.
-def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: str, year: str, catalog: PyStacClient) -> xr.Dataset:
+def get_geomad_dem_indices(
+    region_polygon_gdf: GeoDataFrame,
+    stac_geoparquet: str,
+    year: str,
+    catalog: PyStacClient,
+) -> xr.Dataset:
     """Load Geomedian, GeoMAD, and DEM data for a region and compute terrain/spectral features.
 
     The function loads GeoMAD bands for a regional AOI and year, applies
@@ -587,11 +624,15 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
         An xarray Dataset containing GeoMAD bands, derived spectral indices,
         elevation, slope, and aspect clipped to the region geometry.
     """
-    assert len(region_polygon_gdf.geometry) == 1, "region_polygon_gdf must contain at one multipolygon"
+    assert len(region_polygon_gdf.geometry) == 1, (
+        "region_polygon_gdf must contain at one multipolygon"
+    )
 
     logger.info(region_polygon_gdf.geometry[0].bounds)
 
-    geomad_items = search_sync(stac_geoparquet, bbox=list(region_polygon_gdf.total_bounds), datetime=year)
+    geomad_items = search_sync(
+        stac_geoparquet, bbox=list(region_polygon_gdf.total_bounds), datetime=year
+    )
 
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
     logger.info(f"Found {len(geomad_items)} GeoMAD items for this region and year")
@@ -602,12 +643,16 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
     geomad_ds = stac_load(
         geomad_items,
         # Region is in 4326 which is good for clipping, despite GeoMAD being in 3857 (for pacific region).
-        geopolygon=region_polygon_gdf.geometry[0], # Filters but doesn't clip to the region polygon.
-        chunks={}, # Force lazy loading.
-        bands=bands, # Only load the bands we need (exclude count).
+        geopolygon=region_polygon_gdf.geometry[
+            0
+        ],  # Filters but doesn't clip to the region polygon.
+        chunks={},  # Force lazy loading.
+        bands=bands,  # Only load the bands we need (exclude count).
     )
 
-    logger.info(f"GeoMAD dataset loaded CRS (should be native): {geomad_ds.odc.crs.epsg}")
+    logger.info(
+        f"GeoMAD dataset loaded CRS (should be native): {geomad_ds.odc.crs.epsg}"
+    )
     logger.info(f"GeoMAD bands loaded: {list(geomad_ds.data_vars)}")
     geomad_ds = geomad_ds.squeeze().load()
     logger.info(f"GeoMAD dataset shape: {geomad_ds.dims}")
@@ -626,27 +671,44 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
     dem_items = list(dem_items.items())
     logger.info(f"Found {len(dem_items)} DEM items for this AOI")
 
-    dem = stac_load(
-        dem_items,
-        like=geomad_ds, # Needed for alingment.
-        resampling="bilinear", # Alternatively nearest. # TODO: Validate resampling method for upsampling DEM.
-        patch_url=sign_url,
-    ).squeeze().compute().rename({"data": "elevation"}) # Squeeze removes the time dimension, which is not needed for DEM.
+    dem = (
+        stac_load(
+            dem_items,
+            like=geomad_ds,  # Needed for alingment.
+            resampling="bilinear",  # Alternatively nearest. # TODO: Validate resampling method for upsampling DEM.
+            patch_url=sign_url,
+        )
+        .squeeze()
+        .compute()
+        .rename({"data": "elevation"})
+    )  # Squeeze removes the time dimension, which is not needed for DEM.
 
-    dem_da = dem['elevation']
+    dem_da = dem["elevation"]
     dem_vals = dem_da.values.astype("float32")
     res_m = abs(float(dem.x[1] - dem.x[0]))
 
     dz_dx = sobel(dem_vals, axis=1) / (8 * res_m)
     dz_dy = sobel(dem_vals, axis=0) / (8 * res_m)
 
-    slope  = xr.DataArray(np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))), coords=dem_da.coords, dims=dem_da.dims, name="slope")
-    aspect = xr.DataArray((90 - np.degrees(np.arctan2(-dz_dy, dz_dx))) % 360,  coords=dem_da.coords, dims=dem_da.dims, name="aspect")
+    slope = xr.DataArray(
+        np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))),
+        coords=dem_da.coords,
+        dims=dem_da.dims,
+        name="slope",
+    )
+    aspect = xr.DataArray(
+        (90 - np.degrees(np.arctan2(-dz_dy, dz_dx))) % 360,
+        coords=dem_da.coords,
+        dims=dem_da.dims,
+        name="aspect",
+    )
 
     dem_ds = xr.Dataset({"elevation": dem_da, "slope": slope, "aspect": aspect})
 
     # Merge GeoMAD (10m native) and DEM (30m, resampled to 10m GeoMAD grid) on x, y, time.
-    dem_ds = dem_ds.assign_coords(time=geomad_ds.time) # Add GeoMAD time coordinate to DEM dataset so they can be merged.
+    dem_ds = dem_ds.assign_coords(
+        time=geomad_ds.time
+    )  # Add GeoMAD time coordinate to DEM dataset so they can be merged.
 
     merged = xr.merge([geomad_ds, dem_ds])
 
@@ -655,10 +717,14 @@ def get_geomad_dem_indices(region_polygon_gdf: GeoDataFrame, stac_geoparquet: st
         merged[var] = merged[var].rio.write_nodata(float("nan"))
 
     # Clip.
-    return merged.rio.clip(region_polygon_gdf.to_crs(merged.odc.crs).geometry, merged.rio.crs, drop=True)
+    return merged.rio.clip(
+        region_polygon_gdf.to_crs(merged.odc.crs).geometry, merged.rio.crs, drop=True
+    )
 
 
-def get_buffered_country(country_of_interest: dict, wgs84: str, analysis_crs: str) -> GeoDataFrame:
+def get_buffered_country(
+    country_of_interest: dict, wgs84: str, analysis_crs: str
+) -> GeoDataFrame:
     """Fetch and buffer a country geometry for analysis.
 
     Retrieves country geometry from GADM, applies country-specific clipping for
@@ -674,16 +740,20 @@ def get_buffered_country(country_of_interest: dict, wgs84: str, analysis_crs: st
     Returns:
         A GeoDataFrame containing buffered country geometry in `wgs84`.
     """
-    buffer_m  = 100
+    buffer_m = 100
 
     country_gadm = get_gadm(countries=country_of_interest, overwrite=True)
 
     # Temporarily clip country geoms to GeoMAD processed areas because we don't have that much processed yet.
     # TODO: Remove this step once GeoMAD has been run for all tiles for all countries.
     stac_geoparquet = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2b/ausp_ls_geomad.parquet"
-    geomad_items = search_sync(stac_geoparquet, bbox=list(country_gadm.total_bounds), datetime="2020")
+    geomad_items = search_sync(
+        stac_geoparquet, bbox=list(country_gadm.total_bounds), datetime="2020"
+    )
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
-    print(f"Found {len(geomad_items)} GeoMAD items for this country in 2020. Clipping country to the first item while developing.")
+    print(
+        f"Found {len(geomad_items)} GeoMAD items for this country in 2020. Clipping country to the first item while developing."
+    )
     geomad_bbox = geomad_items[0].bbox
     # For Fiji 2nd tile, use a different item.
     # geomad_bbox = geomad_items[1].bbox # TODO: Fix this bbox. Bounds are -179.999995, -16.82498, 180.0, -16.079684.
@@ -694,5 +764,5 @@ def get_buffered_country(country_of_interest: dict, wgs84: str, analysis_crs: st
     # Fiji and Singapore are both a single multipolygon from GADM.
     return GeoDataFrame(
         geometry=country_gadm.to_crs(analysis_crs).buffer(buffer_m).to_crs(wgs84),
-        crs=wgs84
+        crs=wgs84,
     )

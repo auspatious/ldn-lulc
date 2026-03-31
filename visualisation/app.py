@@ -5,7 +5,6 @@ Uses TiTiler to visualise a MosaicJSON of either GeoMedian/GeoMAD or predicted L
 Tiles from separate per-band COGs using TiTiler + STACReader.
 """
 
-
 import logging
 import os
 import re
@@ -38,18 +37,20 @@ logging.basicConfig(
 logger.setLevel(logging.INFO)  # Our logging level.
 
 
-cmap = default_cmap.register({
-    "lulc": {
-        255: (255, 255, 255, 0),    # No data    — transparent
-        1: (0,   100, 0,   255),  # Tree Cover — darkgreen
-        2: (50,  205, 50,  255),  # Grassland  — limegreen
-        3: (0,   255, 0,   255),  # Cropland   — lime
-        4: (64,  224, 208, 255),  # Wetland    — turquoise
-        5: (128, 128, 128, 255),  # Built-up   — gray
-        6: (0,   0,   255, 255),  # Water      — blue
-        7: (255, 255, 0,   255),  # Other      — yellow
+cmap = default_cmap.register(
+    {
+        "lulc": {
+            255: (255, 255, 255, 0),  # No data    — transparent
+            1: (0, 100, 0, 255),  # Tree Cover — darkgreen
+            2: (50, 205, 50, 255),  # Grassland  — limegreen
+            3: (0, 255, 0, 255),  # Cropland   — lime
+            4: (64, 224, 208, 255),  # Wetland    — turquoise
+            5: (128, 128, 128, 255),  # Built-up   — gray
+            6: (0, 0, 255, 255),  # Water      — blue
+            7: (255, 255, 0, 255),  # Other      — yellow
+        }
     }
-})
+)
 ColorMapParams = create_colormap_dependency(cmap)
 
 # GDAL / rasterio environment — speeds up remote COG access significantly
@@ -89,7 +90,12 @@ MOSAIC_PATTERN = re.compile(r"(\w+)_(\d{4})_mosaic\.json$")
 
 for prefix, dataset_prefix, version, paths_dict in [
     ("geomad", GEOMAD_DATASET_PREFIX, GEOMAD_DATASET_VERSION, MOSAIC_PATHS_GEOMAD),
-    ("prediction", PREDICTION_DATASET_PREFIX, PREDICTION_DATASET_VERSION, MOSAIC_PATHS_PREDICTION),
+    (
+        "prediction",
+        PREDICTION_DATASET_PREFIX,
+        PREDICTION_DATASET_VERSION,
+        MOSAIC_PATHS_PREDICTION,
+    ),
 ]:
     s3_prefix = f"{dataset_prefix}/{version}/mosaics/"
     response = s3.list_objects_v2(Bucket=MOSAIC_S3_BUCKET, Prefix=s3_prefix)
@@ -108,6 +114,7 @@ datasets = [
     ("prediction", MOSAIC_PATHS_PREDICTION),
 ]
 
+
 # Custom path dependency
 def MosaicPathParams(
     year: Annotated[
@@ -117,18 +124,24 @@ def MosaicPathParams(
     dataset: Annotated[
         Literal["geomad", "prediction"],
         Query(description="Dataset name (must be either 'geomad' or 'prediction')"),
-     ],
+    ],
 ) -> str:
     """Resolve dataset and year query parameters to a mosaic.json file path."""
     dataset_set = next((d for d in datasets if d[0] == dataset), None)
     if not dataset_set:
-        raise HTTPException(status_code=404, detail=f"Unknown dataset '{dataset}'. Valid options: {[d[0] for d in datasets]}.")
-    
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown dataset '{dataset}'. Valid options: {[d[0] for d in datasets]}.",
+        )
+
     mocasic_paths = dataset_set[1]
     if year in mocasic_paths:
         return str(mocasic_paths[year])
     else:
-        raise HTTPException(status_code=404, detail=f"No mosaic found for year '{year}' in dataset '{dataset}'. Available years: {sorted(mocasic_paths.keys())}.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No mosaic found for year '{year}' in dataset '{dataset}'. Available years: {sorted(mocasic_paths.keys())}.",
+        )
 
 
 # FastAPI app
@@ -161,7 +174,7 @@ GDAL_ENV = {
 }
 
 mosaic_factory = MosaicTilerFactory(
-    backend=MosaicBackend, # type: ignore
+    backend=MosaicBackend,  # type: ignore
     dataset_reader=STACReader,
     path_dependency=MosaicPathParams,
     layer_dependency=AssetsExprParams,
@@ -281,18 +294,20 @@ def map_viewer(
 ):
     """Render a full-page map viewer for the given dataset, year, and assets."""
     LULC_LEGEND = [
-        (1, "rgb(0,100,0)",          "Tree Cover"),
-        (2, "rgb(50,205,50)",        "Grassland"),
-        (3, "rgb(0,255,0)",          "Cropland"),
-        (4, "rgb(64,224,208)",       "Wetland"),
-        (5, "rgb(128,128,128)",      "Built-up"),
-        (6, "rgb(0,0,255)",          "Water"),
-        (7, "rgb(255,255,0)",        "Other"),
+        (1, "rgb(0,100,0)", "Tree Cover"),
+        (2, "rgb(50,205,50)", "Grassland"),
+        (3, "rgb(0,255,0)", "Cropland"),
+        (4, "rgb(64,224,208)", "Wetland"),
+        (5, "rgb(128,128,128)", "Built-up"),
+        (6, "rgb(0,0,255)", "Water"),
+        (7, "rgb(255,255,0)", "Other"),
     ]
 
     # Build the tile URL from the incoming query parameters.
     assets_qs = "&".join(f"assets={a}" for a in assets)
-    tile_url = f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}&{assets_qs}"
+    tile_url = (
+        f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}&{assets_qs}"
+    )
 
     if rescale:
         tile_url += "&" + "&".join(f"rescale={r}" for r in rescale)
@@ -388,5 +403,6 @@ def map_viewer(
     </html>"""
 
     return HTMLResponse(content=html)
+
 
 handler = Mangum(app, lifespan="off")

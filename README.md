@@ -70,10 +70,10 @@ Formats Python, YAML, and JSON.
 To use pre-commit to automatically run ruff, mypy and other checks on each commit, make sure the development dependencies are installed and then run:
 
 ```bash
-pre-commit install
+poetry run pre-commit install
 ```
 
-Note that you will need to run `pre-commit run --all-files` if any of the hooks in `.pre-commit-config.yaml` change.
+Note that you will need to run `poetry run pre-commit run --all-files` if any of the hooks in `.pre-commit-config.yaml` change.
 
 
 ## Running Commands

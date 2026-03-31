@@ -9,7 +9,7 @@ with _typology_path.open("r", encoding="utf-8") as f:
     classes = {v["label"]: v["value"] for v in lvl1.values()}
     classes_flipped = {v["value"]: v["label"] for v in lvl1.values()}
     colors = {v["value"]: v["color"] for v in lvl1.values()}
-    
-    world_cover_map = typology_mapping['world_cover_map']
-    cci_lc_map = typology_mapping['cci_lc_map']
-    io_map = typology_mapping['io_map']
+
+    world_cover_map = typology_mapping["world_cover_map"]
+    cci_lc_map = typology_mapping["cci_lc_map"]
+    io_map = typology_mapping["io_map"]
