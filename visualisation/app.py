@@ -30,12 +30,12 @@ logger = logging.getLogger(__name__)
 
 logging.basicConfig(
     level=logging.WARNING,  # Package logging level.
-    format="%(asctime)s | %(levelname)s | %(module)s | %(name)s:%(funcName)s:%(lineno)d - %(message)s",
+    format="%(asctime)s | %(levelname)s | %(name)s:%(lineno)d - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     stream=sys.stderr,
     force=True,
 )
-logging.getLogger("ldn-app").setLevel(logging.INFO)  # Our logging level.
+logger.setLevel(logging.INFO)  # Our logging level.
 
 
 cmap = default_cmap.register({

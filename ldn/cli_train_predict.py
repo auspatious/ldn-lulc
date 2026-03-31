@@ -33,9 +33,11 @@ def _predict(
     asset_url_prefix: str | None = typer.Option(None, help="Prefix for asset URLs."),
     decimated: bool = typer.Option(False, help="Whether to use decimated data for prediction. Decimated data is faster to predict but less accurate."),
     overwrite: bool = typer.Option(False, help="Whether to overwrite existing prediction."),
+    probability_threshold: float = typer.Option(30.0, help="Probability threshold (0-100) for classifying a pixel as the target class. Higher values mean only pixels with higher predicted probability will be classified as the target class."),
+    nodata_value: int = typer.Option(255, help="Value to use for NoData pixels in the output. Must be an integer between 0 and 255.")
     ) -> None:
-    if int(year) < 2000 or int(year) > 2024:
-        raise ValueError("Year must be between 2000 and 2024.")
+    if int(year) < 2000 or int(year) > 2025:
+        raise ValueError("Year must be between 2000 and 2025.")
 
     run_predict_task(
         tile_id, 
@@ -49,5 +51,6 @@ def _predict(
         asset_url_prefix=asset_url_prefix,
         decimated=decimated,
         overwrite=overwrite,
-        # probability_threshold
+        probability_threshold=probability_threshold,
+        nodata_value=nodata_value
     )

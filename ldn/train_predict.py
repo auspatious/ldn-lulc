@@ -204,7 +204,7 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
 
 
 def reshape_array_to_2d(
-    stacked_array: pd.Series, template_ds: xr.Dataset, original_mask: xr.DataArray
+    stacked_array: pd.Series, template_ds: xr.Dataset, original_mask: xr.DataArray, nodata_value: int
 ) -> xr.DataArray:
     """Reshape a 1D stacked array back to a 2D DataArray.
 
@@ -214,20 +214,21 @@ def reshape_array_to_2d(
         original_mask: Boolean mask (True = nodata) applied to the output.
 
     Returns:
-        A 2D uint8 DataArray with 255 for nodata pixels.
+        A 2D uint8 DataArray with the specified nodata_value for nodata pixels.
     """
     array = stacked_array.to_numpy().reshape(template_ds.y.size, template_ds.x.size)
     da = xr.DataArray(
         array, coords={"y": template_ds.y, "x": template_ds.x}, dims=["y", "x"]
     )
-    # 255 as NoData.
-    return da.where(~original_mask, 255).astype("uint8")
+    # nodata_value as NoData. Ensure any remaining NaNs are also set to nodata_value before casting.
+    da = da.where(~original_mask, nodata_value).fillna(nodata_value)
+    return da.astype("uint8")
 
 
 def probability_binary(
     probability_da: xr.DataArray,
     threshold: int | float,
-    nodata_value: int = 255,
+    nodata_value: int,
 ) -> xr.DataArray:
     """
     Converts a probability raster into a binary classification raster based on a threshold.
@@ -242,18 +243,14 @@ def probability_binary(
                                     Expected to have spatial dimensions (e.g., 'x', 'y').
     - threshold (float): The threshold value to apply. Pixels with probability >= threshold
                          will be classified as 1.
-    - output_dtype (str): The desired output data type. Use 'float32' or 'float64'
-                          to preserve NaN values. If an integer type (e.g., 'uint8', 'int16'),
-                          original NaNs will be converted to `nodata_value`.
     - nodata_value (int): The value to use for NoData if output_dtype is an integer type.
                           Must be within the range of the chosen integer `output_dtype`.
-                          Default is 255.
 
     Returns:
     - xr.DataArray: A new DataArray with binary classification (1 for above threshold,
                     0 for below threshold, and `nodata_value` for NoData areas).
     """
-    mask = probability_da == 255
+    mask = probability_da == nodata_value
     above_threshold = probability_da >= threshold
 
     final_output = xr.where(above_threshold, 1, 0)
@@ -262,8 +259,7 @@ def probability_binary(
     return final_output
 
 
-def do_prediction(ds: xr.Dataset, model, #probability_threshold
-                  ) -> tuple[xr.DataArray, xr.DataArray]:
+def do_prediction(ds: xr.Dataset, model, probability_threshold: float, nodata_value: int) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
     """Run random forest prediction and extract target class probability.
 
     Converts the dataset to a flat observation table, runs the model,
@@ -272,10 +268,11 @@ def do_prediction(ds: xr.Dataset, model, #probability_threshold
     Args:
         ds: Feature dataset with y/x spatial dimensions.
         model: Fitted scikit-learn classifier with predict/predict_proba.
+        probability_threshold: Confidence threshold (0-100) for the binary mask.
 
     Returns:
-        A (classification, probability) tuple of uint8 DataArrays
-        with 255 as nodata.
+        A (classification, probability, probability_mask) tuple of uint8
+        DataArrays with the specified nodata_value for nodata pixels.
     """
     # Store the original nodata mask
     # TODO: Check if any band is nan.
@@ -311,12 +308,12 @@ def do_prediction(ds: xr.Dataset, model, #probability_threshold
         probabilities = model.predict_proba(non_zero_df)
         max_probabilities = probabilities.max(axis=1) * 100
         full_probabilities.loc[~zero_mask] = max_probabilities
-        # TODO: Mask with probability_binary() and probability_threshold.
 
-    predicted = reshape_array_to_2d(full_predictions, ds, mask)
-    probability = reshape_array_to_2d(full_probabilities, ds, mask)
+    predicted = reshape_array_to_2d(full_predictions, ds, mask, nodata_value=nodata_value)
+    probability = reshape_array_to_2d(full_probabilities, ds, mask, nodata_value=nodata_value)
+    probability_mask = probability_binary(probability, probability_threshold, nodata_value=nodata_value)
 
-    return predicted, probability
+    return predicted, probability, probability_mask
 
 
 class LulcProcessor(Processor):
@@ -326,8 +323,8 @@ class LulcProcessor(Processor):
         self,
         model,
         logger: logging.Logger,
-        probability_threshold: float = 60,
-        nodata_value: int = 255,
+        probability_threshold: float,
+        nodata_value: int,
         **kwargs,
     ):
         """Create a LULC prediction processor.
@@ -340,7 +337,7 @@ class LulcProcessor(Processor):
         """
         super().__init__(**kwargs)
         self._model = model
-        # self._probability_threshold = probability_threshold
+        self._probability_threshold = probability_threshold
         self._nodata_value = nodata_value
         self._logger = logger
 
@@ -371,15 +368,15 @@ class LulcProcessor(Processor):
         merged = xr.merge([data, dem_ds])
 
         self._logger.info("Running prediction")
-        classification, probability = do_prediction(
-            merged, self._model, # probability_threshold
+        classification, probability, probability_mask = do_prediction(
+            merged, self._model, self._probability_threshold, self._nodata_value
         )
 
         output = xr.Dataset(
             {
                 "classification": classification,
                 "lulc_probability": probability,
-                # TODO: Do we need threshold here?
+                "lulc_probability_mask": probability_mask,
             }
         )
 
@@ -441,13 +438,14 @@ def run_predict_task(
     version: Annotated[str, typer.Option()],
     version_geomad: Annotated[str, typer.Option()],
     region: Literal["pacific", "non-pacific"],
-    output_bucket: str = "data.ldn.auspatious.com",
-    model_path: str = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/lulc_random_forest_model.joblib",
-    xy_chunk_size: int = 1024,
-    asset_url_prefix: str | None = None,
-    decimated: bool = False,
-    overwrite: Annotated[bool, typer.Option()] = False,
-    # probability_threshold,
+    output_bucket: str,
+    model_path: str,
+    xy_chunk_size: int,
+    asset_url_prefix: str | None,
+    decimated: bool,
+    overwrite: Annotated[bool, typer.Option()],
+    probability_threshold: float,
+    nodata_value: int,
 ) -> None:
     """Run LULC prediction for a single tile and year, writing results to S3.
 
@@ -463,6 +461,8 @@ def run_predict_task(
         asset_url_prefix: Optional URL prefix for STAC asset hrefs.
         decimated: If True, use 10x lower resolution (for testing).
         overwrite: If True, overwrite existing output.
+        probability_threshold: Confidence threshold (0-100) for the binary mask.
+        nodata_value: Integer nodata value for output bands.
     """
     logger.info(f"Starting processing. Tile ID: {tile_id}, Year: {datetime}, Region: {region}, Version: {version}.")
 
@@ -533,9 +533,9 @@ def run_predict_task(
     logger.info("Defining LULC Processor.")
     processor = LulcProcessor(
         model=joblib_load(loaded_model),
-        nodata_value=255,
+        nodata_value=nodata_value,
         logger=logger,
-        # probability_threshold=probability_threshold,
+        probability_threshold=probability_threshold,
     )
 
     stac_creator = StacCreator(itempath=itempath, with_raster=True)

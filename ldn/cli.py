@@ -382,7 +382,7 @@ def _index_to_stac_geoparquet(
     bucket: str = typer.Option("data.ldn.auspatious.com", help="S3 bucket containing predictions."),
     aws_region: str = typer.Option("us-west-2", help="AWS region of the bucket."),
 ) -> None:
-    """Build a STAC-Geoparquet index from all prediction STAC items on S3."""
+    """Build a STAC-Geoparquet index from all STAC items available in a path in S3."""
     prefix = f"{prefix}/{version}"
     parquet_key = f"{prefix}/{output_filename}.parquet"
 
