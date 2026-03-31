@@ -1,24 +1,37 @@
-FROM python:3.11-slim
-# Change to this once we need GDAL
-# FROM ghcr.io/osgeo/gdal:ubuntu-small-3.9.3
+FROM ghcr.io/osgeo/gdal:ubuntu-small-3.12.3
 
-# Minimal system dependencies for running Python CLI
 RUN apt-get update && apt-get install -y \
-    python3 \
     python3-pip \
-    # Installs SSL/TLS certificates, which are needed for secure HTTPS connections (e.g., downloading packages, accessing APIs).
-    ca-certificates \
-    # Cleans up the local repository of retrieved package files, reducing image size by removing cached .deb files after installation.
+    python3-venv \
+    git \
+    curl \
     && apt-get clean \
-    # Remove these dirs (caches, logs) after installing deps to reduce image size
     && rm -rf /var/lib/{apt,dpkg,cache,log}
 
-# Copy source code into the container
-WORKDIR /code
-COPY . .
+# Install Rust via rustup (needed to build datacube-compute)
+ENV CARGO_HOME="/usr/local/cargo" RUSTUP_HOME="/usr/local/rustup"
+ENV PATH="$CARGO_HOME/bin:$PATH"
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
 
-# Install Python dependencies (assumes pyproject.toml present)
-RUN pip install --upgrade pip && pip install .
+RUN pip install --break-system-packages poetry
+
+WORKDIR /code
+
+COPY pyproject.toml poetry.lock ./
+# Install dependencies first to leverage Docker caching. 
+# Keep layer separate from installing the package itself to avoid re-building dependencies when our code changes.
+# Make venv in-project (in container's working directory).
+RUN poetry config virtualenvs.in-project true && \
+    poetry install --no-root
+
+# Rust is no longer needed after dependencies are built
+RUN rustup self uninstall -y && rm -rf /usr/local/cargo /usr/local/rustup
+
+COPY . .
+# Install the package itself. Keep separate from dependencies to avoid re-building dependencies when our code changes.
+RUN poetry install --only-root
+
+ENV PATH="/code/.venv/bin:$PATH"
 
 # Smoketest
 RUN ldn --help
