@@ -40,7 +40,7 @@ logger.setLevel(logging.INFO)  # Our logging level.
 
 cmap = default_cmap.register({
     "lulc": {
-        0: (255, 255, 255, 0),    # No data    — transparent
+        255: (255, 255, 255, 0),    # No data    — transparent
         1: (0,   100, 0,   255),  # Tree Cover — darkgreen
         2: (50,  205, 50,  255),  # Grassland  — limegreen
         3: (0,   255, 0,   255),  # Cropland   — lime
@@ -180,12 +180,6 @@ def root():
     years_geomad = sorted(MOSAIC_PATHS_GEOMAD.keys())
     years_prediction = sorted(MOSAIC_PATHS_PREDICTION.keys())
 
-    def geomad_link(y):
-        return f'<a href="/map?dataset=geomad&year={y}&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500">{y}</a>'
-
-    def prediction_link(y):
-        return f'<a href="/map?dataset=prediction&year={y}&assets=classification">{y}</a>'
-
     html = f"""<!DOCTYPE html>
       <html lang="en">
       <head>
@@ -197,6 +191,8 @@ def root():
           a {{ margin-right: .75rem; }}
           .item {{ margin-top: 2rem;  margin-bottom: 2rem; border-bottom: 2px solid #e7e7e7; padding-bottom: 1rem; }}
           .logo {{ height: 160px; margin: auto; display: block; margin-bottom: 1rem; }}
+          select {{ font-family: monospace; font-size: 1rem; padding: 0.4rem 0.6rem; }}
+          .selectors {{ display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }}
         </style>
       </head>
       <body>
@@ -207,36 +203,63 @@ def root():
         </div>
 
         <div class="item">
-          <h2>GeoMedian/GeoMAD</h2>
-          <h4>Available Years:</h4>
-          {''.join(geomad_link(y) for y in years_geomad)}
+          <div class="selectors">
+            <select id="dataset-select">
+              <option value="" disabled selected>Select dataset</option>
+              <option value="geomedian">GeoMedian (RGB)</option>
+              <option value="geomad">GeoMAD (S, E, BC)</option>
+              <option value="classification">Classification</option>
+              <option value="classification_unfiltered">Classification (unfiltered)</option>
+              <option value="classification_probability">Classification (probability)</option>
+            </select>
+            <select id="year-select" disabled>
+              <option value="" disabled selected>Select year</option>
+            </select>
+          </div>
+          <script>
+            var yearsByDataset = {{
+              geomedian: {list(years_geomad)},
+              geomad: {list(years_geomad)},
+              classification: {list(years_prediction)},
+              classification_unfiltered: {list(years_prediction)},
+              classification_probability: {list(years_prediction)},
+            }};
+            var datasetSelect = document.getElementById("dataset-select");
+            var yearSelect = document.getElementById("year-select");
 
-          <h4>Available Assets:</h4>
-          <ol>
-            <li>blue (geomedian visible reflectance values)</li>
-            <li>green (geomedian visible reflectance values)</li>
-            <li>red (geomedian visible reflectance values)</li>
-            <li>nir08 (near infrared)</li>
-            <li>swir16 (short wave infrared)</li>
-            <li>swir22 (short wave infrared)</li>
-            <li>smad (MAD statistics)</li>
-            <li>bcmad (MAD statistics)</li>
-            <li>emad (MAD statistics)</li>
-            <li>count (number of observations used to create GeoMedian/GeoMAD)</li>
-          </ol>
-        </div>
+            datasetSelect.addEventListener("change", function() {{
+              var years = yearsByDataset[datasetSelect.value] || [];
+              yearSelect.innerHTML = '<option value="" disabled selected>Select year</option>';
+              years.forEach(function(y) {{
+                var opt = document.createElement("option");
+                opt.value = y; opt.textContent = y;
+                yearSelect.appendChild(opt);
+              }});
+              yearSelect.disabled = years.length === 0;
+            }});
 
-        <div class="item">
-          <h2>Prediction</h2>
-          <h4>Available Years:</h4>
-          {''.join(prediction_link(y) for y in years_prediction)}
-
-          <h4>Available Assets:</h4>
-          <ol>
-            <li>classification (predicted land cover classes)</li>
-            <li>classification_unfiltered (includes pixels below classification confidence threshold values)</li>
-            <li>classification_probability (probability of predicted classes 0-100 range)</li>
-          </ol>
+            yearSelect.addEventListener("change", function() {{
+              var ds = datasetSelect.value;
+              var yr = yearSelect.value;
+              if (!ds || !yr) return;
+              if (ds === "geomedian") {{
+                window.location.href = "/map?dataset=geomad&year=" + yr +
+                  "&assets=red&assets=green&assets=blue&rescale=7200,12000&rescale=7200,12000&rescale=7200,12000";
+              }} else if (ds === "geomad") {{
+                window.location.href = "/map?dataset=geomad&year=" + yr +
+                  "&assets=smad&assets=emad&assets=bcmad&rescale=0,0.0012&rescale=262,2150&rescale=0.006,0.04";
+              }} else if (ds === "classification") {{
+                window.location.href = "/map?dataset=prediction&year=" + yr +
+                  "&assets=classification";
+              }} else if (ds === "classification_unfiltered") {{
+                window.location.href = "/map?dataset=prediction&year=" + yr +
+                  "&assets=classification_unfiltered";
+              }} else if (ds === "classification_probability") {{
+                window.location.href = "/map?dataset=prediction&year=" + yr +
+                  "&assets=classification_probability&colormap_name=rdylgn&rescale=0,100";
+              }}
+            }});
+          </script>
         </div>
 
         <div class="item">
@@ -252,10 +275,12 @@ def root():
 def map_viewer(
     dataset: Literal["geomad", "prediction"] = Query(...),
     year: str = Query(..., pattern=r"^\d{4}$"),
+    assets: list[str] = Query(...),
+    rescale: Optional[list[str]] = Query(None),
     colormap_name: Optional[str] = Query(None),
 ):
+    """Render a full-page map viewer for the given dataset, year, and assets."""
     LULC_LEGEND = [
-        (0, "rgba(255,255,255,0)",   "No data"),
         (1, "rgb(0,100,0)",          "Tree Cover"),
         (2, "rgb(50,205,50)",        "Grassland"),
         (3, "rgb(0,255,0)",          "Cropland"),
@@ -265,18 +290,20 @@ def map_viewer(
         (7, "rgb(255,255,0)",        "Other"),
     ]
 
-    if dataset == "geomad":
-        tile_url = (
-            f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}"
-            "&assets=red&assets=green&assets=blue"
-            "&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500"
-        )
-        legend_html = ""
-    elif dataset == "prediction":
-        tile_url = (
-            f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}"
-            f"&assets=classification&colormap_name={colormap_name or 'lulc'}"
-        )
+    # Build the tile URL from the incoming query parameters.
+    assets_qs = "&".join(f"assets={a}" for a in assets)
+    tile_url = f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}&{assets_qs}"
+
+    if rescale:
+        tile_url += "&" + "&".join(f"rescale={r}" for r in rescale)
+    if colormap_name:
+        tile_url += f"&colormap_name={colormap_name}"
+
+    # Show the LULC legend only for classification assets.
+    classification_assets = {"classification", "classification_unfiltered"}
+    if dataset == "prediction" and classification_assets.intersection(assets):
+        if not colormap_name:
+            tile_url += "&colormap_name=lulc"
         legend_items = "".join(
             f"""<div class="legend-item">
                   <span class="swatch" style="background:{color};border:1px solid #ccc;"></span>
@@ -289,8 +316,23 @@ def map_viewer(
           <div class="legend-title">Land Cover</div>
           {legend_items}
         </div>"""
+    elif dataset == "prediction" and "classification_probability" in assets:
+        legend_html = """
+        <div id="legend">
+          <div class="legend-title">Probability</div>
+          <div style="display:flex;align-items:stretch;gap:6px;">
+            <div style="width:18px;height:120px;background:linear-gradient(to bottom,#1a9641,#a6d96a,#ffffbf,#fdae61,#d7191c);border:1px solid #ccc;border-radius:3px;"></div>
+            <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:11px;">
+              <span>100</span>
+              <span>75</span>
+              <span>50</span>
+              <span>25</span>
+              <span>0</span>
+            </div>
+          </div>
+        </div>"""
     else:
-        raise HTTPException(status_code=400, detail=f"Unknown dataset '{dataset}'. Valid options: 'geomad' or 'prediction'.")
+        legend_html = ""
 
     html = f"""<!DOCTYPE html>
     <html>
