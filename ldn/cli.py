@@ -230,8 +230,7 @@ def geomad(
     # If we don't want to overwrite, and the destination file already exists, skip it
     if not overwrite and object_exists(bucket, stac_key, client=client):
         typer.echo(f"Item already exists at {stac_document}")
-        # This is an exit with success
-        raise typer.Exit()
+        raise typer.Exit() # Exit successfully.
     else:
         if not overwrite:
             typer.echo(f"Item does not exist at {stac_document}, processing tile.")
@@ -302,7 +301,7 @@ def geomad(
             typer.echo(f"Wrote {len(paths)} files...")
     except EmptyCollectionError:
         typer.echo("No items found for this tile")
-        raise typer.Exit()  # Exit successfully
+        raise typer.Exit(code=1)
     except Exception as e:
         typer.echo(f"Failed to process with error: {e}")
         raise typer.Exit(code=1)

@@ -40,12 +40,12 @@ CAPE_VERDE           := 185_125:non-pacific
 COMOROS              := 251_88:non-pacific
 SINGAPORE            := 312_105:non-pacific 312_106:non-pacific
 
-GEOMAD_SITES := $(KIRIBATI_ATOLLS) $(FIJI_VOLCANIC) $(FIJI_ANTIMERIDIAN) \
+TEST_SITES := $(KIRIBATI_ATOLLS) $(FIJI_VOLCANIC) $(FIJI_ANTIMERIDIAN) \
 	$(BELIZE_ATOLLS) $(SURINAME) $(CAPE_VERDE) $(COMOROS) $(SINGAPORE)
 
 # Run geomad for all test case sites for the one YEAR.
 geomad-test-case-sites-2020:
-	for site in $(GEOMAD_SITES); do \
+	for site in $(TEST_SITES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site##*:}; \
 		ldn geomad \
@@ -60,7 +60,7 @@ geomad-test-case-sites-2020:
 
 # Run geomad for all test case sites for years 2000-2025.
 geomad-2000-2025:
-	for site in $(GEOMAD_SITES); do \
+	for site in $(TEST_SITES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site##*:}; \
 		for year in $$(seq 2000 2025); do \
@@ -75,7 +75,6 @@ geomad-2000-2025:
 	done
 
 
-# TODO: Might have to do this per 2 regions (pacific and non-pacific) because the prefix is different.
 index-geomad:
 	ldn index-to-stac-geoparquet \
 	--prefix "ausp_ls_geomad" \
@@ -88,42 +87,29 @@ index-geomad:
 # 1. Training data is created in notebooks/training_data/0_Generate_Training_Points.ipynb.
 
 # 2. Train a model with the training data made in the notebook above.
-train-model:
-	ldn train-predict train-model
+# train-model:
+# 	ldn train-predict train-model
 
-# 3. Predict LULC for a tile and year.
-predict-lulc-pacific-test-tiles-2020:
-	for site in 66_22 58_43 63_20; do \
+# 3. Predict LULC for the test tiles and 2020.
+predict-lulc-test-tiles-2020:
+	for site in $(TEST_SITES); do \
+		tile_id=$${site%%:*}; \
+		region=$${site##*:}; \
 		ldn train-predict predict \
-		--tile-id $$site \
-		--year $(YEAR) \
-		--version $(VERSION_PREDICTION) \
-		--region pacific \
-		--output-bucket="data.ldn.auspatious.com" \
-		--model-path="ldn/lulc_random_forest_model.joblib" \
-		--xy-chunk-size 1024 \
-		--decimated \
-		--overwrite; \
+			--tile-id $$tile_id \
+			--year $(YEAR) \
+			--version $(VERSION_PREDICTION) \
+			--version-geomad $(VERSION_GEOMAD) \
+			--region $$region \
+			--output-bucket="data.ldn.auspatious.com" \
+			--model-path="ldn/lulc_random_forest_model.joblib" \
+			--xy-chunk-size 1024 \
+			$(DECIMATED) \
+			--overwrite; \
 	done
-
-# TODO: No non-pacific tile will work until we redo the geomad, stac-geoparquet, and tile index.
-# predict-lulc-non-pacific-test-tiles-2020:
-# 	for site in 119_126 152_110 185_125 251_88; do \
-# 		ldn train-predict predict \
-# 		--tile-id $$site \
-# 		--year $(YEAR) \
-# 		--version $(VERSION_PREDICTION) \
-# 		--region non-pacific \
-# 		--output-bucket="data.ldn.auspatious.com" \
-# 		--model-path="ldn/lulc_random_forest_model.joblib" \
-# 		--xy-chunk-size 1024 \
-# 		--decimated \
-# 		--overwrite; \
-# 	done
 
 
 # 4. Update the STAC-Geoparquet index after all tiles/years have run.
-# TODO: Update the index STAC-Geoparquet after all tiles/years have run.
 index-predictions:
 	ldn index-to-stac-geoparquet \
 	--prefix "ausp_ls_lulc_prediction" \

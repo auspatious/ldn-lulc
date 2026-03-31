@@ -319,15 +319,6 @@ def do_prediction(ds: xr.Dataset, model, #probability_threshold
     return predicted, probability
 
 
-# STAC-Geoparquet URLs for our GeoMAD products.
-# TODO: Just singapore is uses the CI file for now.
-# GEOMAD_STAC_GEOPARQUET = {
-#     "pacific": "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet",
-#     "non-pacific": "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ci_ls_geomad/0-0-2/ci_ls_geomad.parquet",
-# }
-GEOMAD_STAC_GEOPARQUET = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet"
-
-
 class LulcProcessor(Processor):
     """Processor that scales GeoMAD data, computes indices and terrain, and runs prediction."""
 
@@ -448,9 +439,10 @@ def run_predict_task(
     tile_id: Annotated[str, typer.Option()],
     datetime: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
+    version_geomad: Annotated[str, typer.Option()],
     region: Literal["pacific", "non-pacific"],
     output_bucket: str = "data.ldn.auspatious.com",
-    model_path: str = "ldn/lulc_random_forest_model.joblib",
+    model_path: str = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/lulc_random_forest_model.joblib",
     xy_chunk_size: int = 1024,
     asset_url_prefix: str | None = None,
     decimated: bool = False,
@@ -463,6 +455,7 @@ def run_predict_task(
         tile_id: Grid tile identifier (e.g. "136_142").
         datetime: Year string (e.g. "2020").
         version: Output version string (e.g. "0-0-1").
+        version_geomad: Version of the GeoMAD data to use (e.g. "0-0-1").
         region: Grid region, either "pacific" or "non-pacific".
         output_bucket: S3 bucket for output COGs and STAC metadata.
         model_path: Path or URL to the trained joblib model.
@@ -471,7 +464,7 @@ def run_predict_task(
         decimated: If True, use 10x lower resolution (for testing).
         overwrite: If True, overwrite existing output.
     """
-    logger.info("Starting processing")
+    logger.info(f"Starting processing. Tile ID: {tile_id}, Year: {datetime}, Region: {region}, Version: {version}.")
 
     # Split by any of [",", "-", "_"] to be robust.
     tile_id_parts = [int(i) for i in re.split(r"[,\-_]", tile_id)]
@@ -498,13 +491,10 @@ def run_predict_task(
     logger.info("Loading model")
     loaded_model = _load_joblib_model(model_path)
 
-    # S3ItemPath defaults to virtual-hosted-style URLs
-    # (https://bucket.s3.region.amazonaws.com/), which breaks for bucket
-    # names containing dots because the SSL wildcard cert cannot match them.
-    # Use path-style URLs instead (https://s3.region.amazonaws.com/bucket/).
+    aws_region_name = boto3.client("s3").head_bucket(Bucket=output_bucket)["BucketRegion"]
+
     if asset_url_prefix is None:
-        region_name = boto3.client("s3").head_bucket(Bucket=output_bucket)["BucketRegion"]
-        asset_url_prefix = f"https://s3.{region_name}.amazonaws.com/{output_bucket}/"
+        asset_url_prefix = f"https://s3.{aws_region_name}.amazonaws.com/{output_bucket}/"
 
     itempath = S3ItemPath(
         prefix="ausp",
@@ -519,14 +509,14 @@ def run_predict_task(
 
     if not overwrite and object_exists(output_bucket, stac_url, client=s3_client):
         logger.info(f"Item already exists at {itempath.stac_path(tile_id, absolute=True)}")
-        raise typer.Exit()
+        raise typer.Exit() # Exit successfully.
     
     logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
 
     # Search GeoMAD STAC-Geoparquet for this tile's area and year
     logger.info("Defining GeoMAD searcher.")
-    # stac_geoparquet_url = GEOMAD_STAC_GEOPARQUET[region] # TODO: Implement this once GeoMAD has been run and indexed.
-    stac_geoparquet_url = GEOMAD_STAC_GEOPARQUET
+
+    stac_geoparquet_url = f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/{version_geomad}/ausp_ls_geomad.parquet"
     searcher = StacGeoparquetSearcher(
         stac_geoparquet_url=stac_geoparquet_url,
         datetime=datetime,
@@ -537,7 +527,7 @@ def run_predict_task(
     loader = OdcLoader(
         bands=GEOMAD_BANDS,
         chunks={"x": xy_chunk_size, "y": xy_chunk_size},
-        fail_on_error=False,
+        fail_on_error=False, #TODO: Validate this.
     )
 
     logger.info("Defining LULC Processor.")
@@ -697,13 +687,9 @@ def get_buffered_country(country_of_interest: dict, wgs84: str, analysis_crs: st
 
     country_gadm = get_gadm(countries=country_of_interest, overwrite=True)
 
-    country_name = list(country_of_interest.keys())[0]
-
     # Temporarily clip country geoms to GeoMAD processed areas because we don't have that much processed yet.
-    # TODO: Remove this step once GeoMAD has been run for all countries.
-    stac_geoparquet = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet"
-    if country_name == "Singapore":
-        stac_geoparquet = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ci_ls_geomad/0-0-2/ci_ls_geomad.parquet"
+    # TODO: Remove this step once GeoMAD has been run for all tiles for all countries.
+    stac_geoparquet = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2b/ausp_ls_geomad.parquet"
     geomad_items = search_sync(stac_geoparquet, bbox=list(country_gadm.total_bounds), datetime="2020")
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
     print(f"Found {len(geomad_items)} GeoMAD items for this country in 2020. Clipping country to the first item while developing.")

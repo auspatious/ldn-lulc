@@ -9,6 +9,7 @@ Tiles from separate per-band COGs using TiTiler + STACReader.
 import logging
 import os
 import re
+import sys
 from typing import Annotated, Literal, Optional
 
 import boto3
@@ -25,8 +26,16 @@ from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
 from mangum import Mangum
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+logging.basicConfig(
+    level=logging.WARNING,  # Package logging level.
+    format="%(asctime)s | %(levelname)s | %(module)s | %(name)s:%(funcName)s:%(lineno)d - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stderr,
+    force=True,
+)
+logging.getLogger("ldn-app").setLevel(logging.INFO)  # Our logging level.
 
 
 cmap = default_cmap.register({
@@ -67,7 +76,7 @@ os.environ.update(
 
 MOSAIC_S3_BUCKET = "data.ldn.auspatious.com"
 GEOMAD_DATASET_PREFIX = "ausp_ls_geomad"
-GEOMAD_DATASET_VERSION = "0-0-2"
+GEOMAD_DATASET_VERSION = "0-0-2b"
 PREDICTION_DATASET_PREFIX = "ausp_ls_lulc_prediction"
 PREDICTION_DATASET_VERSION = "0-0-1"
 MOSAIC_PATHS_GEOMAD: dict[str, str] = {}
@@ -175,7 +184,7 @@ def root():
         return f'<a href="/map?dataset=geomad&year={y}&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500">{y}</a>'
 
     def prediction_link(y):
-        return f'<a href="/map?dataset=prediction&year={y}&assets=classification&colormap_name=lulc">{y}</a>'
+        return f'<a href="/map?dataset=prediction&year={y}&assets=classification">{y}</a>'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -183,24 +192,23 @@ def root():
   <meta charset="UTF-8"/>
   <title>LDN LULC Mosaic Viewer</title>
   <style>
-    body {{ font-family: monospace; max-width: 600px; margin: 60px auto; padding: 0 20px; }}
-    h1 {{ font-size: 1.2rem; margin-bottom: 2rem; }}
-    h2 {{ font-size: .85rem; text-transform: uppercase; color: #999; margin: 1.5rem 0 .5rem; }}
-    a {{ color: #2563eb; text-decoration: none; margin-right: .75rem; }}
-    a:hover {{ text-decoration: underline; }}
-    .meta {{ margin-top: 3rem; font-size: .75rem; color: #bbb; }}
+    body {{ font-family: monospace; max-width: 60vh; margin: 60px auto; padding: 0 20px; }}
+    a {{ margin-right: .75rem; }}
+    .docs {{ margin-top: 3rem; }}
+    .logo {{ height: 160px; margin-bottom: 1rem; }}
   </style>
 </head>
 <body>
+  <a href="https://auspatious.com/" target="_blank" rel="noopener noreferrer"><img class="logo" src="https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/as-logo-horz-tag-colour.svg" alt="Auspatious logo"/></a>
   <h1>LDN LULC Mosaic Viewer</h1>
 
-  <h2>GeoMAD</h2>
+  <h2>GeoMedian/GeoMAD</h2>
   {''.join(geomad_link(y) for y in years_geomad)}
 
   <h2>Prediction</h2>
   {''.join(prediction_link(y) for y in years_prediction)}
 
-  <p class="meta"><a href="/docs">API docs</a></p>
+  <p class="docs"><a href="/docs">API docs</a></p>
 </body>
 </html>"""
 
