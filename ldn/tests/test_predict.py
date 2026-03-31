@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 
-from ldn.train_predict import calculate_indices, scale_offset_landsat
+from ldn.classify import calculate_indices, scale_offset_landsat
 
 
 def _make_dataset(values: dict[str, list[list[float]]]) -> xr.Dataset:

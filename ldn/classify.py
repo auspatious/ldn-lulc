@@ -423,7 +423,7 @@ def _load_joblib_model(model_path: str):
         raise typer.Exit(code=1)
 
 
-def run_predict_task(
+def run_classify_task(
     tile_id: Annotated[str, typer.Option()],
     datetime: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],

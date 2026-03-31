@@ -38,7 +38,7 @@ import typer
 
 from ldn import get_version
 from ldn.cli_grid import cli_grid_app
-from ldn.cli_train_predict import train_predict_app
+from ldn.cli_classify import classify_app
 from ldn.grids import get_gridspec
 
 app = typer.Typer()
@@ -61,7 +61,7 @@ app.add_typer(
     cli_grid_app, name="grid", help="Commands for working with the ODC Geo Grid."
 )
 app.add_typer(
-    train_predict_app, name="train-predict", help="Commands for training and predicting LULC."
+    classify_app, name="classify", help="Commands for classifying/predicting LULC."
 )
 
 

@@ -82,20 +82,20 @@ index-geomad:
 	--version $(VERSION_GEOMAD)
 
 
-###### Train and Predict
+###### Classification/Prediction
 
 # 1. Training data is created in notebooks/training_data/0_Generate_Training_Points.ipynb.
 
 # 2. Train a model with the training data made in the notebook above.
 # train-model:
-# 	ldn train-predict train-model
+# 	ldn classify train-model
 
 # 3. Predict LULC for the test tiles and 2020.
 predict-lulc-test-tiles-2020:
-	for site in $(TEST_SITES); do \
+	for site in 58_43:pacific; do \
 		tile_id=$${site%%:*}; \
 		region=$${site##*:}; \
-		ldn train-predict predict \
+		ldn classify classify \
 			--tile-id $$tile_id \
 			--year $(YEAR) \
 			--version $(VERSION_PREDICTION) \

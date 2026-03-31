@@ -3,12 +3,12 @@ from typing import Literal
 
 import typer
 
-from ldn.train_predict import run_predict_task
+from ldn.classify import run_classify_task
 
-train_predict_app = typer.Typer()
+classify_app = typer.Typer()
 logger = logging.getLogger(__name__)
 
-@train_predict_app.command("train-model")
+@classify_app.command("train-model")
 def _train_model() -> None:
     year = 2020
     # Steps:
@@ -20,8 +20,8 @@ def _train_model() -> None:
     # TODO: Adapt from notebooks/training_data/1_Train_Predict.ipynb.
     raise NotImplementedError("This command is not implemented yet.")
 
-@train_predict_app.command("predict")
-def _predict(
+@classify_app.command("classify")
+def _classify(
     tile_id: str = typer.Option(..., help="Tile ID to predict LULC for."),
     year: str = typer.Option(..., help="Year to predict LULC for."),
     version: str = typer.Option(..., help="Version of the model to use e.g. '0-0-1'."),
@@ -39,7 +39,7 @@ def _predict(
     if int(year) < 2000 or int(year) > 2025:
         raise ValueError("Year must be between 2000 and 2025.")
 
-    run_predict_task(
+    run_classify_task(
         tile_id, 
         datetime=year,
         version=version,
