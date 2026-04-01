@@ -31,7 +31,7 @@ def _make_landsat_input(n_times: int, size: int) -> xr.Dataset:
     rng = np.random.default_rng(42)
     data_vars = {}
     for band in LANDSAT_BANDS:
-        if band == "qa_pixel":
+        if band in ("qa_pixel", "qa_radsat"):
             data_vars[band] = (
                 ["time", "y", "x"],
                 np.zeros((n_times, size, size), dtype="uint16"),
@@ -72,7 +72,7 @@ def test_geomad_processor_output_has_expected_bands(mock_geomad) -> None:
 
     processor = GeoMADProcessor(
         load_data_before_writing=False,
-        drop_vars=["qa_pixel"],
+        drop_vars=["qa_pixel", "qa_radsat"],
         mask_clouds_kwargs={"filters": None, "include_shadow": False},
     )
     result = processor.process(input_ds)

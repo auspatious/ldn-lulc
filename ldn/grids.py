@@ -69,9 +69,6 @@ def get_gridspec(
         - Globally comparable results
     """
 
-    if region not in ["pacific", "non-pacific"]:
-        raise ValueError("Invalid region. Must be 'pacific' or 'non-pacific'.")
-
     if region == "pacific":
         # For the Pacific region, we use the DEP-defined grid
         return dep_grid(

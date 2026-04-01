@@ -55,7 +55,6 @@ logging.basicConfig(
 )
 logging.getLogger("ldn").setLevel(logging.INFO)  # Our logging level.
 
-
 # Add the subcommands
 app.add_typer(
     cli_grid_app, name="grid", help="Commands for working with the ODC Geo Grid."
@@ -136,37 +135,51 @@ def geomad(
     bucket: Annotated[str, typer.Option()] = "data.ldn.auspatious.com",
     overwrite: Annotated[bool, typer.Option()] = False,
     decimated: Annotated[bool, typer.Option()] = False,
-    include_shadow: Annotated[bool, typer.Option()] = False,
-    ls7_buffer_years: Annotated[int, typer.Option()] = 1,
+    include_shadow: Annotated[
+        bool,
+        typer.Option(
+            help="True to mask cloud shadows, false to not mask them (leave them in). Defaults to False."
+        ),
+    ] = False,
+    ls7_buffer_years: Annotated[
+        int,
+        typer.Option(
+            help="Half-width of the temporal buffer for LS7 era (<=2012). E.g. 2 searches year-2 to year+2."
+        ),
+    ] = 2,
     all_bands: Annotated[bool, typer.Option()] = True,
     memory_limit: Annotated[str, typer.Option()] = "10GB",
     n_workers: Annotated[int, typer.Option()] = 2,
     threads_per_worker: Annotated[int, typer.Option()] = 16,
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
+    min_clear_obs: Annotated[
+        int,
+        typer.Option(
+            help="Minimum clear observations per pixel. Pixels below this are set to nodata."
+        ),
+    ] = 3,
 ) -> None:
-    """Run GeoMAD processing on Landsat data.
+    """Run GeoMAD processing on a single Landsat tile.
 
-    Example command is:
+    Searches USGS STAC for Landsat scenes covering the given tile and year,
+    applies cloud masking, computes the geometric median and median absolute
+    deviations (GeoMAD), and writes COG outputs to S3.
 
-    ldn geomad --tile-id 136_142 --year 2025 --version 0.0.0 \
-        --overwrite \
-        --decimated \
-        --no-all-bands \
-        --region pacific
+    For years in the Landsat 7 era (<=2012), a buffered temporal window
+    controlled by --ls7-buffer-years is used to gather enough clear
+    observations. Pacific tiles may additionally include Tier 2 data.
+
+    Example:
+
+        ldn geomad --tile-id 136_142 --year 2025 --version 0.0.0 \
+            --overwrite --decimated --no-all-bands --region pacific
     """
-    info = (
-        f"Running GeoMAD processing for tile {tile_id}, year {year}, version {version},"
-        f" region {region} with overwrite={overwrite}, decimated={decimated},"
-        f" all_bands={all_bands}, memory_limit={memory_limit}, n_workers={n_workers},"
-        f" threads_per_worker={threads_per_worker}, xy_chunk_size={xy_chunk_size}, "
-        f"geomad_threads={geomad_threads}, include_shadow={include_shadow}"
+    logger.info(
+        f"tile={tile_id} year={year} version={version} region={region} overwrite={overwrite} decimated={decimated} "
+        f"all_bands={all_bands} include_shadow={include_shadow} memory={memory_limit} workers={n_workers} threads={threads_per_worker} "
+        f"chunk={xy_chunk_size} geomad_threads={geomad_threads}",
     )
-    typer.echo(info)
-    if region not in ["pacific", "non-pacific"]:
-        raise ValueError(
-            f"Invalid region: {region}. Must be 'pacific' or 'non-pacific'."
-        )
 
     year_int = int(year)
     search_year = year
@@ -186,7 +199,7 @@ def geomad(
         if year_int <= 2012:
             # Searching for nothing gives us everything
             typer.echo("Using both T1 and T2 data for Pacific for LS7 era")
-            search_kwargs == {}
+            search_kwargs = {}  # TODO: Test this now that it actually works.
 
     # Fixed variables
     sensor = "ls"
@@ -246,11 +259,16 @@ def geomad(
         **search_kwargs,
     )
 
-    # Loader loads the data from STAC Items
+    # Loader loads the data from STAC Items.
+    # nodata=0 overrides the source nodata (1 for qa_pixel) so GDAL does not
+    # remap real value-1 pixels during reprojection.
     loader = OdcLoader(
-        bands=LANDSAT_BANDS if all_bands else ["red", "green", "blue", "qa_pixel"],
+        bands=LANDSAT_BANDS
+        if all_bands
+        else ["red", "green", "blue", "qa_pixel", "qa_radsat"],
         chunks={"x": xy_chunk_size, "y": xy_chunk_size, "time": 1},
         groupby="solar_day",
+        nodata=0,
         fail_on_error=False,
         **load_kwargs,
     )
@@ -274,10 +292,11 @@ def geomad(
             offset=LANDSAT_OFFSET,
             nodata=0,
         ),
-        min_timesteps=5,
-        drop_vars=["qa_pixel"],
+        min_timesteps=10,
+        min_clear_obs=min_clear_obs,
+        drop_vars=["qa_pixel", "qa_radsat"],
         mask_clouds_kwargs={
-            "filters": [("dilation", 3), ("erosion", 2)],
+            "filters": [("opening", 2), ("dilation", 3)],
             "include_shadow": include_shadow,
         },
     )

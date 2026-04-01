@@ -21,7 +21,16 @@ logger = logging.getLogger(__name__)
 USGS_CATALOG = "https://earth-search.aws.element84.com/v1"
 USGS_COLLECTION = "landsat-c2-l2"
 
-LANDSAT_BANDS = ["qa_pixel", "red", "green", "blue", "nir08", "swir16", "swir22"]
+LANDSAT_BANDS = [
+    "qa_pixel",
+    "qa_radsat",
+    "red",
+    "green",
+    "blue",
+    "nir08",
+    "swir16",
+    "swir22",
+]
 LANDSAT_SCALE = 0.0000275
 LANDSAT_OFFSET = -0.2
 
@@ -70,30 +79,52 @@ def set_stac_properties(
 
 
 def mask_clouds(
-    xr: Dataset,
+    xr: Dataset,  # TODO: Type this to DataArray?
     filters: Iterable[Tuple[str, int]] | None = None,
     include_shadow: bool = True,
 ) -> Dataset:
     # Only valid for LS8 and LS9, but we can still apply
     # it to LS7 data without error, it just won't mask anything.
+    """Mask clouds, shadows, fill, and saturated pixels from Landsat data.
+
+    Morphological filters (opening, dilation, etc.) are applied only to the
+    cloud/shadow mask so that they do not widen non-cloud artefacts such as
+    Landsat 7 SLC-off gaps or sensor saturation holes.
+
+    Args:
+        xr: Input dataset containing qa_pixel and optionally qa_radsat.
+        filters: Morphological filter sequence applied to the cloud mask only.
+        include_shadow: Whether to include cloud shadow (qa_pixel bit 4).
+    """
     CIRRUS = 2
     CLOUD = 3
     CLOUD_SHADOW = 4
 
-    fields = [CIRRUS, CLOUD]
+    # Cloud/shadow mask - morphological filters apply here only
+    cloud_fields = [CIRRUS, CLOUD]
     if include_shadow:
-        fields.append(CLOUD_SHADOW)
+        cloud_fields.append(CLOUD_SHADOW)
 
-    bitmask = 0
-    for field in fields:
-        bitmask |= 1 << field
+    cloud_bitmask = 0
+    for field in cloud_fields:
+        cloud_bitmask |= 1 << field
 
-    cloud_mask = xr.qa_pixel & bitmask != 0
+    cloud_mask = xr.qa_pixel & cloud_bitmask != 0
 
     if filters is not None:
         cloud_mask = mask_cleanup(cloud_mask, filters)
 
-    return erase_bad(xr, cloud_mask)
+    # Non-cloud bad-pixel mask (fill, saturation) - no morphological filters
+    FILL = 0
+    fill_mask = xr.qa_pixel & (1 << FILL) != 0
+
+    # Saturated or occluded filter
+    if "qa_radsat" in xr.data_vars:
+        fill_mask = fill_mask | (xr.qa_radsat != 0)
+
+    combined_mask = cloud_mask | fill_mask
+
+    return erase_bad(xr, combined_mask)
 
 
 class GeoMADProcessor(Processor):
@@ -102,6 +133,7 @@ class GeoMADProcessor(Processor):
         send_area_to_processor: bool = False,
         load_data_before_writing: bool = True,
         min_timesteps: int = 0,
+        min_clear_obs: int = 3,
         geomad_options: dict = {
             "num_threads": 4,
             "work_chunks": (1000, 1000),
@@ -110,14 +142,15 @@ class GeoMADProcessor(Processor):
         drop_vars: list[str] = [],
         preprocessor: Processor | None = None,
         mask_clouds_kwargs: dict = {
-            "filters": [("dilation", 3), ("erosion", 2)],
-            "include_shadow": True,
+            "filters": [("opening", 2), ("dilation", 3)],
+            "include_shadow": True,  # TODO: This defaults to false in the CLI params/args. Which should it default to?
         },
         **kwargs,
     ) -> None:
         super().__init__(send_area_to_processor, **kwargs)
         self.load_data_before_writing = load_data_before_writing
         self.min_timesteps = min_timesteps
+        self.min_clear_obs = min_clear_obs
         self.geomad_options = geomad_options
         self.drop_vars = drop_vars
         self.preprocessor = preprocessor
@@ -132,12 +165,46 @@ class GeoMADProcessor(Processor):
         xr = mask_clouds(xr, **self.mask_kwargs)
         data = xr.drop_vars(self.drop_vars) if len(self.drop_vars) > 0 else xr
 
+        # For float data, replace any remaining 65535 (saturated) values with
+        # NaN so geomedian_with_mads ignores them. For uint16 data the
+        # geomedian already skips nodata=0 and qa_radsat masking handles
+        # saturation upstream.
+        for band in data.data_vars:
+            if data[band].dtype.kind == "f":
+                data[band] = data[band].where(data[band] != 65535)
+
         geomad = geomedian_with_mads(data, **self.geomad_options)
 
         if self.load_data_before_writing:
             geomad = geomad.compute()
 
+        clean_count = (
+            data.to_array().notnull().all(dim="variable").sum(dim="time").compute()
+        )
+        logger.info(
+            f"Clear observations: min={int(clean_count.min())}, median={int(clean_count.median())}, max={int(clean_count.max())}"
+        )
+
+        # Mask pixels with too few clear observations. These produce noisy
+        # geomedian values (the white speckle in SLC-off era).
+        if self.min_clear_obs > 0:
+            low_count_mask = geomad["count"] < self.min_clear_obs
+            n_masked = int(low_count_mask.sum())
+            if n_masked > 0:
+                logger.info(
+                    f"Masking {n_masked} pixels with fewer than {self.min_clear_obs} clear observations"
+                )
+                nodata = self.geomad_options.get("nodata", 0)
+                for band in geomad.data_vars:
+                    if band == "count":
+                        continue
+                    if geomad[band].dtype.kind == "f":
+                        geomad[band] = geomad[band].where(~low_count_mask)
+                    else:
+                        geomad[band] = geomad[band].where(~low_count_mask, nodata)
+
         geomad["count"].odc.nodata = 0
+
         return set_stac_properties(data, geomad)
 
 
