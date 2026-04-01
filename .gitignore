@@ -221,17 +221,17 @@ ldn/tasks.json
 *.zarr
 *.tif
 *.tif.aux.xml
-notebooks/training_data/*_samples.geojson
-notebooks/training_data/*_samples.csv
-notebooks/training_data/training_data_*.geojson
-notebooks/training_data/training_data_*.csv
-
 notebooks/training_data/samples_*.geojson
 notebooks/training_data/samples_*.csv
 
-tasks.json
+notebooks/training_data/samples_*.geojson
+notebooks/training_data/samples_*.csv
 
 # Visualisation Terraform files.
 visualisation/infra/.terraform/
 visualisation/infra/.terraform.lock.hcl
 visualisation/infra/terraform.tfstate*
+tasks.json
+
+# Model files
+*.joblib

@@ -1,8 +1,17 @@
 # Here we will store commands for working with the grid, GeoMAD, training data, and ML models.
 
-VERSION ?= 0.0.2
+# Workflow:
+# 1. Run GeoMAD for all tiles/years
+# 2. Run index GeoMAD (STAC-Geoparquet)
+# 3. Run prediction for all tiles/years
+# 4. Run index prediction (STAC-Geoparquet)
+# 5. Run make-mosaic for geomad and prediction datasets
+# 6. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
+
+VERSION_GEOMAD ?= 0-0-2b
+VERSION_PREDICTION ?= 0-0-1
 DECIMATED ?= --decimated
-YEAR ?= 2024
+YEAR ?= 2020
 
 # Get grid tiles - all
 grid-get-tiles-all:
@@ -21,119 +30,37 @@ grid-list-countries-non-pacific:
 print-tasks-2000-2024-all-grids:
 	ldn print-tasks --years="2000-2024" --grids="all"
 
-# Geomad tile
-geomad-non-pacific-test-carribbean-atolls-belize:
-	ldn geomad \
-	--tile-id 127_134 \
-	--year 2024 \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--no-all-bands \
-	--region non-pacific
+# Test case sites as tile_id:region pairs.
+KIRIBATI_ATOLLS      := 58_43:pacific
+FIJI_VOLCANIC        := 63_20:pacific
+FIJI_ANTIMERIDIAN    := 66_22:pacific
+BELIZE_ATOLLS        := 119_126:non-pacific
+SURINAME             := 152_110:non-pacific
+CAPE_VERDE           := 185_125:non-pacific
+COMOROS              := 251_88:non-pacific
+SINGAPORE            := 312_105:non-pacific 312_106:non-pacific
 
-geomad-non-pacific-test-carribbean-land-suriname:
-	ldn geomad \
-	--tile-id 162_117 \
-	--year 2024 \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--all-bands \
-	--region non-pacific
+TEST_SITES := $(KIRIBATI_ATOLLS) $(FIJI_VOLCANIC) $(FIJI_ANTIMERIDIAN) \
+	$(BELIZE_ATOLLS) $(SURINAME) $(CAPE_VERDE) $(COMOROS) $(SINGAPORE)
 
-geomad-non-pacific-test-cape-verde:
-	ldn geomad \
-	--tile-id 197_133 \
-	--year 2024 \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--all-bands \
-	--region non-pacific
+# Run geomad for all test case sites for the one YEAR.
+geomad-test-case-sites-2020:
+	for site in $(TEST_SITES); do \
+		tile_id=$${site%%:*}; \
+		region=$${site##*:}; \
+		ldn geomad \
+			--tile-id $$tile_id \
+			--region $$region \
+			--year $(YEAR) \
+			--version $(VERSION_GEOMAD) \
+			--product-owner ausp \
+			$(DECIMATED) \
+			--overwrite; \
+	done
 
-geomad-non-pacific-test-comoros:
-	ldn geomad \
-	--tile-id 268_94 \
-	--year 2024 \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--all-bands \
-	--region non-pacific
-
-geomad-pacific-test-fiji-antimeridian:
-	ldn geomad \
-	--tile-id 66_22 \
-	--year 2024 \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--all-bands \
-	--region pacific
-
-geomad-pacific-test-fiji-volcanic:
-	ldn geomad \
-	--tile-id 63_20 \
-	--year 2024 \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--all-bands \
-	--region pacific
-
-geomad-pacific-test-kiribati-atolls:
-	ldn geomad \
-	--tile-id 58_43 \
-	--year 2024 \
-	--version $(VERSION) \
-	--overwrite \
-	$(DECIMATED) \
-	--all-bands \
-	--region pacific
-
-geomad-singapore:
-	ldn geomad \
-	--tile-id 333_113 \
-	--year 2020 \
-	--version $(VERSION) \
-	--overwrite \
-	--all-bands \
-	$(DECIMATED) \
-	--region non-pacific
-
-geomad-singapore-2:
-	ldn geomad \
-	--tile-id 333_112 \
-	--year 2020 \
-	--version $(VERSION) \
-	--overwrite \
-	--all-bands \
-	$(DECIMATED) \
-	--region non-pacific
-
-
-geomad-test-case-sites:
-	$(MAKE) geomad-pacific-test-kiribati-atolls
-	$(MAKE) geomad-pacific-test-fiji-volcanic
-	$(MAKE) geomad-pacific-test-fiji-antimeridian
-	$(MAKE) geomad-non-pacific-test-carribbean-atolls-belize
-	$(MAKE) geomad-non-pacific-test-carribbean-land-suriname
-	$(MAKE) geomad-non-pacific-test-cape-verde
-	$(MAKE) geomad-non-pacific-test-comoros
-
-# 333_112, 333_113 is Singapore
-# 63,20 is SW Fiji
-# GEOMAD_CASE_STUDY_TILE_ID ?= 63_20
-# GEOMAD_CASE_STUDY_REGION ?= pacific
-# GEOMAD_CASE_STUDY_TILE_ID ?= 333_112
-# GEOMAD_CASE_STUDY_REGION ?= non-pacific
-GEOMAD_CASE_STUDY_TILE_ID ?= 333_113
-GEOMAD_CASE_STUDY_REGION ?= non-pacific
-
-
+# Run geomad for all test case sites for years 2000-2025.
 geomad-2000-2025:
-	for site in 58_43:pacific 63_20:pacific 66_22:pacific 127_134:non-pacific 162_117:non-pacific 197_133:non-pacific 268_94:non-pacific; do \
+	for site in $(TEST_SITES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site##*:}; \
 		for year in $$(seq 2000 2025); do \
@@ -141,32 +68,70 @@ geomad-2000-2025:
 				--tile-id $$tile_id \
 				--region $$region \
 				--year $$year \
-				--version $(VERSION) \
+				--version $(VERSION_GEOMAD) \
 				--product-owner ausp \
 				--overwrite; \
 		done; \
 	done
 
 
+index-geomad:
+	ldn index-to-stac-geoparquet \
+	--prefix "ausp_ls_geomad" \
+	--output-filename "ausp_ls_geomad" \
+	--version $(VERSION_GEOMAD)
 
 
-# End goal: per tile and year, predict LULC.
-# predict-lulc-singapore-2020:
-# 	ldn predict \
-# 	--tile-id 333_112 \
-# 	--year 2020
+###### Classification/Prediction
 
+# 1. Training data is created in notebooks/training_data/0_Generate_Training_Points.ipynb.
+
+# 2. Train a model with the training data made in the notebook above.
+# train-model:
+# 	ldn classify train-model
+
+# 3. Predict LULC for the test tiles and 2020.
+predict-lulc-test-tiles-2020:
+	for site in 58_43:pacific; do \
+		tile_id=$${site%%:*}; \
+		region=$${site##*:}; \
+		ldn classify classify \
+			--tile-id $$tile_id \
+			--year $(YEAR) \
+			--version $(VERSION_PREDICTION) \
+			--version-geomad $(VERSION_GEOMAD) \
+			--region $$region \
+			--output-bucket="data.ldn.auspatious.com" \
+			--model-path="ldn/lulc_random_forest_model.joblib" \
+			--xy-chunk-size 1024 \
+			$(DECIMATED) \
+			--overwrite; \
+	done
+
+
+# 4. Update the STAC-Geoparquet index after all tiles/years have run.
+index-predictions:
+	ldn index-to-stac-geoparquet \
+	--prefix "ausp_ls_lulc_prediction" \
+	--output-filename "ausp_ls_lulc_prediction" \
+	--version $(VERSION_PREDICTION)
 
 # Visualisation
 make-mosaic-all-2020:
 	ldn make-mosaics \
 	--dataset all \
-	--years "2020"
+	--years $(YEAR) \
+	--version-geomad $(VERSION_GEOMAD) \
+	--version-prediction $(VERSION_PREDICTION)
 make-mosaic-geomad-2020:
 	ldn make-mosaics \
 	--dataset geomad \
-	--years "2020"
+	--years $(YEAR) \
+	--version-geomad $(VERSION_GEOMAD) \
+	--version-prediction $(VERSION_PREDICTION)
 make-mosaic-prediction-2020:
 	ldn make-mosaics \
 	--dataset prediction \
-	--years "2020"
+	--years $(YEAR) \
+	--version-geomad $(VERSION_GEOMAD) \
+	--version-prediction $(VERSION_PREDICTION)

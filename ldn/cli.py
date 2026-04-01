@@ -1,5 +1,6 @@
 import logging
 import sys
+import json
 
 import boto3
 from dep_tools.namers import S3ItemPath
@@ -12,8 +13,8 @@ from ldn.geomad import AwsStacTask as Task
 from dep_tools.writers import AwsDsCogWriter
 from odc.stac import configure_s3_access
 from typing import Literal
-
-import json
+import obstore
+from rustac import write_sync
 
 from dep_tools.exceptions import EmptyCollectionError
 from dask.distributed import Client as DaskClient
@@ -37,6 +38,7 @@ import typer
 
 from ldn import get_version
 from ldn.cli_grid import cli_grid_app
+from ldn.cli_classify import classify_app
 from ldn.grids import get_gridspec
 
 app = typer.Typer()
@@ -57,6 +59,9 @@ logging.getLogger("ldn").setLevel(logging.INFO)  # Our logging level.
 # Add the subcommands
 app.add_typer(
     cli_grid_app, name="grid", help="Commands for working with the ODC Geo Grid."
+)
+app.add_typer(
+    classify_app, name="classify", help="Commands for classifying/predicting LULC."
 )
 
 
@@ -225,8 +230,7 @@ def geomad(
     # If we don't want to overwrite, and the destination file already exists, skip it
     if not overwrite and object_exists(bucket, stac_key, client=client):
         typer.echo(f"Item already exists at {stac_document}")
-        # This is an exit with success
-        raise typer.Exit()
+        raise typer.Exit() # Exit successfully.
     else:
         if not overwrite:
             typer.echo(f"Item does not exist at {stac_document}, processing tile.")
@@ -297,7 +301,7 @@ def geomad(
             typer.echo(f"Wrote {len(paths)} files...")
     except EmptyCollectionError:
         typer.echo("No items found for this tile")
-        raise typer.Exit()  # Exit with success
+        raise typer.Exit(code=1)
     except Exception as e:
         typer.echo(f"Failed to process with error: {e}")
         raise typer.Exit(code=1)
@@ -305,6 +309,102 @@ def geomad(
     typer.echo(f"Finished writing to {stac_document}")
 
     return
+
+
+
+def _find_stac_items_s3(
+    bucket: str,
+    prefix: str,
+    aws_region: str,
+    suffix: str = ".stac-item.json",
+    chunk_size: int = 200,
+) -> list[str]:
+    """List S3 keys ending in suffix under bucket/prefix.
+
+    Args:
+        bucket: S3 bucket name.
+        prefix: Key prefix to search under.
+        aws_region: AWS region of the bucket.
+        suffix: File suffix to match.
+        chunk_size: Number of objects per listing page.
+
+    Returns:
+        List of S3 keys (without the s3://bucket/ prefix) that match.
+    """
+    store = obstore.store.S3Store(bucket=bucket, region=aws_region)
+    matches: list[str] = []
+    stream = obstore.list(store, prefix=prefix.lstrip("/"), chunk_size=chunk_size)
+
+    for chunk in stream:
+        for obj in chunk:
+            path = obj.get("path", "")
+            if path.endswith(suffix):
+                matches.append(path)
+
+    return matches
+
+
+# TODO: Add chunking/streaming to prevent loading too much data into memory at once.
+def _load_stac_docs(
+    bucket: str,
+    keys: list[str],
+    aws_region: str,
+) -> list[dict]:
+    """Load STAC item JSON documents from S3 into memory.
+
+    Args:
+        bucket: S3 bucket name.
+        keys: S3 object keys to load.
+        aws_region: AWS region of the bucket.
+
+    Returns:
+        List of parsed STAC item dictionaries.
+    """
+    store = obstore.store.S3Store(bucket=bucket, region=aws_region)
+    docs: list[dict] = []
+
+    for key in keys:
+        raw = obstore.get(store, key)
+        payload = raw.bytes()
+        if hasattr(payload, "to_bytes"):
+            payload = payload.to_bytes()
+        elif not isinstance(payload, (bytes, bytearray)):
+            payload = bytes(payload)
+        docs.append(json.loads(payload.decode("utf-8")))
+
+    return docs
+
+
+@app.command("index-to-stac-geoparquet")
+def _index_to_stac_geoparquet(
+    prefix: str = typer.Option("ausp_ls_lulc_prediction", help="S3 path prefix to search for STAC items to index (e.g. for a given dataset)."),
+    output_filename: str = typer.Option("ausp_ls_lulc_prediction", help="Output filename for the STAC-Geoparquet index."),
+    version: str = typer.Option("0-0-1", help="Dataset version string e.g. '0-0-1'."),
+    bucket: str = typer.Option("data.ldn.auspatious.com", help="S3 bucket containing STAC items."),
+    aws_region: str = typer.Option("us-west-2", help="AWS region of the bucket."),
+) -> None:
+    """Build a STAC-Geoparquet index from all STAC items under a given S3 prefix and version."""
+    prefix = f"{prefix}/{version}"
+    parquet_key = f"{prefix}/{output_filename}.parquet"
+
+    logger.info(f"Listing STAC items under s3://{bucket}/{prefix}")
+    keys = _find_stac_items_s3(bucket, prefix, aws_region)
+    logger.info(f"Found {len(keys)} STAC items")
+
+    if len(keys) == 0:
+        logger.warning("No STAC items found, nothing to index.")
+        raise typer.Exit(code=1)
+
+    logger.info("Loading STAC item documents into memory")
+    docs = _load_stac_docs(bucket, keys, aws_region)
+    logger.info(f"Loaded {len(docs)} STAC documents")
+
+    logger.info(f"Writing STAC-Geoparquet to s3://{bucket}/{parquet_key}")
+    store = obstore.store.S3Store(bucket=bucket, region=aws_region)
+    write_sync(parquet_key, docs, store=store)
+
+    logger.info(f"Wrote index with {len(docs)} items to s3://{bucket}/{parquet_key}")
+
 
 
 def _stac_self_link(feature: dict) -> str:
@@ -356,6 +456,8 @@ def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
 def make_mosaics(
     years: Annotated[str, typer.Option(help="Comma-separated list of years (e.g. '2020,2021') to build mosaics for.")],
     dataset: Annotated[Literal["all", "geomad", "prediction"], typer.Option(help="Which dataset to build mosaics for, either 'all', 'geomad' or 'prediction'.")],
+    version_geomad: Annotated[str, typer.Option(help="Version string to use for the GeoMAD mosaic files, e.g. '0-0-1'.")],
+    version_prediction: Annotated[str, typer.Option(help="Version string to use for the Prediction mosaic files, e.g. '0-0-1'.")],
 ) -> None:
     """ Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files. """
 
@@ -363,17 +465,17 @@ def make_mosaics(
     years_list = [y.strip() for y in years.split(",")]
 
     # MosaicBackend needs s3:// style paths.
-    output_path_geomad = "s3://data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/mosaics/"
-    output_path_prediction = "s3://data.ldn.auspatious.com/ausp_ls_prediction/0-0-1/mosaics/"
+    output_path_geomad = f"s3://data.ldn.auspatious.com/ausp_ls_geomad/{version_geomad}/mosaics/"
+    output_path_prediction = f"s3://data.ldn.auspatious.com/ausp_ls_lulc_prediction/{version_prediction}/mosaics/"
 
     datasets = []
     if dataset in ["prediction", "all"]:
         datasets.append(
-            ("prediction", "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_prediction/0-0-1/ausp_ls_prediction.parquet", output_path_prediction)
+            ("prediction", f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_lulc_prediction/{version_prediction}/ausp_ls_lulc_prediction.parquet", output_path_prediction)
         )
     if dataset in ["geomad", "all"]:
         datasets.append(
-            ("geomad", "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2/ausp_ls_geomad.parquet", output_path_geomad)
+            ("geomad", f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/{version_geomad}/ausp_ls_geomad.parquet", output_path_geomad)
         )
 
     # Build mosaics for all years in the dataset

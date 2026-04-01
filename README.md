@@ -2,7 +2,9 @@
 
 This repo contains scripts relevant to the development of new LULC datasets for the UN Small Island Developing States (SIDS).
 
-The ldn folder contains an installable 
+The ldn folder contains an installable package.
+
+We will make GeoMedian/Geomad for all tiles that cover the SIDS and Pacific countries, for the years 2000-2024. Then we will create training data from existing products (for 2020). Then we will train a model and predict for all SIDS and Pacific countries for all years.
 
 
 ## Quickstart

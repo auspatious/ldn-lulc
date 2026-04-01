@@ -9,6 +9,7 @@ Tiles from separate per-band COGs using TiTiler + STACReader.
 import logging
 import os
 import re
+import sys
 from typing import Annotated, Literal, Optional
 
 import boto3
@@ -25,13 +26,21 @@ from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
 from mangum import Mangum
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+logging.basicConfig(
+    level=logging.WARNING,  # Package logging level.
+    format="%(asctime)s | %(levelname)s | %(name)s:%(lineno)d - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stderr,
+    force=True,
+)
+logger.setLevel(logging.INFO)  # Our logging level.
 
 
 cmap = default_cmap.register({
     "lulc": {
-        0: (255, 255, 255, 0),    # No data    — transparent
+        255: (255, 255, 255, 0),    # No data    — transparent
         1: (0,   100, 0,   255),  # Tree Cover — darkgreen
         2: (50,  205, 50,  255),  # Grassland  — limegreen
         3: (0,   255, 0,   255),  # Cropland   — lime
@@ -67,8 +76,8 @@ os.environ.update(
 
 MOSAIC_S3_BUCKET = "data.ldn.auspatious.com"
 GEOMAD_DATASET_PREFIX = "ausp_ls_geomad"
-GEOMAD_DATASET_VERSION = "0-0-2"
-PREDICTION_DATASET_PREFIX = "ausp_ls_prediction"
+GEOMAD_DATASET_VERSION = "0-0-2b"
+PREDICTION_DATASET_PREFIX = "ausp_ls_lulc_prediction"
 PREDICTION_DATASET_VERSION = "0-0-1"
 MOSAIC_PATHS_GEOMAD: dict[str, str] = {}
 MOSAIC_PATHS_PREDICTION: dict[str, str] = {}
@@ -128,7 +137,7 @@ app = FastAPI(
     description=(
         "Mosaic viewer for Landsat GeoMedian/GeoMAD and LULC Prediction data. "
         "Pass a dataset as `dataset` (e.g. `dataset=geomad` or `dataset=prediction`) and year as `year` (e.g. `year=2020`) and band assets as "
-        "`assets=red&assets=green&assets=blue` or `assets=lulc`."
+        "`assets=red&assets=green&assets=blue` or `assets=classification`."
     ),
     version="1.0.0",
 )
@@ -171,38 +180,93 @@ def root():
     years_geomad = sorted(MOSAIC_PATHS_GEOMAD.keys())
     years_prediction = sorted(MOSAIC_PATHS_PREDICTION.keys())
 
-    def geomad_link(y):
-        return f'<a href="/map?dataset=geomad&year={y}&assets=red&assets=green&assets=blue&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500">{y}</a>'
-
-    def prediction_link(y):
-        return f'<a href="/map?dataset=prediction&year={y}&assets=lulc&colormap_name=lulc">{y}</a>'
-
     html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <title>LDN LULC Mosaic Viewer</title>
-  <style>
-    body {{ font-family: monospace; max-width: 600px; margin: 60px auto; padding: 0 20px; }}
-    h1 {{ font-size: 1.2rem; margin-bottom: 2rem; }}
-    h2 {{ font-size: .85rem; text-transform: uppercase; color: #999; margin: 1.5rem 0 .5rem; }}
-    a {{ color: #2563eb; text-decoration: none; margin-right: .75rem; }}
-    a:hover {{ text-decoration: underline; }}
-    .meta {{ margin-top: 3rem; font-size: .75rem; color: #bbb; }}
-  </style>
-</head>
-<body>
-  <h1>LDN LULC Mosaic Viewer</h1>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8"/>
+        <title>LDN LULC Mosaic Viewer</title>
+        <style>
+          body {{ font-family: monospace; max-width: 70vh; margin: 60px auto; padding: 0 20px; }}
+          h1 {{ text-align: center; }}
+          a {{ margin-right: .75rem; }}
+          .item {{ margin-top: 2rem;  margin-bottom: 2rem; border-bottom: 2px solid #e7e7e7; padding-bottom: 1rem; }}
+          .logo {{ height: 160px; margin: auto; display: block; margin-bottom: 1rem; }}
+          select {{ font-family: monospace; font-size: 1rem; padding: 0.4rem 0.6rem; }}
+          .selectors {{ display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }}
+        </style>
+      </head>
+      <body>
+        <a href="https://auspatious.com/" target="_blank" rel="noopener noreferrer"><img class="logo" src="https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/as-logo-horz-tag-colour.svg" alt="Auspatious logo"/></a>
 
-  <h2>GeoMAD</h2>
-  {''.join(geomad_link(y) for y in years_geomad)}
+        <div class="item">
+          <h1>LDN LULC Mosaic Viewer</h1>
+        </div>
 
-  <h2>Prediction</h2>
-  {''.join(prediction_link(y) for y in years_prediction)}
+        <div class="item">
+          <div class="selectors">
+            <select id="dataset-select">
+              <option value="" disabled selected>Select dataset</option>
+              <option value="geomedian">GeoMedian (RGB)</option>
+              <option value="geomad">GeoMAD (S, E, BC)</option>
+              <option value="classification">Classification</option>
+              <option value="classification_unfiltered">Classification (unfiltered)</option>
+              <option value="classification_probability">Classification (probability)</option>
+            </select>
+            <select id="year-select" disabled>
+              <option value="" disabled selected>Select year</option>
+            </select>
+          </div>
+          <script>
+            var yearsByDataset = {{
+              geomedian: {list(years_geomad)},
+              geomad: {list(years_geomad)},
+              classification: {list(years_prediction)},
+              classification_unfiltered: {list(years_prediction)},
+              classification_probability: {list(years_prediction)},
+            }};
+            var datasetSelect = document.getElementById("dataset-select");
+            var yearSelect = document.getElementById("year-select");
 
-  <p class="meta"><a href="/docs">API docs</a></p>
-</body>
-</html>"""
+            datasetSelect.addEventListener("change", function() {{
+              var years = yearsByDataset[datasetSelect.value] || [];
+              yearSelect.innerHTML = '<option value="" disabled selected>Select year</option>';
+              years.forEach(function(y) {{
+                var opt = document.createElement("option");
+                opt.value = y; opt.textContent = y;
+                yearSelect.appendChild(opt);
+              }});
+              yearSelect.disabled = years.length === 0;
+            }});
+
+            yearSelect.addEventListener("change", function() {{
+              var ds = datasetSelect.value;
+              var yr = yearSelect.value;
+              if (!ds || !yr) return;
+              if (ds === "geomedian") {{
+                window.location.href = "/map?dataset=geomad&year=" + yr +
+                  "&assets=red&assets=green&assets=blue&rescale=7200,12000&rescale=7200,12000&rescale=7200,12000";
+              }} else if (ds === "geomad") {{
+                window.location.href = "/map?dataset=geomad&year=" + yr +
+                  "&assets=smad&assets=emad&assets=bcmad&rescale=0,0.0012&rescale=262,2150&rescale=0.006,0.04";
+              }} else if (ds === "classification") {{
+                window.location.href = "/map?dataset=prediction&year=" + yr +
+                  "&assets=classification";
+              }} else if (ds === "classification_unfiltered") {{
+                window.location.href = "/map?dataset=prediction&year=" + yr +
+                  "&assets=classification_unfiltered";
+              }} else if (ds === "classification_probability") {{
+                window.location.href = "/map?dataset=prediction&year=" + yr +
+                  "&assets=classification_probability&colormap_name=rdylgn&rescale=0,100";
+              }}
+            }});
+          </script>
+        </div>
+
+        <div class="item">
+          <p class="docs"><a href="/docs">API docs</a></p>
+        </div>
+      </body>
+      </html>"""
 
     return HTMLResponse(content=html)
 
@@ -211,10 +275,12 @@ def root():
 def map_viewer(
     dataset: Literal["geomad", "prediction"] = Query(...),
     year: str = Query(..., pattern=r"^\d{4}$"),
+    assets: list[str] = Query(...),
+    rescale: Optional[list[str]] = Query(None),
     colormap_name: Optional[str] = Query(None),
 ):
+    """Render a full-page map viewer for the given dataset, year, and assets."""
     LULC_LEGEND = [
-        (0, "rgba(255,255,255,0)",   "No data"),
         (1, "rgb(0,100,0)",          "Tree Cover"),
         (2, "rgb(50,205,50)",        "Grassland"),
         (3, "rgb(0,255,0)",          "Cropland"),
@@ -224,18 +290,20 @@ def map_viewer(
         (7, "rgb(255,255,0)",        "Other"),
     ]
 
-    if dataset == "geomad":
-        tile_url = (
-            f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}"
-            "&assets=red&assets=green&assets=blue"
-            "&rescale=7000,12500&rescale=7000,12500&rescale=7000,12500"
-        )
-        legend_html = ""
-    elif dataset == "prediction":
-        tile_url = (
-            f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}"
-            f"&assets=lulc&colormap_name={colormap_name or 'lulc'}"
-        )
+    # Build the tile URL from the incoming query parameters.
+    assets_qs = "&".join(f"assets={a}" for a in assets)
+    tile_url = f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}&{assets_qs}"
+
+    if rescale:
+        tile_url += "&" + "&".join(f"rescale={r}" for r in rescale)
+    if colormap_name:
+        tile_url += f"&colormap_name={colormap_name}"
+
+    # Show the LULC legend only for classification assets.
+    classification_assets = {"classification", "classification_unfiltered"}
+    if dataset == "prediction" and classification_assets.intersection(assets):
+        if not colormap_name:
+            tile_url += "&colormap_name=lulc"
         legend_items = "".join(
             f"""<div class="legend-item">
                   <span class="swatch" style="background:{color};border:1px solid #ccc;"></span>
@@ -248,8 +316,23 @@ def map_viewer(
           <div class="legend-title">Land Cover</div>
           {legend_items}
         </div>"""
+    elif dataset == "prediction" and "classification_probability" in assets:
+        legend_html = """
+        <div id="legend">
+          <div class="legend-title">Probability</div>
+          <div style="display:flex;align-items:stretch;gap:6px;">
+            <div style="width:18px;height:120px;background:linear-gradient(to bottom,#1a9641,#a6d96a,#ffffbf,#fdae61,#d7191c);border:1px solid #ccc;border-radius:3px;"></div>
+            <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:11px;">
+              <span>100</span>
+              <span>75</span>
+              <span>50</span>
+              <span>25</span>
+              <span>0</span>
+            </div>
+          </div>
+        </div>"""
     else:
-        raise HTTPException(status_code=400, detail=f"Unknown dataset '{dataset}'. Valid options: 'geomad' or 'prediction'.")
+        legend_html = ""
 
     html = f"""<!DOCTYPE html>
     <html>
