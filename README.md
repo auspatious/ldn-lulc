@@ -63,7 +63,7 @@ poetry add "datacube-compute@git+https://github.com/auspatious/datacube-compute.
 Simply run: `poetry run pytest` or for a specific file: `poetry run pytest ldn/tests/test_mosaic.py`
 
 
-### Pre commit hooks
+### Pre-commit hooks
 
 Formats Python, YAML, and JSON.
 
