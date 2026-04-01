@@ -63,6 +63,19 @@ poetry add "datacube-compute@git+https://github.com/auspatious/datacube-compute.
 Simply run: `poetry run pytest` or for a specific file: `poetry run pytest ldn/tests/test_mosaic.py`
 
 
+### Pre-commit hooks
+
+Formats Python, YAML, and JSON.
+
+To use pre-commit to automatically run ruff, and other checks on each commit, make sure the development dependencies are installed and then run:
+
+```bash
+poetry run pre-commit install
+```
+
+Note that you will need to run `poetry run pre-commit run --all-files` if any of the hooks in `.pre-commit-config.yaml` change.
+
+
 ## Running Commands
 
 You can run these:

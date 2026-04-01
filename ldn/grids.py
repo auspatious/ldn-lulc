@@ -163,7 +163,9 @@ def get_grid_tiles(
                 .reset_index(drop=True)
             )
 
-            logger.info(f"Writing geojson for grid {region} with {len(extents_gdf)} tiles.")
+            logger.info(
+                f"Writing geojson for grid {region} with {len(extents_gdf)} tiles."
+            )
 
             extents_gdf.to_file(
                 geojson_file, driver="GeoJSON"
@@ -179,7 +181,9 @@ def get_grid_tiles(
             (
                 "pacific",
                 get_gridspec(region="pacific"),
-                get_gadm(countries=DEP_COUNTRIES_AND_CODES), # Ensure all data is here by running with overwrite before if a subset has been run
+                get_gadm(
+                    countries=DEP_COUNTRIES_AND_CODES
+                ),  # Ensure all data is here by running with overwrite before if a subset has been run
                 DEP_COUNTRIES_AND_CODES,
                 geojson_path_pacific,
             )
@@ -190,7 +194,9 @@ def get_grid_tiles(
             (
                 "non-pacific",
                 get_gridspec(region="non-pacific"),
-                get_gadm(countries=NON_DEP_COUNTRIES), # Ensure all data is here by running with overwrite before if a subset has been run
+                get_gadm(
+                    countries=NON_DEP_COUNTRIES
+                ),  # Ensure all data is here by running with overwrite before if a subset has been run
                 NON_DEP_COUNTRIES,
                 geojson_path_non_pacific,
             )

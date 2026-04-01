@@ -5,7 +5,18 @@ import xarray as xr
 
 from ldn.geomad import GeoMADProcessor, LANDSAT_BANDS, set_stac_properties
 
-EXPECTED_BANDS = ["nir08", "red", "green", "blue", "swir16", "swir22", "smad", "bcmad", "emad", "count"]
+EXPECTED_BANDS = [
+    "nir08",
+    "red",
+    "green",
+    "blue",
+    "swir16",
+    "swir22",
+    "smad",
+    "bcmad",
+    "emad",
+    "count",
+]
 
 
 def _make_landsat_input(n_times: int, size: int) -> xr.Dataset:
@@ -21,9 +32,15 @@ def _make_landsat_input(n_times: int, size: int) -> xr.Dataset:
     data_vars = {}
     for band in LANDSAT_BANDS:
         if band == "qa_pixel":
-            data_vars[band] = (["time", "y", "x"], np.zeros((n_times, size, size), dtype="uint16"))
+            data_vars[band] = (
+                ["time", "y", "x"],
+                np.zeros((n_times, size, size), dtype="uint16"),
+            )
         else:
-            data_vars[band] = (["time", "y", "x"], rng.integers(7273, 43636, size=(n_times, size, size), dtype="uint16"))
+            data_vars[band] = (
+                ["time", "y", "x"],
+                rng.integers(7273, 43636, size=(n_times, size, size), dtype="uint16"),
+            )
     return xr.Dataset(data_vars, coords=coords)
 
 
@@ -39,7 +56,9 @@ def _fake_geomedian_with_mads(data, **kwargs):
     median["bcmad"] = ones
     median["emad"] = ones
     median["count"] = xr.DataArray(
-        np.full((data.sizes["y"], data.sizes["x"]), data.sizes.get("time", 1), dtype="int16"),
+        np.full(
+            (data.sizes["y"], data.sizes["x"]), data.sizes.get("time", 1), dtype="int16"
+        ),
         dims=["y", "x"],
         coords={"y": data.y, "x": data.x},
     )

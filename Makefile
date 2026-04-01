@@ -92,7 +92,7 @@ index-geomad:
 
 # 3. Predict LULC for the test tiles and 2020.
 predict-lulc-test-tiles-2020:
-	for site in 58_43:pacific; do \
+	for site in $(TEST_SITES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site##*:}; \
 		ldn classify classify \

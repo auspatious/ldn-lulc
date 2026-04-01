@@ -2,9 +2,9 @@
 
 The design of the LULC typology should balance model complexity, the feasibility of mapping using satellite data, and the need to capture key classes relevant to SIDS.
 
-This preliminary typology is developed based on a review of existing land-cover products and the class definitions adopted by the UNCCD. 
-Level-1 is chosen to align with the UNCCD, for simplicity and to facilitate training data collection. 
-Level-2 classes are considered aspirational at this stage. The feasibility of mapping Level-2 classes will be assessed during the development phase, guided by stakeholder engagement, the relevance of classes to key degradation processes, and further analytical exploration. 
+This preliminary typology is developed based on a review of existing land-cover products and the class definitions adopted by the UNCCD.
+Level-1 is chosen to align with the UNCCD, for simplicity and to facilitate training data collection.
+Level-2 classes are considered aspirational at this stage. The feasibility of mapping Level-2 classes will be assessed during the development phase, guided by stakeholder engagement, the relevance of classes to key degradation processes, and further analytical exploration.
 
 | Level-1 classes| Level-2 sub-classes | Rationale and Development Considerations |
 |---|---|---|
@@ -15,6 +15,3 @@ Level-2 classes are considered aspirational at this stage. The feasibility of ma
 | Other | - | |
 | Water | - | |
 | Wetland | Herbaceous wetland, Mangrove | Products such as WorldCover separate herbaceous wetlands and mangroves into distinct classes. For SIDS, coastal ecosystems, especially mangroves, are of exceptionally high ecological and socio-economic importance, providing coastal protection, carbon storage, and nursery grounds for marine species. Given this importance and the relatively clear spectral separability of mangroves, maintaining mangroves as a dedicated Level-2 subclass is both feasible and highly beneficial for monitoring and conservation objectives. |
-
-
-
