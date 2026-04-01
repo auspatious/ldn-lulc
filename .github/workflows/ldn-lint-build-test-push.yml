@@ -1,0 +1,97 @@
+##
+# GitHub Actions Workflow: Lint, Test, Build, and Push Docker Image
+#
+# Lints with Ruff, runs tests, builds the Docker image, and pushes to
+# GitHub Container Registry (GHCR) on push to main or release.
+# PRs to any branch get linted, built, and tested,
+# but the image is only pushed when the code actually lands on main.
+name: LDN lint, build, test, and push Docker image to GHCR
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+on:
+  workflow_dispatch: # Manual trigger from GitHub UI.
+  pull_request: # Any PR to any branch.
+    paths:
+      # Limit what triggers the workflow to prevent unnecessary runs on unrelated changes.
+      - "ldn/**"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - "Dockerfile"
+      - ".github/workflows/ldn-lint-build-test-push.yml"
+  push:
+    branches:
+      - main
+    paths:
+      # Limit what triggers the workflow to prevent unnecessary runs on unrelated changes.
+      - "ldn/**"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - "Dockerfile"
+      - ".github/workflows/ldn-lint-build-test-push.yml"
+  # release: # Create a release in GitHub.
+  #   types:
+  #     - created
+
+# Cancel older runs of this workflow if a newer one is created.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+        with:
+          src: "ldn"
+
+  build-and-test:
+    runs-on: ubuntu-latest
+    needs: [lint]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get version number
+        id: get_version
+        run: |
+          git fetch --all --tags
+          echo "VERSION=$(git describe --tags --always)" >> $GITHUB_OUTPUT
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ldn-lulc:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run tests
+        run: docker run --rm ldn-lulc:test pytest ldn/tests/ -v
+
+      - name: Tag and push
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker tag ldn-lulc:test ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}
+          docker tag ldn-lulc:test ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
