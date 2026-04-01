@@ -67,7 +67,7 @@ Simply run: `poetry run pytest` or for a specific file: `poetry run pytest ldn/t
 
 Formats Python, YAML, and JSON.
 
-To use pre-commit to automatically run ruff, mypy and other checks on each commit, make sure the development dependencies are installed and then run:
+To use pre-commit to automatically run ruff, and other checks on each commit, make sure the development dependencies are installed and then run:
 
 ```bash
 poetry run pre-commit install
