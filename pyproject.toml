@@ -41,6 +41,7 @@ dask = {extras = ["distributed"], version = "^2026.3.0"}
 prometheus-client = "^0.24.1"
 joblib = "^1.5.3"
 requests = "^2.33.1"
+pytest = "^9.0.2"
 
 [tool.poetry.group.visualisation.dependencies]
 boto3 = ">=1.42.31,<2.0.0"
