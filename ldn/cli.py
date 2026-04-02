@@ -138,15 +138,15 @@ def geomad(
     include_shadow: Annotated[
         bool,
         typer.Option(
-            help="True to mask cloud shadows, false to not mask them (leave them in). Defaults to False."
+            help="True to mask cloud shadows, false to not mask them (leave them in). Defaults to True."
         ),
-    ] = False,
+    ] = True,
     ls7_buffer_years: Annotated[
         int,
         typer.Option(
-            help="Half-width of the temporal buffer for LS7 era (<=2012). E.g. 2 searches year-2 to year+2."
+            help="Half-width of the temporal buffer for LS7 era (<=2012). E.g. 1 searches year-1 to year+1."
         ),
-    ] = 2,
+    ] = 1,
     all_bands: Annotated[bool, typer.Option()] = True,
     memory_limit: Annotated[str, typer.Option()] = "10GB",
     n_workers: Annotated[int, typer.Option()] = 2,
@@ -158,7 +158,7 @@ def geomad(
         typer.Option(
             help="Minimum clear observations per pixel. Pixels below this are set to nodata."
         ),
-    ] = 3,
+    ] = 2,
 ) -> None:
     """Run GeoMAD processing on a single Landsat tile.
 
@@ -199,7 +199,7 @@ def geomad(
         if year_int <= 2012:
             # Searching for nothing gives us everything
             typer.echo("Using both T1 and T2 data for Pacific for LS7 era")
-            search_kwargs = {}  # TODO: Test this now that it actually works.
+            search_kwargs = {}
 
     # Fixed variables
     sensor = "ls"
@@ -223,6 +223,7 @@ def geomad(
     # Configure for checking item existence
     client = boto3.client("s3")
 
+    # TODO: Do we need different paths for the 2 regions? One would make things easier to maintain. But 2 is clearer that they have different CRSs etc.
     prefix = "ausp"
     if product_owner is None:
         prefix = "ci" if region == "non-pacific" else "dep"
@@ -296,7 +297,9 @@ def geomad(
         min_clear_obs=min_clear_obs,
         drop_vars=["qa_pixel", "qa_radsat"],
         mask_clouds_kwargs={
-            "filters": [("opening", 2), ("dilation", 3)],
+            # Opening(3) removes isolated 1-3 pixel false cloud flags. These should not be dilated.
+            # Dilation(3) grows remaining cloud masks by 3 pixels to catch haze/edges
+            "filters": [("opening", 3), ("dilation", 5), ("erosion", 2)],
             "include_shadow": include_shadow,
         },
     )

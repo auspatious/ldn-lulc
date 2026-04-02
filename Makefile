@@ -8,7 +8,7 @@
 # 5. Run make-mosaic for geomad and prediction datasets
 # 6. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
-VERSION_GEOMAD ?= 0-0-2e
+VERSION_GEOMAD ?= 0-0-3
 VERSION_PREDICTION ?= 0-0-1
 DECIMATED ?= --no-decimated
 YEAR ?= 2020
@@ -40,11 +40,11 @@ CAPE_VERDE           := 185_125:non-pacific
 COMOROS              := 251_88:non-pacific
 SINGAPORE            := 312_105:non-pacific 312_106:non-pacific
 
-# TEST_SITES := $(KIRIBATI_ATOLLS) $(FIJI_VOLCANIC) $(FIJI_ANTIMERIDIAN) \
-# 	$(BELIZE_ATOLLS) $(SURINAME) $(CAPE_VERDE) $(COMOROS) $(SINGAPORE)
-# TEST_SITES := $(FIJI_VOLCANIC)
-TEST_SITES := $(KIRIBATI_ATOLLS) $(FIJI_ANTIMERIDIAN) \
+TEST_SITES := $(KIRIBATI_ATOLLS) $(FIJI_VOLCANIC) $(FIJI_ANTIMERIDIAN) \
 	$(BELIZE_ATOLLS) $(SURINAME) $(CAPE_VERDE) $(COMOROS) $(SINGAPORE)
+# TEST_SITES := $(FIJI_VOLCANIC)
+# # TEST_SITES := $(KIRIBATI_ATOLLS) $(FIJI_ANTIMERIDIAN) \
+# # 	$(BELIZE_ATOLLS) $(SURINAME) $(CAPE_VERDE) $(COMOROS) $(SINGAPORE)
 
 TEST_YEARS := 2000 2011 2024 # Semi-representative years to assess quality.
 # TEST_YEARS := 2011 # Semi-representative years to assess quality.
@@ -63,7 +63,8 @@ geomad-test-case-sites-3-years:
 				--version $(VERSION_GEOMAD) \
 				--product-owner ausp \
 				--include-shadow \
-				--ls7-buffer-years 2 \
+				--ls7-buffer-years 1 \
+				--min-clear-obs 2 \
 				$(DECIMATED) \
 				--overwrite; \
 		done; \
@@ -82,6 +83,8 @@ geomad-2000-2025:
 				--version $(VERSION_GEOMAD) \
 				--product-owner ausp \
 				--include-shadow \
+				--ls7-buffer-years 1 \
+				--min-clear-obs 2 \
 				--overwrite; \
 		done; \
 	done

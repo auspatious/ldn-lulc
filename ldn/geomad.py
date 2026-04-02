@@ -132,8 +132,8 @@ class GeoMADProcessor(Processor):
         self,
         send_area_to_processor: bool = False,
         load_data_before_writing: bool = True,
-        min_timesteps: int = 0,
-        min_clear_obs: int = 3,
+        min_timesteps: int = 10,
+        min_clear_obs: int = 2,
         geomad_options: dict = {
             "num_threads": 4,
             "work_chunks": (1000, 1000),
@@ -142,8 +142,8 @@ class GeoMADProcessor(Processor):
         drop_vars: list[str] = [],
         preprocessor: Processor | None = None,
         mask_clouds_kwargs: dict = {
-            "filters": [("opening", 2), ("dilation", 3)],
-            "include_shadow": True,  # TODO: This defaults to false in the CLI params/args. Which should it default to?
+            "filters": [("opening", 3), ("dilation", 5), ("erosion", 2)],
+            "include_shadow": True,
         },
         **kwargs,
     ) -> None:
@@ -178,16 +178,18 @@ class GeoMADProcessor(Processor):
         if self.load_data_before_writing:
             geomad = geomad.compute()
 
-        clean_count = (
-            data.to_array().notnull().all(dim="variable").sum(dim="time").compute()
-        )
-        logger.info(
-            f"Clear observations: min={int(clean_count.min())}, median={int(clean_count.median())}, max={int(clean_count.max())}"
-        )
+        # # TODO: Remove clean_count logging in production. It slows down processing.
+        # clean_count = (
+        #     data.to_array().notnull().all(dim="variable").sum(dim="time").compute()
+        # )
+        # logger.info(
+        #     f"Clear observations: min={int(clean_count.min())}, median={int(clean_count.median())}, max={int(clean_count.max())}"
+        # )
 
         # Mask pixels with too few clear observations. These produce noisy
         # geomedian values (the white speckle in SLC-off era).
-        if self.min_clear_obs > 0:
+        # min_clear_obs must be 3 or more to have an effect. The geomedian/geomad calc already needs 2 or more.
+        if self.min_clear_obs > 2:
             low_count_mask = geomad["count"] < self.min_clear_obs
             n_masked = int(low_count_mask.sum())
             if n_masked > 0:
@@ -236,6 +238,7 @@ class AwsStacTask(AreaTask):
 
     def run(self):
         items = self.searcher.search(self.area)
+        logger.info(f"Found {len(items)} LS items for this tile/year")
         input_data = self.loader.load(items, self.area)
 
         processor_kwargs = (
