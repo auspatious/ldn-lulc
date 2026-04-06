@@ -72,6 +72,7 @@ def test_geomad_processor_output_has_expected_bands(mock_geomad) -> None:
 
     processor = GeoMADProcessor(
         load_data_before_writing=False,
+        min_timesteps=1,
         drop_vars=["qa_pixel", "qa_radsat"],
         # No filters because we are just testing loading bands.
         mask_clouds_kwargs={"filters": None, "include_shadow": False},
