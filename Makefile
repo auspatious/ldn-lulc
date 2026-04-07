@@ -64,7 +64,6 @@ geomad-test-case-sites-3-years:
 				--product-owner ausp \
 				--include-shadow \
 				--ls7-buffer-years 1 \
-				--min-clear-obs 2 \
 				$(DECIMATED) \
 				--overwrite; \
 		done; \
@@ -84,7 +83,6 @@ geomad-2000-2025:
 				--product-owner ausp \
 				--include-shadow \
 				--ls7-buffer-years 1 \
-				--min-clear-obs 2 \
 				--overwrite; \
 		done; \
 	done

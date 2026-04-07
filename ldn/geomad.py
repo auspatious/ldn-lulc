@@ -133,7 +133,6 @@ class GeoMADProcessor(Processor):
         send_area_to_processor: bool = False,
         load_data_before_writing: bool = True,
         min_timesteps: int = 10,
-        min_clear_obs: int = 2,
         geomad_options: dict = {
             "num_threads": 4,
             "work_chunks": (1000, 1000),
@@ -150,7 +149,6 @@ class GeoMADProcessor(Processor):
         super().__init__(send_area_to_processor, **kwargs)
         self.load_data_before_writing = load_data_before_writing
         self.min_timesteps = min_timesteps
-        self.min_clear_obs = min_clear_obs
         self.geomad_options = geomad_options
         self.drop_vars = drop_vars
         self.preprocessor = preprocessor
@@ -177,33 +175,6 @@ class GeoMADProcessor(Processor):
 
         if self.load_data_before_writing:
             geomad = geomad.compute()
-
-        # # TODO: Remove clean_count logging in production. It slows down processing.
-        # clean_count = (
-        #     data.to_array().notnull().all(dim="variable").sum(dim="time").compute()
-        # )
-        # logger.info(
-        #     f"Clear observations: min={int(clean_count.min())}, median={int(clean_count.median())}, max={int(clean_count.max())}"
-        # )
-
-        # Mask pixels with too few clear observations. These produce noisy
-        # geomedian values (the white speckle in SLC-off era).
-        # min_clear_obs must be 3 or more to have an effect. The geomedian/geomad calc already needs 2 or more.
-        if self.min_clear_obs > 2:
-            low_count_mask = geomad["count"] < self.min_clear_obs
-            n_masked = int(low_count_mask.sum())
-            if n_masked > 0:
-                logger.info(
-                    f"Masking {n_masked} pixels with fewer than {self.min_clear_obs} clear observations"
-                )
-                nodata = self.geomad_options.get("nodata", 0)
-                for band in geomad.data_vars:
-                    if band == "count":
-                        continue
-                    if geomad[band].dtype.kind == "f":
-                        geomad[band] = geomad[band].where(~low_count_mask)
-                    else:
-                        geomad[band] = geomad[band].where(~low_count_mask, nodata)
 
         geomad["count"].odc.nodata = 0
 
@@ -240,6 +211,7 @@ class AwsStacTask(AreaTask):
         items = self.searcher.search(self.area)
         logger.info(f"Found {len(items)} LS items for this tile/year")
         input_data = self.loader.load(items, self.area)
+        logger.info(f"Loaded {len(input_data)} LS items for this tile/year")
 
         processor_kwargs = (
             dict(area=self.area) if self.processor.send_area_to_processor else dict()

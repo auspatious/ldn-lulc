@@ -153,12 +153,6 @@ def geomad(
     threads_per_worker: Annotated[int, typer.Option()] = 16,
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
-    min_clear_obs: Annotated[
-        int,
-        typer.Option(
-            help="Minimum clear observations per pixel. Pixels below this are set to nodata."
-        ),
-    ] = 2,
 ) -> None:
     """Run GeoMAD processing on a single Landsat tile.
 
@@ -294,7 +288,6 @@ def geomad(
             nodata=0,
         ),
         min_timesteps=10,
-        min_clear_obs=min_clear_obs,
         drop_vars=["qa_pixel", "qa_radsat"],
         mask_clouds_kwargs={
             # Opening(3) removes isolated 1-3 pixel false cloud flags. These should not be dilated.
