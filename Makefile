@@ -39,35 +39,9 @@ CAPE_VERDE           := 185_125:non-pacific
 COMOROS              := 251_88:non-pacific
 SINGAPORE            := 312_105:non-pacific 312_106:non-pacific
 
-# TEST_SITES := $(KIRIBATI_ATOLLS) $(FIJI_VOLCANIC) $(FIJI_ANTIMERIDIAN) \
-# 	$(BELIZE_ATOLLS) $(SURINAME) $(CAPE_VERDE) $(COMOROS) $(SINGAPORE)
-TEST_SITES := $(FIJI_VOLCANIC)
-# # TEST_SITES := $(KIRIBATI_ATOLLS) $(FIJI_ANTIMERIDIAN) \
-# # 	$(BELIZE_ATOLLS) $(SURINAME) $(CAPE_VERDE) $(COMOROS) $(SINGAPORE)
+TEST_SITES := $(KIRIBATI_ATOLLS) $(FIJI_VOLCANIC) $(FIJI_ANTIMERIDIAN) \
+	$(BELIZE_ATOLLS) $(SURINAME) $(CAPE_VERDE) $(COMOROS) $(SINGAPORE)
 
-# TEST_YEARS := 2000 2011 2024 # Semi-representative years to assess quality.
-TEST_YEARS := 2020
-# TEST_YEARS := 2011 # Semi-representative years to assess quality.
-# TEST_YEARS := 2000 2024 # Semi-representative years to assess quality.
-
-# Run geomad for all test case sites for the one YEAR.
-geomad-test-case-sites-3-years:
-	for site in $(TEST_SITES); do \
-		tile_id=$${site%%:*}; \
-		region=$${site##*:}; \
-		for year in $(TEST_YEARS); do \
-			ldn geomad \
-				--tile-id $$tile_id \
-				--region $$region \
-				--year $$year \
-				--version $(VERSION_GEOMAD) \
-				--product-owner ausp \
-				--include-shadow \
-				--ls7-buffer-years 1 \
-				$(DECIMATED) \
-				--overwrite; \
-		done; \
-	done
 
 # Run geomad for all test case sites for years 2000-2025.
 geomad-2000-2025:
