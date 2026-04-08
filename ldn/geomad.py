@@ -13,7 +13,7 @@ from dep_tools.task import AreaTask
 from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from geopandas import GeoDataFrame
 import numpy as np
-from odc.algo import erase_bad, mask_cleanup
+from odc.algo import mask_cleanup
 from xarray import DataArray, Dataset
 
 logger = logging.getLogger(__name__)
@@ -78,11 +78,95 @@ def set_stac_properties(
     return output_xr
 
 
-def mask_clouds(
-    xr: Dataset,  # TODO: Type this to DataArray?
+def mask_nodata(xr: Dataset | DataArray, nodata_value: int = 0) -> Dataset | DataArray:
+    """
+    Mask out nodata pixels and fill pixels using qa_pixel bit 0.
+    """
+    filter_bands = ["red", "green", "blue"]
+    for band in filter_bands:
+        if band in xr.data_vars:
+            # Must use other here so uint16 values don't get converted to float32 with nan.
+            xr = xr.where(xr[band] != nodata_value, other=nodata_value)
+
+    if "qa_pixel" in xr.data_vars:
+        FILL = 0
+        fill_mask = (xr["qa_pixel"].astype(int) & (1 << FILL)) != 0
+        # Must use other here so uint16 values don't get converted to float32 with nan.
+        xr = xr.where(~fill_mask, other=nodata_value)
+
+    return xr
+
+
+def mask_cloud_and_shadow(
+    xr: Dataset | DataArray,
     filters: Iterable[Tuple[str, int]] | None = None,
     include_shadow: bool = True,
-) -> Dataset:
+    nodata_value: int = 0,
+) -> Dataset | DataArray:
+    """
+    Mask out cloud, cirrus, and optionally shadow pixels using qa_pixel bits.
+    Args:
+        xr: Input xarray Dataset or DataArray.
+        filters: Morphological filter sequence applied to the cloud mask only.
+        include_shadow: Whether to include cloud shadow (qa_pixel bit 4).
+    Returns:
+        Masked xarray Dataset or DataArray.
+    """
+    DILATED_CLOUD = 1
+    CIRRUS = 2
+    CLOUD = 3
+    CLOUD_SHADOW = 4
+
+    cloud_fields = [DILATED_CLOUD, CIRRUS, CLOUD]
+    if include_shadow:
+        cloud_fields.append(CLOUD_SHADOW)
+
+    cloud_bitmask = 0
+    for field in cloud_fields:
+        cloud_bitmask |= 1 << field
+
+    qa_pixel = xr["qa_pixel"] if "qa_pixel" in xr.data_vars else xr.qa_pixel
+    cloud_mask = (qa_pixel.astype(int) & cloud_bitmask) != 0
+
+    if filters is not None:
+        # Add morphological filters to cloud/shadow mask only.
+        cloud_mask = mask_cleanup(cloud_mask, filters)
+
+    # Add a mask for medium confidence clouds. Don't dilate them though.
+    CLOUD_CONFIDENCE_SHIFT = 8
+    CLOUD_CONFIDENCE_MEDIUM = 2
+    # CLOUD_CONFIDENCE_HIGH = 3
+    cloud_confidence = (qa_pixel.astype(int) >> CLOUD_CONFIDENCE_SHIFT) & 0b11
+    cloud_confidence_mask = cloud_confidence >= CLOUD_CONFIDENCE_MEDIUM
+
+    cloud_confidence_mask = mask_cleanup(cloud_confidence_mask, [("opening", 2)])
+
+    # Must use other here so uint16 values don't get converted to float32 with nan.
+    return xr.where(~(cloud_mask | cloud_confidence_mask), other=nodata_value)
+
+
+def mask_saturated(
+    xr: Dataset | DataArray, nodata_value: int = 0
+) -> Dataset | DataArray:
+    if "qa_radsat" in xr.data_vars:
+        # Must use other here so uint16 values don't get converted to float32 with nan.
+        xr = xr.where(xr.qa_radsat == 0, other=nodata_value)
+
+    for band in ["red", "green", "blue"]:
+        if band in xr.data_vars:
+            # Must use other here so uint16 values don't get converted to float32 with nan.
+            # xr = xr.where(xr[band] != 65_535, other=nodata_value)
+            # This catches overly saturated pixels (after qa_pixel and qa_radsat masking).
+            xr = xr.where(xr[band] < 43_636, other=nodata_value)
+
+    return xr
+
+
+def mask_nodata_clouds_saturated(
+    xr: Dataset | DataArray,  # TODO: Type this to DataArray?
+    filters: Iterable[Tuple[str, int]] | None = None,
+    include_shadow: bool = True,
+) -> Dataset | DataArray:
     # Only valid for LS8 and LS9, but we can still apply
     # it to LS7 data without error, it just won't mask anything.
     """Mask clouds, shadows, fill, and saturated pixels from Landsat data.
@@ -96,35 +180,15 @@ def mask_clouds(
         filters: Morphological filter sequence applied to the cloud mask only.
         include_shadow: Whether to include cloud shadow (qa_pixel bit 4).
     """
-    CIRRUS = 2
-    CLOUD = 3
-    CLOUD_SHADOW = 4
+    # TODO: Experiment with performance.
+    xr = mask_nodata(xr)
 
-    # Cloud/shadow mask - morphological filters apply here only
-    cloud_fields = [CIRRUS, CLOUD]
-    if include_shadow:
-        cloud_fields.append(CLOUD_SHADOW)
+    xr = mask_cloud_and_shadow(xr, filters=filters, include_shadow=include_shadow)
 
-    cloud_bitmask = 0
-    for field in cloud_fields:
-        cloud_bitmask |= 1 << field
+    xr = mask_saturated(xr)
 
-    cloud_mask = xr.qa_pixel & cloud_bitmask != 0
-
-    if filters is not None:
-        cloud_mask = mask_cleanup(cloud_mask, filters)
-
-    # Non-cloud bad-pixel mask (fill, saturation) - no morphological filters
-    FILL = 0
-    fill_mask = xr.qa_pixel & (1 << FILL) != 0
-
-    # Saturated or occluded filter
-    if "qa_radsat" in xr.data_vars:
-        fill_mask = fill_mask | (xr.qa_radsat != 0)
-
-    combined_mask = cloud_mask | fill_mask
-
-    return erase_bad(xr, combined_mask)
+    # return erase_bad(xr, combined_mask)
+    return xr  # TODO: This might be less performant than the erase_bad approach.
 
 
 class GeoMADProcessor(Processor):
@@ -160,23 +224,21 @@ class GeoMADProcessor(Processor):
                 f"{xr.time.size} is less than {self.min_timesteps} timesteps"
             )
 
-        xr = mask_clouds(xr, **self.mask_kwargs)
+        xr = mask_nodata_clouds_saturated(xr, **self.mask_kwargs)
         data = xr.drop_vars(self.drop_vars) if len(self.drop_vars) > 0 else xr
 
-        # For float data, replace any remaining 65535 (saturated) values with
-        # NaN so geomedian_with_mads ignores them. For uint16 data the
-        # geomedian already skips nodata=0 and qa_radsat masking handles
-        # saturation upstream.
-        for band in data.data_vars:
-            if data[band].dtype.kind == "f":
-                data[band] = data[band].where(data[band] != 65535)
-
-        geomad = geomedian_with_mads(data, **self.geomad_options)
+        geomad = geomedian_with_mads(
+            data, **self.geomad_options, nodata=0, is_float=False
+        )
 
         if self.load_data_before_writing:
             geomad = geomad.compute()
 
-        geomad["count"].odc.nodata = 0
+        geomad[
+            "count"
+        ].odc.nodata = (
+            0  # This could hide real values of 0. 9999 is what datacube-compute do.
+        )
 
         return set_stac_properties(data, geomad)
 
@@ -188,7 +250,7 @@ class AwsStacTask(AreaTask):
         self,
         itempath: S3ItemPath,
         id: str,
-        area: GeoDataFrame,
+        area: GeoDataFrame,  # TODO: This is a GeoBox, not a GeoDataFrame.
         searcher: Searcher,
         loader: StacLoader,
         processor: Processor,
@@ -211,7 +273,9 @@ class AwsStacTask(AreaTask):
         items = self.searcher.search(self.area)
         logger.info(f"Found {len(items)} LS items for this tile/year")
         input_data = self.loader.load(items, self.area)
-        logger.info(f"Loaded {len(input_data)} LS items for this tile/year")
+        logger.info(
+            f"Loaded {len(input_data.time.values)} LS items for this tile/year (grouped by solar_day)"
+        )
 
         processor_kwargs = (
             dict(area=self.area) if self.processor.send_area_to_processor else dict()
