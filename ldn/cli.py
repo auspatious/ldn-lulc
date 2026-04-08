@@ -286,6 +286,7 @@ def geomad(
             scale=LANDSAT_SCALE,
             offset=LANDSAT_OFFSET,
             nodata=0,
+            is_float=False,
         ),
         min_timesteps=10,
         drop_vars=["qa_pixel", "qa_radsat"],

@@ -8,7 +8,7 @@
 # 5. Run make-mosaic for geomad and prediction datasets
 # 6. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
-VERSION_GEOMAD ?= 0-0-4
+VERSION_GEOMAD ?= 0-0-4a
 VERSION_PREDICTION ?= 0-0-1
 DECIMATED ?= --no-decimated
 YEAR ?= 2020

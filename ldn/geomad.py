@@ -227,9 +227,7 @@ class GeoMADProcessor(Processor):
         xr = mask_nodata_clouds_saturated(xr, **self.mask_kwargs)
         data = xr.drop_vars(self.drop_vars) if len(self.drop_vars) > 0 else xr
 
-        geomad = geomedian_with_mads(
-            data, **self.geomad_options, nodata=0, is_float=False
-        )
+        geomad = geomedian_with_mads(data, **self.geomad_options)
 
         if self.load_data_before_writing:
             geomad = geomad.compute()
