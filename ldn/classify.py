@@ -32,6 +32,7 @@ from shapely.geometry import box
 from typing_extensions import Annotated
 
 from ldn.grids import get_gadm, get_gridspec
+from ldn.utils import GEOMAD_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -746,7 +747,7 @@ def get_buffered_country(
 
     # Temporarily clip country geoms to GeoMAD processed areas because we don't have that much processed yet.
     # TODO: Remove this step once GeoMAD has been run for all tiles for all countries.
-    stac_geoparquet = "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2b/ausp_ls_geomad.parquet"
+    stac_geoparquet = f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/{GEOMAD_VERSION}/ausp_ls_geomad.parquet"
     geomad_items = search_sync(
         stac_geoparquet, bbox=list(country_gadm.total_bounds), datetime="2020"
     )

@@ -7,10 +7,11 @@ set -euo pipefail
 AWS_REGION=${AWS_REGION:-us-west-2}
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
+eval $(python3 -c "from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION; print(f'export GEOMAD_VERSION={GEOMAD_VERSION}; export PREDICTION_VERSION={PREDICTION_VERSION}')")
+
 echo "==> Building mosaics..."
 # TODO: make mosaics for all years (when available).
-poetry run ldn make-mosaics --dataset all --years 2020 --version-geomad 0-0-2b --version-prediction 0-0-1
-
+poetry run ldn make-mosaics --dataset all --years 2020 --version-geomad $GEOMAD_VERSION --version-prediction $PREDICTION_VERSION
 echo "==> Creating ECR repository..."
 terraform -chdir=visualisation/infra init
 terraform -chdir=visualisation/infra apply -target=aws_ecr_repository.app -target=aws_ecr_lifecycle_policy.app # -auto-approve

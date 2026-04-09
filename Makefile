@@ -3,13 +3,16 @@
 # Workflow:
 # 1. Run GeoMAD for all tiles/years
 # 2. Run index GeoMAD (STAC-Geoparquet)
-# 3. Run prediction for all tiles/years
-# 4. Run index prediction (STAC-Geoparquet)
-# 5. Run make-mosaic for geomad and prediction datasets
-# 6. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
+# 3. Make training data (in notebooks/training_data/0_Generate_Training_Points.ipynb)
+# 4. Train model (in notebooks/training_data/1_Train_Predict.ipynb)
+# 5. Run prediction for all tiles/years
+# 6. Run index prediction (STAC-Geoparquet)
+# 7. Run make-mosaic for geomad and prediction datasets
+# 8. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
-VERSION_GEOMAD ?= 0-0-4a
-VERSION_PREDICTION ?= 0-0-1
+VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)")
+VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)")
+
 DECIMATED ?= --no-decimated
 YEAR ?= 2020
 # Get grid tiles - all
@@ -89,7 +92,7 @@ predict-lulc-test-tiles-2020:
 			--version-geomad $(VERSION_GEOMAD) \
 			--region $$region \
 			--output-bucket="data.ldn.auspatious.com" \
-			--model-path="ldn/lulc_random_forest_model.joblib" \
+			--model-path="ldn/models/$(VERSION_PREDICTION)/lulc_random_forest_model.joblib" \
 			--xy-chunk-size 1024 \
 			$(DECIMATED) \
 			--overwrite; \

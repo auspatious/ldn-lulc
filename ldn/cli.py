@@ -40,6 +40,7 @@ from ldn import get_version
 from ldn.cli_grid import cli_grid_app
 from ldn.cli_classify import classify_app
 from ldn.grids import get_gridspec
+from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION
 
 app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -246,7 +247,6 @@ def geomad(
     load_kwargs = {}
 
     # Searcher finds STAC Items
-    # TODO: Set up fallback for if there's not enough T1 data
     searcher = PystacSearcher(
         catalog=USGS_CATALOG,
         collections=[USGS_COLLECTION],
@@ -255,8 +255,6 @@ def geomad(
     )
 
     # Loader loads the data from STAC Items.
-    # nodata=0 overrides the source nodata (1 for qa_pixel) so GDAL does not
-    # remap real value-1 pixels during reprojection.
     loader = OdcLoader(
         bands=LANDSAT_BANDS
         if all_bands
@@ -399,7 +397,9 @@ def _index_to_stac_geoparquet(
     output_filename: str = typer.Option(
         "ausp_ls_lulc_prediction", help="Output filename for the STAC-Geoparquet index."
     ),
-    version: str = typer.Option("0-0-1", help="Dataset version string e.g. '0-0-1'."),
+    version: str = typer.Option(
+        GEOMAD_VERSION, help=f"Dataset version string e.g. '{GEOMAD_VERSION}'."
+    ),
     bucket: str = typer.Option(
         "data.ldn.auspatious.com", help="S3 bucket containing STAC items."
     ),
@@ -490,15 +490,15 @@ def make_mosaics(
     version_geomad: Annotated[
         str,
         typer.Option(
-            help="Version string to use for the GeoMAD mosaic files, e.g. '0-0-1'."
+            help=f"Version string to use for the GeoMAD mosaic files, e.g. '{GEOMAD_VERSION}'."
         ),
-    ],
+    ] = GEOMAD_VERSION,
     version_prediction: Annotated[
         str,
         typer.Option(
-            help="Version string to use for the Prediction mosaic files, e.g. '0-0-1'."
+            help=f"Version string to use for the Prediction mosaic files, e.g. '{PREDICTION_VERSION}'."
         ),
-    ],
+    ] = PREDICTION_VERSION,
 ) -> None:
     """Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files."""
 

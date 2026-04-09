@@ -5,6 +5,8 @@ Uses TiTiler to visualise a MosaicJSON of either GeoMedian/GeoMAD or predicted L
 Tiles from separate per-band COGs using TiTiler + STACReader.
 """
 
+from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION
+
 import logging
 import os
 import re
@@ -77,9 +79,7 @@ os.environ.update(
 
 MOSAIC_S3_BUCKET = "data.ldn.auspatious.com"
 GEOMAD_DATASET_PREFIX = "ausp_ls_geomad"
-GEOMAD_DATASET_VERSION = "0-0-2b"
 PREDICTION_DATASET_PREFIX = "ausp_ls_lulc_prediction"
-PREDICTION_DATASET_VERSION = "0-0-1"
 MOSAIC_PATHS_GEOMAD: dict[str, str] = {}
 MOSAIC_PATHS_PREDICTION: dict[str, str] = {}
 
@@ -89,11 +89,11 @@ s3 = boto3.client("s3")
 MOSAIC_PATTERN = re.compile(r"(\w+)_(\d{4})_mosaic\.json$")
 
 for prefix, dataset_prefix, version, paths_dict in [
-    ("geomad", GEOMAD_DATASET_PREFIX, GEOMAD_DATASET_VERSION, MOSAIC_PATHS_GEOMAD),
+    ("geomad", GEOMAD_DATASET_PREFIX, GEOMAD_VERSION, MOSAIC_PATHS_GEOMAD),
     (
         "prediction",
         PREDICTION_DATASET_PREFIX,
-        PREDICTION_DATASET_VERSION,
+        PREDICTION_VERSION,
         MOSAIC_PATHS_PREDICTION,
     ),
 ]:
