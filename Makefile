@@ -70,8 +70,8 @@ index-geomad:
 # 	ldn classify train-model
 
 
-# 3. Predict LULC for the test tiles and 2020.
-predict-lulc-test-tiles-2020:
+# 3. Predict LULC for the test tiles and one year (2025).
+predict-lulc-test-tiles-one-year:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
