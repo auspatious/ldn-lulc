@@ -184,7 +184,6 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     # DEP Tools have a search function for this.
     dem_items = list(catalog.search(collections=[DEM_COLLECTION], bbox=bbox).items())
     logger.info(f"Found {len(dem_items)} DEM items")
-    print(f"Found {len(dem_items)} DEM items")
 
     dem = (
         stac_load(
@@ -609,7 +608,7 @@ def get_tile_year_geomad_dem_indices(
     tile_id: str,
     year: str,
     country_wgs84_buffered: GeoDataFrame | None,
-    analysis_crs: str | None,
+    analysis_crs: str,
 ) -> xr.Dataset:
     """Load Geomedian, GeoMAD, and DEM data for a tile (clipped to country) and compute terrain/spectral features.
 
@@ -628,6 +627,8 @@ def get_tile_year_geomad_dem_indices(
         elevation, slope, and aspect clipped to the tile geometry.
     """
     # tile_x, tile_y = tile_id.split("_")
+    # TODO: Use dep-tools.search_across_180. Although not sure if this works with rustac.
+    # Needed for Fiji.
     geomad_items = search_sync(
         GEOMAD_STAC_GEOPARQUET_URL,
         ids=f"ausp_ls_geomad_{tile_id}_{year}",
@@ -638,13 +639,11 @@ def get_tile_year_geomad_dem_indices(
     logger.info(
         f"Found {len(geomad_items)} GeoMAD items for tile {tile_id} and year {year}"
     )
-    print(f"Found {len(geomad_items)} GeoMAD items for tile {tile_id} and year {year}")
 
     assert len(geomad_items) == 1, (
         f"Must find exactly 1 GeoMAD item for this tile and year, found {len(geomad_items)} instead."
     )
 
-    print(geomad_items[0].bbox)
     bands = [b for b in geomad_items[0].assets.keys() if b != "count"]
     logger.info(f"Available bands (excluding count): {bands}")
 
@@ -658,12 +657,9 @@ def get_tile_year_geomad_dem_indices(
     logger.info(
         f"GeoMAD dataset loaded CRS (should be native): {geomad_ds.odc.crs.epsg}"
     )
-    print(f"GeoMAD dataset loaded CRS (should be native): {geomad_ds.odc.crs.epsg}")
     logger.info(f"GeoMAD bands loaded: {list(geomad_ds.data_vars)}")
-    print(f"GeoMAD bands loaded: {list(geomad_ds.data_vars)}")
     geomad_ds = geomad_ds.squeeze().load()
     logger.info(f"GeoMAD dataset shape: {geomad_ds.dims}")
-    print(f"GeoMAD dataset shape: {geomad_ds.dims}")
 
     # Scale + indices
     geomad_ds = scale_offset_landsat(geomad_ds)
@@ -671,8 +667,6 @@ def get_tile_year_geomad_dem_indices(
     geomad_ds = calculate_indices(geomad_ds)
 
     dem_ds = load_dem_terrain(geomad_ds.odc.geobox)
-
-    print(geomad_ds.odc.geobox)
 
     # Merge GeoMAD (10m native) and DEM (30m, resampled to 10m GeoMAD grid) on x, y, time.
     dem_ds = dem_ds.assign_coords(

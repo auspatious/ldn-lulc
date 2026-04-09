@@ -77,15 +77,15 @@ NON_DEP_COUNTRIES = {
 }
 
 TEST_TILES = [
-    ("058_043", "pacific", "Kiribati"),
-    ("063_020", "pacific", "Fiji"),
-    ("066_022", "pacific", "Fiji_AM"),
-    ("119_126", "non-pacific", "Belize"),
-    ("152_110", "non-pacific", "Suriname"),
-    ("185_125", "non-pacific", "Cape_Verde"),
-    ("251_088", "non-pacific", "Comoros"),
-    ("312_105", "non-pacific", "Singapore_1"),
-    ("312_106", "non-pacific", "Singapore_2"),
+    ("058_043", "pacific", {"Kiribati": "KIR"}),
+    ("063_020", "pacific", {"Fiji": "FJI"}),
+    ("066_022", "pacific", {"Fiji": "FJI"}),
+    ("119_126", "non-pacific", {"Belize": "BLZ"}),
+    ("152_110", "non-pacific", {"Suriname": "SUR"}),
+    ("185_125", "non-pacific", {"Cabo Verde": "CPV"}),  # Cape?
+    ("251_088", "non-pacific", {"Comoros": "COM"}),
+    ("312_105", "non-pacific", {"Singapore": "SGP"}),
+    ("312_106", "non-pacific", {"Singapore": "SGP"}),
 ]
 
 PREDICTION_VERSION = "0-0-2"
