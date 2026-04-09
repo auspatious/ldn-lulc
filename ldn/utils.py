@@ -76,7 +76,17 @@ NON_DEP_COUNTRIES = {
     if k not in DEP_COUNTRIES_AND_CODES
 }
 
-TEST_TILES = ()
+TEST_TILES = [
+    ("058_043", "pacific", "Kiribati"),
+    ("063_020", "pacific", "Fiji"),
+    ("066_022", "pacific", "Fiji_AM"),
+    ("119_126", "non-pacific", "Belize"),
+    ("152_110", "non-pacific", "Suriname"),
+    ("185_125", "non-pacific", "Cape_Verde"),
+    ("251_088", "non-pacific", "Comoros"),
+    ("312_105", "non-pacific", "Singapore_1"),
+    ("312_106", "non-pacific", "Singapore_2"),
+]
 
 PREDICTION_VERSION = "0-0-2"
 GEOMAD_VERSION = "0-0-4a"

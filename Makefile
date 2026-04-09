@@ -12,9 +12,11 @@
 
 VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)")
 VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)")
+# TEST_TILES is a list of tuples: (tile_id, region, description)
+TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
 
 DECIMATED ?= --no-decimated
-YEAR ?= 2020
+YEAR ?= 2025 # Predict for a year with nice GeoMAD outputs for workshop.
 # Get grid tiles - all
 grid-get-tiles-all:
 	ldn grid get-grid-tiles --format="gdf" --grids="all" --overwrite
@@ -32,25 +34,12 @@ grid-list-countries-non-pacific:
 print-tasks-2000-2024-all-grids:
 	ldn print-tasks --years="2000-2024" --grids="all"
 
-# Test case sites as tile_id:region pairs.
-KIRIBATI_ATOLLS      := 58_43:pacific
-FIJI_VOLCANIC        := 63_20:pacific
-FIJI_ANTIMERIDIAN    := 66_22:pacific
-BELIZE_ATOLLS        := 119_126:non-pacific
-SURINAME             := 152_110:non-pacific
-CAPE_VERDE           := 185_125:non-pacific
-COMOROS              := 251_88:non-pacific
-SINGAPORE            := 312_105:non-pacific 312_106:non-pacific
-
-TEST_SITES := $(KIRIBATI_ATOLLS) $(FIJI_VOLCANIC) $(FIJI_ANTIMERIDIAN) \
-	$(BELIZE_ATOLLS) $(SURINAME) $(CAPE_VERDE) $(COMOROS) $(SINGAPORE)
-
 
 # Run geomad for all test case sites for years 2000-2025.
 geomad-2000-2025:
-	for site in $(TEST_SITES); do \
+	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
-		region=$${site##*:}; \
+		region=$${site#*:}; region=$${region%%:*}; \
 		for year in $$(seq 2000 2025); do \
 			ldn geomad \
 				--tile-id $$tile_id \
@@ -80,11 +69,12 @@ index-geomad:
 # train-model:
 # 	ldn classify train-model
 
+
 # 3. Predict LULC for the test tiles and 2020.
 predict-lulc-test-tiles-2020:
-	for site in $(TEST_SITES); do \
+	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
-		region=$${site##*:}; \
+		region=$${site#*:}; region=$${region%%:*}; \
 		ldn classify classify \
 			--tile-id $$tile_id \
 			--year $(YEAR) \
@@ -107,19 +97,19 @@ index-predictions:
 	--version $(VERSION_PREDICTION)
 
 # Visualisation
-make-mosaic-all-2020:
+make-mosaic-all-one-year:
 	ldn make-mosaics \
 	--dataset all \
 	--years $(YEAR) \
 	--version-geomad $(VERSION_GEOMAD) \
 	--version-prediction $(VERSION_PREDICTION)
-make-mosaic-geomad-2020:
+make-mosaic-geomad-one-year:
 	ldn make-mosaics \
 	--dataset geomad \
 	--years $(YEAR) \
 	--version-geomad $(VERSION_GEOMAD) \
 	--version-prediction $(VERSION_PREDICTION)
-make-mosaic-prediction-2020:
+make-mosaic-prediction-one-year:
 	ldn make-mosaics \
 	--dataset prediction \
 	--years $(YEAR) \
