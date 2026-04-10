@@ -26,6 +26,17 @@ logger = logging.getLogger(__name__)
 GADM_FILE = Path(__file__).parent / "gadm_sids.gpkg"
 
 
+def do_get_gadm(countries: dict) -> gpd.GeoDataFrame:
+    all_polys = []
+    for _, country_code in countries.items():
+        url = (
+            f"https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_{country_code}.gpkg"
+        )
+        country_gdf = gpd.read_file(url, layer="ADM_ADM_0")
+        all_polys.append(country_gdf)
+    return gpd.GeoDataFrame(pd.concat(all_polys, ignore_index=True))
+
+
 def get_gadm(
     countries: dict = ALL_COUNTRIES, overwrite: bool = False
 ) -> gpd.GeoDataFrame:
@@ -33,16 +44,45 @@ def get_gadm(
     Downloads the GADM data for the specified countries if not already cached locally.
     Combines the country geometries into a single GeoDataFrame and saves to a local GeoPackage file.
     """
+    requested_countries = set(countries.values())
+
+    # If no local file or overwrite requested, download everything and return early.
     if not GADM_FILE.exists() or overwrite:
-        all_polys = []
-        for _, country_code in countries.items():
-            url = f"https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_{country_code}.gpkg"
-            country_gdf = gpd.read_file(url, layer="ADM_ADM_0")
-            all_polys.append(country_gdf)
+        logger.info(
+            "Overwrite is True or GADM file does not exist — downloading GADM data for all countries."
+        )
+        all_gadm = do_get_gadm(ALL_COUNTRIES)
+        all_gadm.to_file(GADM_FILE, driver="GPKG")
+        return all_gadm[all_gadm["GID_0"].isin(requested_countries)]
 
-        pd.concat(all_polys).to_file(GADM_FILE)
+    # Local file exists — check which requested countries are already present.
+    logger.info(
+        "GADM file exists and overwrite is False — checking for missing countries."
+    )
+    existing_gdf = gpd.read_file(GADM_FILE)
+    existing_countries = set(existing_gdf["GID_0"].unique())
+    missing_countries = requested_countries - existing_countries
 
-    return gpd.read_file(GADM_FILE)
+    # Fetch and append any missing countries.
+    if missing_countries:
+        logger.info(
+            f"Missing countries in local GADM file: {missing_countries} — downloading now."
+        )
+        missing_country_codes = {
+            name: code for name, code in countries.items() if code in missing_countries
+        }
+        missing_gadm = do_get_gadm(missing_country_codes)
+        combined_gdf = gpd.GeoDataFrame(
+            pd.concat([existing_gdf, missing_gadm], ignore_index=True)
+        )
+        combined_gdf.to_file(GADM_FILE, driver="GPKG")
+    else:
+        logger.info(
+            "All requested countries already present in local GADM file — no download needed."
+        )
+        combined_gdf = existing_gdf
+
+    return combined_gdf[combined_gdf["GID_0"].isin(requested_countries)]
 
 
 # This is for the non-pacific countries. All pacific countries are covered by the DEP grid (EPSG:3832).
@@ -178,9 +218,7 @@ def get_grid_tiles(
             (
                 "pacific",
                 get_gridspec(region="pacific"),
-                get_gadm(
-                    countries=DEP_COUNTRIES_AND_CODES
-                ),  # Ensure all data is here by running with overwrite before if a subset has been run
+                get_gadm(countries=DEP_COUNTRIES_AND_CODES),
                 DEP_COUNTRIES_AND_CODES,
                 geojson_path_pacific,
             )
@@ -191,9 +229,7 @@ def get_grid_tiles(
             (
                 "non-pacific",
                 get_gridspec(region="non-pacific"),
-                get_gadm(
-                    countries=NON_DEP_COUNTRIES
-                ),  # Ensure all data is here by running with overwrite before if a subset has been run
+                get_gadm(countries=NON_DEP_COUNTRIES),
                 NON_DEP_COUNTRIES,
                 geojson_path_non_pacific,
             )

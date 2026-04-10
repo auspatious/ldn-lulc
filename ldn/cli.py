@@ -478,7 +478,7 @@ def make_mosaics(
     years: Annotated[
         str,
         typer.Option(
-            help="Comma-separated list of years (e.g. '2020,2021') to build mosaics for."
+            help="Either a comma-separated list of years (e.g. '2020,2021') or a range of years (e.g. '2020-2025') to build mosaics for."
         ),
     ],
     dataset: Annotated[
@@ -503,7 +503,14 @@ def make_mosaics(
     """Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files."""
 
     logger.info(f"Making mosaics for dataset '{dataset}' and years: {years}")
-    years_list = [y.strip() for y in years.split(",")]
+    if "-" in years:
+        start_year, end_year = map(int, years.split("-"))
+        years_list = [str(y) for y in range(start_year, end_year + 1)]
+    else:
+        years_list = [y.strip() for y in years.split(",")]
+
+    if any(int(y) < 2000 for y in years_list) or any(int(y) > 2025 for y in years_list):
+        raise ValueError("Years must be between 2000 and 2025 inclusive.")
 
     # MosaicBackend needs s3:// style paths.
     output_path_geomad = (

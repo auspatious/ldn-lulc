@@ -724,7 +724,7 @@ def get_buffered_country(
     """
     buffer_m = 100
 
-    country_gadm = get_gadm(countries=country_of_interest, overwrite=True)
+    country_gadm = get_gadm(countries=country_of_interest)
 
     # Buffer country polygon to include coastal zones.
     # Fiji and Singapore are both a single multipolygon from GADM.

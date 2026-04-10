@@ -34,6 +34,8 @@ grid-list-countries-non-pacific:
 print-tasks-2000-2024-all-grids:
 	ldn print-tasks --years="2000-2024" --grids="all"
 
+# Just run Rarotonga # TODO: Remove this.
+TEST_TILES := 089_016:pacific:Rarotonga
 
 # Run geomad for all test case sites for years 2000-2025.
 geomad-2000-2025:
@@ -103,10 +105,10 @@ make-mosaic-all-one-year:
 	--years $(YEAR) \
 	--version-geomad $(VERSION_GEOMAD) \
 	--version-prediction $(VERSION_PREDICTION)
-make-mosaic-geomad-one-year:
+make-mosaic-geomad-all-years:
 	ldn make-mosaics \
 	--dataset geomad \
-	--years $(YEAR) \
+	--years "2000-2025" \
 	--version-geomad $(VERSION_GEOMAD) \
 	--version-prediction $(VERSION_PREDICTION)
 make-mosaic-prediction-one-year:

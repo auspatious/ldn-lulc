@@ -86,6 +86,7 @@ TEST_TILES = [
     ("251_088", "non-pacific", {"Comoros": "COM"}),
     ("312_105", "non-pacific", {"Singapore": "SGP"}),
     ("312_106", "non-pacific", {"Singapore": "SGP"}),
+    ("089_016", "pacific", {"Cook Islands": "COK"}),
 ]
 
 PREDICTION_VERSION = "0-0-2"
