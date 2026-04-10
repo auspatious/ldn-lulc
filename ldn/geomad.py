@@ -55,22 +55,23 @@ def set_stac_properties(
     start_year_index = int(start_year.astype("int64"))
     end_year_index = int(end_year.astype("int64"))
 
-    start_datetime = _to_utc_ms_string(start_year)
-    end_datetime = _to_utc_ms_string(
-        end_year + np.timedelta64(1, "Y") - np.timedelta64(1, "s")
+    # Limit date range to 1 year. This was returning 1999-2001 for data that had been filled.
+    midpoint_year_index = (start_year_index + end_year_index) // 2
+    midpoint_year = np.datetime64("1970", "Y") + np.timedelta64(
+        midpoint_year_index, "Y"
+    )
+    midpoint_datetime = _to_utc_ms_string(
+        midpoint_year + np.timedelta64(182, "D")  # ~July 2nd
     )
 
-    datetime_value = start_datetime
-    if start_year_index != end_year_index:
-        midpoint_year_index = (start_year_index + end_year_index) // 2
-        midpoint_year = np.datetime64("1970", "Y") + np.timedelta64(
-            midpoint_year_index, "Y"
-        )
-        datetime_value = _to_utc_ms_string(midpoint_year)
+    start_datetime = _to_utc_ms_string(midpoint_year)
+    end_datetime = _to_utc_ms_string(
+        midpoint_year + np.timedelta64(1, "Y") - np.timedelta64(1, "s")
+    )
 
     output_xr.attrs["stac_properties"] = dict(
         start_datetime=start_datetime,
-        datetime=datetime_value,
+        datetime=midpoint_datetime,  # Use middle point i.e. July 2nd as the datetime.
         end_datetime=end_datetime,
         created=_to_utc_ms_string(np.datetime64(datetime.now())),
     )

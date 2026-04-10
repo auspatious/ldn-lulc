@@ -17,6 +17,8 @@ TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.jo
 
 DECIMATED ?= --no-decimated
 YEAR ?= 2025 # Predict for a year with nice GeoMAD outputs for workshop.
+
+
 # Get grid tiles - all
 grid-get-tiles-all:
 	ldn grid get-grid-tiles --format="gdf" --grids="all" --overwrite
@@ -34,8 +36,6 @@ grid-list-countries-non-pacific:
 print-tasks-2000-2024-all-grids:
 	ldn print-tasks --years="2000-2024" --grids="all"
 
-# Just run Rarotonga # TODO: Remove this.
-TEST_TILES := 089_016:pacific:Rarotonga
 
 # Run geomad for all test case sites for years 2000-2025.
 geomad-2000-2025:
@@ -97,6 +97,7 @@ index-predictions:
 	--prefix "ausp_ls_lulc_prediction" \
 	--output-filename "ausp_ls_lulc_prediction" \
 	--version $(VERSION_PREDICTION)
+
 
 # Visualisation
 make-mosaic-all-one-year:
