@@ -66,7 +66,7 @@ def set_stac_properties(
     )
     midpoint_datetime = _to_utc_ms_string(
         midpoint_year + np.timedelta64(181, "D")
-    )  # July 1st
+    )  # June 30th
 
     output_xr.attrs["stac_properties"] = dict(
         start_datetime=start_datetime,

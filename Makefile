@@ -12,11 +12,10 @@
 
 VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)")
 VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)")
-# TEST_TILES is a list of tuples: (tile_id, region, description)
+# TEST_TILES is a list of tuples: (tile_id, region, {country_name: country_code}) e.g. ("089_016", "pacific", {"Cook Islands": "COK"})
 TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
 
 DECIMATED ?= --no-decimated
-YEAR ?= 2025 # Predict for a year with nice GeoMAD outputs for workshop.
 
 
 # Get grid tiles - all
@@ -73,21 +72,26 @@ index-geomad:
 
 
 # 3. Predict LULC for the test tiles and one year (2025).
-predict-lulc-test-tiles-one-year:
+# predict 20205 and 2024? If the Rarotonga Geomedian looks good then.
+
+# TODO: Run for all years in future
+predict-lulc-test-tiles-a-few-years:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
-		ldn classify classify \
-			--tile-id $$tile_id \
-			--year $(YEAR) \
-			--version $(VERSION_PREDICTION) \
-			--version-geomad $(VERSION_GEOMAD) \
-			--region $$region \
-			--output-bucket="data.ldn.auspatious.com" \
-			--model-path="ldn/models/$(VERSION_PREDICTION)/lulc_random_forest_model.joblib" \
-			--xy-chunk-size 1024 \
-			$(DECIMATED) \
-			--overwrite; \
+		for year in $$(seq 2024 2025); do \
+			ldn classify classify \
+				--tile-id $$tile_id \
+				--year year \
+				--version $(VERSION_PREDICTION) \
+				--version-geomad $(VERSION_GEOMAD) \
+				--region $$region \
+				--output-bucket="data.ldn.auspatious.com" \
+				--model-path="ldn/models/$(VERSION_PREDICTION)/lulc_random_forest_model.joblib" \
+				--xy-chunk-size 1024 \
+				$(DECIMATED) \
+				--overwrite; \
+		done; \
 	done
 
 
@@ -100,21 +104,22 @@ index-predictions:
 
 
 # Visualisation
-make-mosaic-all-one-year:
-	ldn make-mosaics \
-	--dataset all \
-	--years $(YEAR) \
-	--version-geomad $(VERSION_GEOMAD) \
-	--version-prediction $(VERSION_PREDICTION)
-make-mosaic-geomad-all-years:
+# make-mosaics-all:
+# 	ldn make-mosaics \
+# 	--dataset all \
+# 	--years "2000-2025" \
+# 	--version-geomad $(VERSION_GEOMAD) \
+# 	--version-prediction $(VERSION_PREDICTION)
+make-mosaics-geomad-all-years:
 	ldn make-mosaics \
 	--dataset geomad \
 	--years "2000-2025" \
 	--version-geomad $(VERSION_GEOMAD) \
 	--version-prediction $(VERSION_PREDICTION)
-make-mosaic-prediction-one-year:
+# TODO: Run for all years in future
+make-mosaics-prediction-some-years:
 	ldn make-mosaics \
 	--dataset prediction \
-	--years $(YEAR) \
+	--years "2024-2025" \
 	--version-geomad $(VERSION_GEOMAD) \
 	--version-prediction $(VERSION_PREDICTION)
