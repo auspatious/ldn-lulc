@@ -118,7 +118,8 @@ Much faster than running locally.
 3. Your public key path equivalent of `ssh -i ~/.ssh/id_ed25519 ubuntu@44.230.85.235`
 4. Pull code
 5. Install
-6. Run.
+6. Run. Use `tmux` so that even if it disconnects the command will keep running.
+Run `tmux new -s geomad` then when inside run `uv run make geomad-2000-2025`. To detach, run `Ctrl+B, D` and it'll keep running. To reattach run `tmux attach -t geomad`. To kill it from outside run `tmux kill-session -t geomad`.
 
 ## Visualisation
 
