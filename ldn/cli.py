@@ -443,7 +443,17 @@ def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
     """Read STAC-Geoparquet, filter by year, build mosaic.json."""
 
     logger.info(f"Building mosaic for year {year}")
-    item_collection = search_sync(stac_geoparquet_url, datetime=year)
+    search_year = year
+    int_year = int(year)
+    # If we're in the LS7 era, use a buffered window of data
+    if int_year <= 2012:
+        logging.info(
+            "GeoMAD used a year of data on either side to create the annual product so we need to search for +- 1 year."
+        )
+        search_year = f"{int_year - 1}/{int_year + 1}"
+
+    item_collection = search_sync(stac_geoparquet_url, datetime=search_year)
+
     items = ItemCollection(item_collection)
     features = [f.to_dict() for f in items]
 

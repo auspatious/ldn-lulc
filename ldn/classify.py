@@ -628,11 +628,11 @@ def get_tile_year_geomad_dem_indices(
     """
     # tile_x, tile_y = tile_id.split("_")
     # TODO: Use dep-tools.search_across_180. Although not sure if this works with rustac.
+    # TODO: get_tile_year_geomad_dem_indices has a lot of duplicated logic with the LulcProcessor. Maybe refactor to share code?
     # Needed for Fiji.
     geomad_items = search_sync(
         GEOMAD_STAC_GEOPARQUET_URL,
         ids=f"ausp_ls_geomad_{tile_id}_{year}",
-        datetime=year,
     )
 
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
