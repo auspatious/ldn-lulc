@@ -9,11 +9,14 @@ AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 eval $(python3 -c "from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION; print(f'export GEOMAD_VERSION={GEOMAD_VERSION}; export PREDICTION_VERSION={PREDICTION_VERSION}')")
 
+# TODO: Run index here too? To ensure mosaics are created with the latest data.
+
 echo "==> Building mosaics..."
 # Make mosaics for all years for geomad.
-poetry run ldn make-mosaics --dataset "geomad" --years "2000-2025" --version-geomad $GEOMAD_VERSION --version-prediction $PREDICTION_VERSION
+# TODO: Uncomment this to create geomad mosaics. I have already done this for 0-0-4a so no need to wait to recreate.
+# poetry run ldn make-mosaics --dataset "geomad" --years "2000-2025" --version-geomad $GEOMAD_VERSION --version-prediction $PREDICTION_VERSION
 # Make mosaics for one year for prediction.
-poetry run ldn make-mosaics --dataset "prediction" --years "2025" --version-geomad $GEOMAD_VERSION --version-prediction $PREDICTION_VERSION
+# poetry run ldn make-mosaics --dataset "prediction" --years "2023-2025" --version-geomad $GEOMAD_VERSION --version-prediction $PREDICTION_VERSION
 echo "==> Creating ECR repository..."
 terraform -chdir=visualisation/infra init
 terraform -chdir=visualisation/infra apply -target=aws_ecr_repository.app -target=aws_ecr_lifecycle_policy.app # -auto-approve

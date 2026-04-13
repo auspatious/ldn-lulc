@@ -5,8 +5,6 @@ Uses TiTiler to visualise a MosaicJSON of either GeoMedian/GeoMAD or predicted L
 Tiles from separate per-band COGs using TiTiler + STACReader.
 """
 
-from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION
-
 import logging
 import os
 import re
@@ -26,6 +24,11 @@ from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
 from mangum import Mangum
+
+# from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION # Can't import these in app (ldn is not available in deployment).
+# TODO: Pass these as a parameter in deploy.sh?
+GEOMAD_VERSION = "0-0-4a"
+PREDICTION_VERSION = "0-0-2"
 
 logger = logging.getLogger(__name__)
 
@@ -219,11 +222,11 @@ def root():
           <div class="selectors">
             <select id="dataset-select">
               <option value="" disabled selected>Select dataset</option>
-              <option value="geomedian">GeoMedian (RGB)</option>
-              <option value="geomad">GeoMAD (S, E, BC)</option>
-              <option value="classification">Classification</option>
-              <option value="classification_unfiltered">Classification (unfiltered)</option>
-              <option value="classification_probability">Classification (probability)</option>
+              <option value="geomedian">GeoMedian (RGB) v{GEOMAD_VERSION}</option>
+              <option value="geomad">GeoMAD (S, E, BC) v{GEOMAD_VERSION}</option>
+              <option value="classification">Classification v{PREDICTION_VERSION}</option>
+              <option value="classification_unfiltered">Classification (unfiltered) v{PREDICTION_VERSION}</option>
+              <option value="classification_probability">Classification (probability) v{PREDICTION_VERSION}</option>
             </select>
             <select id="year-select" disabled>
               <option value="" disabled selected>Select year</option>

@@ -73,16 +73,22 @@ index-geomad:
 
 # 3. Predict LULC for the test tiles and one year (2025).
 # predict 20205 and 2024? If the Rarotonga Geomedian looks good then.
+# 2023 has the best GeoMAD data for Rarotonga.
 
 # TODO: Run for all years in future
+# Exclude Fiji antimeridian tile because there is no training data there.
+# I have run the prediction for Kiribati and Fiji tile 1 for 2023-2025.
+# TODO: Run for these 3 years for the rest of the tiles (excluding Fiji antimeridian tile because there is no training data there).
+TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] != '066_022' ]))")
+# TODO: Make this overwrite again.
 predict-lulc-test-tiles-a-few-years:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
-		for year in $$(seq 2024 2025); do \
+		for year in $$(seq 2023 2025); do \
 			ldn classify classify \
 				--tile-id $$tile_id \
-				--year year \
+				--year $$year \
 				--version $(VERSION_PREDICTION) \
 				--version-geomad $(VERSION_GEOMAD) \
 				--region $$region \
@@ -90,7 +96,7 @@ predict-lulc-test-tiles-a-few-years:
 				--model-path="ldn/models/$(VERSION_PREDICTION)/lulc_random_forest_model.joblib" \
 				--xy-chunk-size 1024 \
 				$(DECIMATED) \
-				--overwrite; \
+				--no-overwrite; \
 		done; \
 	done
 
@@ -120,6 +126,6 @@ make-mosaics-geomad-all-years:
 make-mosaics-prediction-some-years:
 	ldn make-mosaics \
 	--dataset prediction \
-	--years "2024-2025" \
+	--years "2023-2025" \
 	--version-geomad $(VERSION_GEOMAD) \
 	--version-prediction $(VERSION_PREDICTION)
