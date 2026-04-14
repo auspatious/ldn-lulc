@@ -30,7 +30,9 @@ from pystac_client import Client as PyStacClient
 from rustac import search_sync
 from scipy.ndimage import sobel
 from typing_extensions import Annotated
-from dep_tools.utils import search_across_180, _fix_geometry
+from dep_tools.utils import search_across_180, bbox_across_180, _fix_geometry
+from rasterio.enums import Resampling
+from shapely.geometry import box
 
 from ldn.grids import get_gadm, get_gridspec
 from ldn.utils import GEOMAD_VERSION
@@ -172,6 +174,12 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     Loads COP-DEM-GLO-30 tiles from MS PC, resamples
     to the target geobox, and derives terrain features.
 
+    Data is in WGS84.
+
+    For antimeridian-crossing tiles, loads east and west halves
+    separately and merges them, since stac_load cannot correctly
+    reproject DEM tiles across the antimeridian in one pass.
+
     Args:
         geobox: Target grid to align the DEM to.
 
@@ -180,27 +188,101 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     """
     client = PyStacClient.open(DEM_CATALOG)
 
-    dem_items = search_across_180(
-        geobox, client, collections=[DEM_COLLECTION]
-    )  # Need to search across 180 for Fijian tiles.
+    geobox_wgs84 = GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(
+        "EPSG:4326"
+    )
+
+    dem_items = search_across_180(geobox, client, collections=[DEM_COLLECTION])
     logger.info(f"Found {len(dem_items)} DEM items")
     assert len(dem_items) > 0, "Must find at least 1 DEM item."
     assert len(dem_items) < 30, (
         "No world-spanning DEMs, should be a small number of tiles (~4)."
     )
 
-    dem = (
-        stac_load(
-            dem_items,
-            geobox=geobox,
-            resampling="bilinear",
-            patch_url=sign_url,
-            fail_on_error=False,
+    tile_bbox = bbox_across_180(geobox_wgs84)
+
+    if isinstance(tile_bbox, tuple):
+        # AM-crossing: load each half in geographic space, shift
+        # west longitudes to >180, concatenate, then reproject
+        # with +over CRS so PROJ treats >180 as valid.
+        east_bbox, west_bbox = tile_bbox
+        east_gdf = GeoDataFrame(geometry=[box(*east_bbox)], crs="EPSG:4326")
+        west_gdf = GeoDataFrame(geometry=[box(*west_bbox)], crs="EPSG:4326")
+
+        east_items = [i for i in dem_items if i.bbox[0] >= 0]
+        west_items = [i for i in dem_items if i.bbox[0] < 0]
+
+        target_crs = str(geobox.crs)
+        target_shape = (geobox.height, geobox.width)
+        target_transform = geobox.transform
+
+        ds_east = (
+            stac_load(
+                east_items,
+                geopolygon=east_gdf,
+                chunks={},
+                resampling="bilinear",
+                patch_url=sign_url,
+                fail_on_error=False,
+            )
+            .squeeze(drop=True)
+            .compute()
+            if east_items
+            else None
         )
-        .squeeze(drop=True)
-        .compute()
-        .rename({"data": "elevation"})
-    )
+
+        ds_west = (
+            stac_load(
+                west_items,
+                geopolygon=west_gdf,
+                chunks={},
+                resampling="bilinear",
+                patch_url=sign_url,
+                fail_on_error=False,
+            )
+            .squeeze(drop=True)
+            .compute()
+            if west_items
+            else None
+        )
+
+        if ds_east is not None and ds_west is not None:
+            ds_west = ds_west.assign_coords(longitude=(ds_west.longitude % 360))
+            ds_combined = xr.concat([ds_east, ds_west], dim="longitude").sortby(
+                "longitude"
+            )
+        elif ds_east is not None:
+            ds_combined = ds_east
+        else:
+            ds_combined = ds_west
+            ds_combined = ds_combined.assign_coords(
+                longitude=(ds_combined.longitude % 360)
+            )
+
+        ds_combined = ds_combined.rio.set_spatial_dims(
+            x_dim="longitude", y_dim="latitude"
+        )
+        ds_combined = ds_combined.rio.write_crs("+proj=longlat +datum=WGS84 +over")
+
+        dem = ds_combined.rio.reproject(
+            target_crs,
+            shape=target_shape,
+            transform=target_transform,
+            resampling=Resampling.bilinear,
+        ).rename({"data": "elevation"})
+    else:
+        dem = (
+            stac_load(
+                dem_items,
+                geobox=geobox,
+                resampling="bilinear",
+                patch_url=sign_url,
+                fail_on_error=False,
+            )
+            .squeeze(drop=True)
+            .compute()
+            .rename({"data": "elevation"})
+        )
 
     dem_da = dem["elevation"]
     dem_vals = dem_da.values.astype("float32")
