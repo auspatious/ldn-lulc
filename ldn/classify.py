@@ -733,6 +733,7 @@ def get_tile_year_geomad_dem_indices(
     return merged
 
 
+# Dep tools utils have mask_to_gadm() but I want to buffer gadm.
 def get_buffered_country(
     country_of_interest: dict, wgs84: str, analysis_crs: str
 ) -> GeoDataFrame:

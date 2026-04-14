@@ -218,6 +218,7 @@ ldn/tasks.json
 *.tif.aux.xml
 notebooks/**/samples.geojson
 notebooks/**/samples.csv
+notebooks/training_data/debug/*
 
 # Visualisation Terraform files.
 visualisation/infra/.terraform/

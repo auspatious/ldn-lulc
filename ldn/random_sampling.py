@@ -252,12 +252,15 @@ def random_sampling(
     else:
         crs = da.attrs.get("crs", None)
 
-    # Create geopandas dataframe
+    # Create geopandas dataframe and ensure output is in WGS84.
     gdf = gpd.GeoDataFrame(
         all_samples, crs=crs, geometry=gpd.points_from_xy(x, y)
     ).reset_index()
 
     gdf = gdf.drop(["latitude", "longitude"], axis=1)
+
+    if crs is not None and gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs("EPSG:4326")
 
     if out_fname is not None:
         gdf.to_file(out_fname)
