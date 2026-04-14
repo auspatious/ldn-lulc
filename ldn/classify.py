@@ -19,7 +19,7 @@ from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
 from dep_tools.stac_utils import StacCreator
 from dep_tools.task import AwsStacTask as Task
-from geopandas import GeoDataFrame, GeoSeries
+from geopandas import GeoDataFrame, clip
 from joblib import load as joblib_load
 from odc.geo.geobox import GeoBox
 from odc.stac import configure_s3_access
@@ -30,6 +30,7 @@ from pystac_client import Client as PyStacClient
 from rustac import search_sync
 from scipy.ndimage import sobel
 from typing_extensions import Annotated
+from dep_tools.utils import search_across_180, _fix_geometry
 
 from ldn.grids import get_gadm, get_gridspec
 from ldn.utils import GEOMAD_VERSION
@@ -177,13 +178,16 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     Returns:
         Dataset with elevation, slope, and aspect variables.
     """
-    catalog = PyStacClient.open(DEM_CATALOG)
-    bbox = list(geobox.geographic_extent.boundingbox)
+    client = PyStacClient.open(DEM_CATALOG)
 
-    # TODO: For antimeridian-crossing tiles like Pacific 66_22 (Fiji) this gives "Found 235 DEM items". Need to fix this like I did for CSDR. It works decimated but is inneficient.
-    # DEP Tools have a search function for this.
-    dem_items = list(catalog.search(collections=[DEM_COLLECTION], bbox=bbox).items())
+    dem_items = search_across_180(
+        geobox, client, collections=[DEM_COLLECTION]
+    )  # Need to search across 180 for Fijian tiles.
     logger.info(f"Found {len(dem_items)} DEM items")
+    assert len(dem_items) > 0, "Must find at least 1 DEM item."
+    assert len(dem_items) < 30, (
+        "No world-spanning DEMs, should be a small number of tiles (~4)."
+    )
 
     dem = (
         stac_load(
@@ -191,7 +195,7 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
             geobox=geobox,
             resampling="bilinear",
             patch_url=sign_url,
-            fail_on_error=False,  # TODO: Validate this.
+            fail_on_error=False,
         )
         .squeeze(drop=True)
         .compute()
@@ -217,6 +221,8 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
         dims=dem_da.dims,
         name="aspect",
     )
+
+    logger.info(f"DEM dataset shape: {dem_da.shape}")
 
     return xr.Dataset({"elevation": dem_da, "slope": slope, "aspect": aspect})
 
@@ -604,10 +610,11 @@ def run_classify_task(
 
 # get_tile_year_geomad_dem_indices and get_buffered_country are now just for the notebooks.
 # TODO: Get for a tile. Can clip to buffered country geom (for training data, not clipped for prediction).
+# Actually Alex asked to clip prediction to GADM too. TODO: Make sure prediction works with this updated function.
 def get_tile_year_geomad_dem_indices(
     tile_id: str,
     year: str,
-    country_wgs84_buffered: GeoDataFrame | None,
+    country_wgs84_buffered: GeoDataFrame,
     analysis_crs: str,
 ) -> xr.Dataset:
     """Load Geomedian, GeoMAD, and DEM data for a tile (clipped to country) and compute terrain/spectral features.
@@ -627,7 +634,6 @@ def get_tile_year_geomad_dem_indices(
         elevation, slope, and aspect clipped to the tile geometry.
     """
     # tile_x, tile_y = tile_id.split("_")
-    # TODO: Use dep-tools.search_across_180. Although not sure if this works with rustac.
     # TODO: get_tile_year_geomad_dem_indices has a lot of duplicated logic with the LulcProcessor. Maybe refactor to share code?
     # Needed for Fiji.
     geomad_items = search_sync(
@@ -644,6 +650,9 @@ def get_tile_year_geomad_dem_indices(
         f"Must find exactly 1 GeoMAD item for this tile and year, found {len(geomad_items)} instead."
     )
 
+    proj_bbox = geomad_items[0].properties.get("proj:bbox")
+    logger.info(proj_bbox)
+
     bands = [b for b in geomad_items[0].assets.keys() if b != "count"]
     logger.info(f"Available bands (excluding count): {bands}")
 
@@ -651,15 +660,31 @@ def get_tile_year_geomad_dem_indices(
         geomad_items,
         chunks={},  # Force lazy loading.
         bands=bands,  # Only load the bands we need (exclude count).
-        fail_on_error=False,  # TODO: Validate this.
+        fail_on_error=False,
+        geopolygon=country_wgs84_buffered,  # constrain extent (only bbox) - prevents globe-spanning load for antimeridian-crossing tiles.
     )
 
-    logger.info(
-        f"GeoMAD dataset loaded CRS (should be native): {geomad_ds.odc.crs.epsg}"
+    assert geomad_ds.odc.crs.epsg == int(analysis_crs.split(":")[1]), (
+        f"GeoMAD dataset CRS (EPSG:{geomad_ds.odc.crs.epsg}) does not match analysis CRS ({analysis_crs})"
     )
+    logger.info(f"GeoMAD dataset loaded CRS (is native): EPSG:{geomad_ds.odc.crs.epsg}")
     logger.info(f"GeoMAD bands loaded: {list(geomad_ds.data_vars)}")
-    geomad_ds = geomad_ds.squeeze().load()
     logger.info(f"GeoMAD dataset shape: {geomad_ds.dims}")
+
+    geomad_ds = (
+        geomad_ds.squeeze()
+    )  # .load() # TODO: Why do we load here? Why not keep it lazy?
+
+    # Now clip to tile. DS is shape of country. Clip before DEM search/load for performance.
+    geomad_ds = geomad_ds.rio.clip_box(
+        minx=proj_bbox[0],
+        miny=proj_bbox[1],
+        maxx=proj_bbox[2],
+        maxy=proj_bbox[3],
+        crs=analysis_crs,
+    )
+    logger.info(f"GeoMAD dataset shape (after tile clip): {geomad_ds.dims}")
+    # return geomad_ds, proj_bbox
 
     # Scale + indices
     geomad_ds = scale_offset_landsat(geomad_ds)
@@ -679,35 +704,39 @@ def get_tile_year_geomad_dem_indices(
     for var in merged.data_vars:
         merged[var] = merged[var].rio.write_nodata(float("nan"))
 
-    if country_wgs84_buffered is not None:
-        # Clip to tile and country
-        # Need to clip in native CRS
-        country_analysis_crs_buffered = country_wgs84_buffered.to_crs(analysis_crs)
-        tile_extent = GeoSeries(
-            [merged.odc.geobox.extent.geom], crs=merged.odc.geobox.crs
-        ).to_crs(analysis_crs)
-        tile_country_boundary = (
-            country_analysis_crs_buffered.geometry.union_all().intersection(
-                tile_extent[0]
-            )
-        )
-        return merged.rio.clip(
-            [tile_country_boundary], crs=analysis_crs, all_touched=True, drop=True
-        )
-    else:
-        # Clip to tile
-        return merged.rio.clip_box(
-            *merged.odc.geobox.boundingbox,
-            crs=merged.odc.geobox.crs,
-            all_touched=True,
-            drop=True,
-        )
+    # Do final clip: Make a nice geom of tile and country overlap to clip with.
+    # logger.info(merged.odc.geobox.extent.geom.bounds) # (3336000.0, -1888000.0, 3432000.0, -1792000.0)
+
+    country_prj = country_wgs84_buffered.to_crs(merged.odc.geobox.crs)
+    # logger.info(country_prj.geometry.total_bounds)
+
+    tile_gdf = GeoDataFrame(
+        geometry=[merged.odc.geobox.extent.geom], crs=merged.odc.geobox.crs
+    )
+    # logger.info(tile_gdf)
+
+    tile_clipped_to_country_gdf = clip(tile_gdf, country_prj)
+    # logger.info(tile_clipped_to_country_gdf)
+    # logger.info(type(tile_clipped_to_country_gdf))
+    # logger.info(tile_clipped_to_country_gdf.total_bounds)
+
+    merged = merged.rio.clip(
+        tile_clipped_to_country_gdf.geometry,
+        crs=merged.odc.geobox.crs,
+        all_touched=True,
+        drop=True,
+    )
+
+    logger.info(
+        f"Merged GeoMAD/DEM dataset shape (after tile+country clip): {merged.dims}"
+    )
+    return merged
 
 
 def get_buffered_country(
     country_of_interest: dict, wgs84: str, analysis_crs: str
 ) -> GeoDataFrame:
-    """Fetch and buffer a country geometry for analysis.
+    """Fetch and buffer a country geometry for analysis (antimeridian-fixed).
 
     Retrieves country geometry from GADM, applies country-specific clipping for
     known edge cases (for example antimeridian handling for Fiji), buffers in
@@ -726,9 +755,18 @@ def get_buffered_country(
 
     country_gadm = get_gadm(countries=country_of_interest)
 
-    # Buffer country polygon to include coastal zones.
-    # Fiji and Singapore are both a single multipolygon from GADM.
-    return GeoDataFrame(
+    country_gadm = GeoDataFrame(
         geometry=country_gadm.to_crs(analysis_crs).buffer(buffer_m).to_crs(wgs84),
         crs=wgs84,
     )
+    # Do antimeridian fix. Needed for Fiji.
+    # _fix_geometry takes Shapely geometry and returns Shapely geometry — no mapping() needed.
+    rows = []
+    for geom in country_gadm.geometry:
+        fixed = _fix_geometry(geom)
+        if fixed.geom_type == "MultiPolygon":
+            rows.extend(fixed.geoms)  # one row per polygon (east/west of AM)
+        else:
+            rows.append(fixed)
+
+    return GeoDataFrame(geometry=rows, crs=wgs84)

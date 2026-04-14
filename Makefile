@@ -79,8 +79,7 @@ index-geomad:
 # Exclude Fiji antimeridian tile because there is no training data there.
 # I have run the prediction for Kiribati and Fiji tile 1 for 2023-2025.
 # TODO: Run for these 3 years for the rest of the tiles (excluding Fiji antimeridian tile because there is no training data there).
-TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] != '066_022' ]))")
-# TODO: Make this overwrite again.
+# TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] not in ['066_022', '058_043', '063_020'] ]))")
 predict-lulc-test-tiles-a-few-years:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
@@ -96,7 +95,7 @@ predict-lulc-test-tiles-a-few-years:
 				--model-path="ldn/models/$(VERSION_PREDICTION)/lulc_random_forest_model.joblib" \
 				--xy-chunk-size 1024 \
 				$(DECIMATED) \
-				--no-overwrite; \
+				--overwrite; \
 		done; \
 	done
 

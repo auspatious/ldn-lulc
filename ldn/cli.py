@@ -476,10 +476,6 @@ def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
         accessor=_stac_self_link,
     )
 
-    logger.info(
-        f"  quadkey_zoom={mosaic.quadkey_zoom}, {len(mosaic.tiles)} tile entries"
-    )
-
     return mosaic
 
 
