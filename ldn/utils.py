@@ -89,5 +89,5 @@ TEST_TILES = [
     ("089_016", "pacific", {"Cook Islands": "COK"}),
 ]
 
-PREDICTION_VERSION = "0-0-2"
 GEOMAD_VERSION = "0-0-4a"
+PREDICTION_VERSION = "0-0-3"

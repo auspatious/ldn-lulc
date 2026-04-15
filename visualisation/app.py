@@ -28,7 +28,7 @@ from mangum import Mangum
 # from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION # Can't import these in app (ldn is not available in deployment).
 # TODO: Pass these as a parameter in deploy.sh?
 GEOMAD_VERSION = "0-0-4a"
-PREDICTION_VERSION = "0-0-2"
+PREDICTION_VERSION = "0-0-3"
 
 logger = logging.getLogger(__name__)
 
