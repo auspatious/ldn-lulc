@@ -297,13 +297,13 @@ def map_viewer(
 ):
     """Render a full-page map viewer for the given dataset, year, and assets."""
     LULC_LEGEND = [
-        (1, "rgb(0,100,0)", "Tree Cover"),
-        (2, "rgb(50,205,50)", "Grassland"),
-        (3, "rgb(0,255,0)", "Cropland"),
-        (4, "rgb(64,224,208)", "Wetland"),
-        (5, "rgb(128,128,128)", "Built-up"),
-        (6, "rgb(0,0,255)", "Water"),
-        (7, "rgb(255,255,0)", "Other"),
+        (1, "rgb(0,100,0)", "Tree cover"),
+        (2, "rgb(255,255,76)", "Grassland"),
+        (3, "rgb(240,150,255)", "Cropland"),
+        (4, "rgb(0,150,160)", "Wetland"),
+        (5, "rgb(250,0,0)", "Built-up"),
+        (6, "rgb(0,100,200)", "Water"),
+        (7, "rgb(180,180,180)", "Other"),
     ]
 
     # Build the tile URL from the incoming query parameters.
