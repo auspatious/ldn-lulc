@@ -45,14 +45,14 @@ logger.setLevel(logging.INFO)  # Our logging level.
 cmap = default_cmap.register(
     {
         "lulc": {
-            255: (255, 255, 255, 0),  # No data    — transparent
-            1: (0, 100, 0, 255),  # Tree Cover — darkgreen
-            2: (50, 205, 50, 255),  # Grassland  — limegreen
-            3: (0, 255, 0, 255),  # Cropland   — lime
-            4: (64, 224, 208, 255),  # Wetland    — turquoise
-            5: (128, 128, 128, 255),  # Built-up   — gray
-            6: (0, 0, 255, 255),  # Water      — blue
-            7: (255, 255, 0, 255),  # Other      — yellow
+            255: (255, 255, 255, 0),  # No data   — transparent
+            1: (0, 100, 0, 255),  # Tree Cover — dark green
+            2: (255, 255, 76, 255),  # Grassland  — yellow
+            3: (240, 150, 255, 255),  # Cropland   — pink
+            4: (0, 150, 160, 255),  # Wetland    — teal
+            5: (250, 0, 0, 255),  # Built-up   — red
+            6: (0, 100, 200, 255),  # Water      — blue
+            7: (180, 180, 180, 255),  # Other      — grey
         }
     }
 )
