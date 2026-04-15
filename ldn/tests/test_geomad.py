@@ -73,9 +73,10 @@ def test_set_stac_properties_datetime_same_year() -> None:
     expected_start = np.datetime_as_string(
         np.datetime64("2020", "Y"), unit="ms", timezone="UTC"
     )
+    expected_midpoint = "2020-06-30T00:00:00.000Z"
 
     assert props["start_datetime"] == expected_start
-    assert props["datetime"] == expected_start
+    assert props["datetime"] == expected_midpoint
 
 
 def test_set_stac_properties_datetime_midpoint_when_years_differ() -> None:
@@ -87,9 +88,7 @@ def test_set_stac_properties_datetime_midpoint_when_years_differ() -> None:
     result = set_stac_properties(input_xr, output_xr)
     props = result.attrs["stac_properties"]
 
-    expected_midpoint = np.datetime_as_string(
-        np.datetime64("2020", "Y"), unit="ms", timezone="UTC"
-    )
+    expected_midpoint = "2020-06-30T00:00:00.000Z"
 
     assert props["datetime"] == expected_midpoint
 
@@ -103,9 +102,7 @@ def test_set_stac_properties_datetime_three_year_span() -> None:
     result = set_stac_properties(input_xr, output_xr)
     props = result.attrs["stac_properties"]
 
-    expected_midpoint = np.datetime_as_string(
-        np.datetime64("2000", "Y"), unit="ms", timezone="UTC"
-    )
+    expected_midpoint = "2000-06-30T00:00:00.000Z"
     expected_start = np.datetime_as_string(
         np.datetime64("1999", "Y"), unit="ms", timezone="UTC"
     )
