@@ -25,10 +25,13 @@ from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
 from mangum import Mangum
 
-# from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION # Can't import these in app (ldn is not available in deployment).
-# TODO: Pass these as a parameter in deploy.sh?
-GEOMAD_VERSION = "0-0-4a"
-PREDICTION_VERSION = "0-0-3"
+GEOMAD_VERSION = os.environ.get("GEOMAD_VERSION")
+PREDICTION_VERSION = os.environ.get("PREDICTION_VERSION")
+
+if not GEOMAD_VERSION or not PREDICTION_VERSION:
+    raise ValueError(
+        "GEOMAD_VERSION and PREDICTION_VERSION environment variables must be set (e.g. to '0-0-4a' and '0-0-3')."
+    )
 
 logger = logging.getLogger(__name__)
 

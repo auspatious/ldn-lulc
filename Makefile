@@ -13,8 +13,8 @@
 VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)")
 VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)")
 # TEST_TILES is a list of tuples: (tile_id, region, {country_name: country_code}) e.g. ("089_016", "pacific", {"Cook Islands": "COK"})
-# TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
-TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] == '089_016']))")
+TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
+# TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] == '312_106']))")
 
 DECIMATED ?= --no-decimated
 
@@ -73,14 +73,7 @@ index-geomad:
 
 
 # 3. Predict LULC for the test tiles and one year (2025).
-# predict 20205 and 2024? If the Rarotonga Geomedian looks good then.
-# 2023 has the best GeoMAD data for Rarotonga.
-
 # TODO: Run for all years in future
-# Exclude Fiji antimeridian tile because there is no training data there.
-# I have run the prediction for Kiribati and Fiji tile 1 for 2023-2025.
-# TODO: Run for these 3 years for the rest of the tiles (excluding Fiji antimeridian tile because there is no training data there).
-# TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] not in ['066_022', '058_043', '063_020'] ]))")
 predict-lulc-test-tiles-a-few-years:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
@@ -123,7 +116,7 @@ make-mosaics-geomad-all-years:
 	--version-geomad $(VERSION_GEOMAD) \
 	--version-prediction $(VERSION_PREDICTION)
 # TODO: Run for all years in future
-make-mosaics-prediction-some-years:
+make-mosaics-prediction-a-few-years:
 	ldn make-mosaics \
 	--dataset prediction \
 	--years "2023-2025" \

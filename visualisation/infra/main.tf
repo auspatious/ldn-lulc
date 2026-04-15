@@ -108,13 +108,15 @@ resource "aws_lambda_function" "app" {
 
   environment {
     variables = {
-      GDAL_HTTP_MULTIPLEX             = "YES"
+      GDAL_HTTP_MULTIPLEX                = "YES"
       GDAL_HTTP_MERGE_CONSECUTIVE_RANGES = "YES"
-      GDAL_DISABLE_READDIR_ON_OPEN    = "EMPTY_DIR"
-      VSI_CACHE                       = "TRUE"
-      VSI_CACHE_SIZE                  = "536870912"
-      GDAL_CACHEMAX                   = "512"
-      PYTHONWARNINGS                  = "ignore"
+      GDAL_DISABLE_READDIR_ON_OPEN       = "EMPTY_DIR"
+      VSI_CACHE                          = "TRUE"
+      VSI_CACHE_SIZE                     = "536870912"
+      GDAL_CACHEMAX                      = "512"
+      PYTHONWARNINGS                     = "ignore"
+      GEOMAD_VERSION                     = var.geomad_version
+      PREDICTION_VERSION                 = var.prediction_version
     }
   }
 
