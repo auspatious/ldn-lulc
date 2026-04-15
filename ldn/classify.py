@@ -125,12 +125,14 @@ DEM_COLLECTION = "cop-dem-glo-30"
 
 GEOMAD_STAC_GEOPARQUET_URL = f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/{GEOMAD_VERSION}/ausp_ls_geomad.parquet"
 
+wgs84 = "EPSG:4326"
+
 
 class StacGeoparquetSearcher(Searcher):
     """Search STAC items in a STAC-Geoparquet file using rustac.
 
-    PystacSearcher targets a live STAC API. Our GeoMAD products are indexed
-    in a STAC-Geoparquet on S3, so we use rustac.search_sync instead.
+    Searches by tile ID rather than bbox to avoid globe-spanning queries
+    for antimeridian-crossing tiles.
     """
 
     def __init__(self, stac_geoparquet_url: str, datetime: str):
@@ -146,6 +148,9 @@ class StacGeoparquetSearcher(Searcher):
 
     def search(self, area: GeoDataFrame | GeoBox) -> ItemCollection:
         """Search for STAC items intersecting the area.
+
+        When the area is a GeoBox, derives the tile ID from the geobox
+        and searches by ID to avoid antimeridian wrapping issues.
 
         Args:
             area: A GeoDataFrame or GeoBox defining the search area.
@@ -166,6 +171,46 @@ class StacGeoparquetSearcher(Searcher):
 
         logger.info(f"Found {len(items)} GeoMAD items")
         return ItemCollection(items)
+
+
+class GeopolygonOdcLoader(OdcLoader):
+    """OdcLoader that uses geopolygon instead of geobox for AM-safe loading.
+
+    The standard OdcLoader passes geobox= to stac_load, which fails for
+    antimeridian-crossing tiles. This subclass converts the geobox to an
+    AM-fixed WGS84 geopolygon before loading.
+    """
+
+    def __init__(self, analysis_crs: Literal["EPSG:3832", "EPSG:6933"], **kwargs):
+        """Create a GeopolygonOdcLoader.
+
+        Args:
+            analysis_crs: The projected CRS string (either "EPSG:3832" or "EPSG:6933").
+            **kwargs: Additional arguments passed to OdcLoader.
+        """
+        super().__init__(**kwargs)
+        self._analysis_crs = analysis_crs
+
+    def load(self, items, areas):
+        """Load STAC items using geopolygon instead of geobox.
+
+        Converts the geobox to a WGS84 GeoDataFrame with AM-fixing,
+        then delegates to the parent OdcLoader.
+
+        Args:
+            items: The STAC items to load.
+            areas: A GeoBox or GeoDataFrame defining the load area.
+
+        Returns:
+            The loaded xarray Dataset or DataArray.
+        """
+        if isinstance(areas, GeoBox):
+            tile_geom = areas.extent.geom
+            tile_gdf = GeoDataFrame(geometry=[tile_geom], crs=areas.crs).to_crs(wgs84)
+            fixed = _fix_geometry(tile_gdf.geometry.iloc[0])
+            areas = GeoDataFrame(geometry=[fixed], crs=wgs84)
+
+        return super().load(items, areas)
 
 
 def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
@@ -189,7 +234,7 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     client = PyStacClient.open(DEM_CATALOG)
 
     geobox_wgs84 = GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(
-        "EPSG:4326"
+        wgs84
     )
 
     dem_items = search_across_180(geobox, client, collections=[DEM_COLLECTION])
@@ -206,8 +251,8 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
         # west longitudes to >180, concatenate, then reproject
         # with +over CRS so PROJ treats >180 as valid.
         east_bbox, west_bbox = tile_bbox
-        east_gdf = GeoDataFrame(geometry=[box(*east_bbox)], crs="EPSG:4326")
-        west_gdf = GeoDataFrame(geometry=[box(*west_bbox)], crs="EPSG:4326")
+        east_gdf = GeoDataFrame(geometry=[box(*east_bbox)], crs=wgs84)
+        west_gdf = GeoDataFrame(geometry=[box(*west_bbox)], crs=wgs84)
 
         east_items = [i for i in dem_items if i.bbox[0] >= 0]
         west_items = [i for i in dem_items if i.bbox[0] < 0]
@@ -284,6 +329,10 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
             .rename({"data": "elevation"})
         )
 
+    # Ensure the DEM carries the canonical target CRS so spatial_ref
+    # matches the GeoMAD dataset during xr.merge.
+    dem = dem.rio.write_crs(str(geobox.crs))
+
     dem_da = dem["elevation"]
     dem_vals = dem_da.values.astype("float32")
     res_m = abs(float(dem.x[1] - dem.x[0]))
@@ -307,6 +356,113 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     logger.info(f"DEM dataset shape: {dem_da.shape}")
 
     return xr.Dataset({"elevation": dem_da, "slope": slope, "aspect": aspect})
+
+
+def load_geomad_for_tile(
+    tile_id: str,
+    year: str,
+    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
+    bands: list[str] | None,
+    chunks: dict,
+    geopolygon: GeoDataFrame | None,
+) -> xr.Dataset:
+    """Search, load, scale, index, and merge GeoMAD + DEM for a tile.
+
+    This is the shared loading logic used by both the training notebook
+    (get_tile_year_geomad_dem_indices) and the prediction pipeline
+    (run_classify_task).
+
+    Searches the GeoMAD STAC-Geoparquet by tile ID (not bbox), loads
+    with geopolygon= to avoid globe-spanning loads for AM-crossing
+    tiles, clips to the tile proj:bbox, applies Landsat scaling,
+    computes spectral indices, loads DEM terrain features, and merges.
+
+    Args:
+        tile_id: Grid tile identifier (e.g. "058_043").
+        year: Year string for the GeoMAD item search (e.g. "2020").
+        analysis_crs: The expected CRS of the GeoMAD data (either "EPSG:3832" or "EPSG:6933").
+        bands: Bands to load. None means all bands except "count".
+        chunks: Dask chunking dict passed to stac_load.
+        geopolygon: GeoDataFrame used to constrain the stac_load extent.
+            Typically the buffered country geometry in WGS84 for training.
+            When None, constructed from the item proj:bbox with AM-fixing.
+
+    Returns:
+        Merged dataset with GeoMAD bands, spectral indices, elevation,
+        slope, and aspect, clipped to the tile proj:bbox.
+    """
+    geomad_items = search_sync(
+        GEOMAD_STAC_GEOPARQUET_URL,
+        ids=f"ausp_ls_geomad_{tile_id}_{year}",
+    )
+    geomad_items = [Item.from_dict(doc) for doc in geomad_items]
+    logger.info(
+        f"Found {len(geomad_items)} GeoMAD items for tile {tile_id} and year {year}"
+    )
+
+    assert len(geomad_items) == 1, (
+        f"Must find exactly 1 GeoMAD item for this tile and year, "
+        f"found {len(geomad_items)} instead."
+    )
+
+    proj_bbox = geomad_items[0].properties.get("proj:bbox")
+    logger.info(f"proj:bbox = {proj_bbox}")
+
+    if bands is None:
+        bands = [b for b in geomad_items[0].assets.keys() if b != "count"]
+    logger.info(f"Loading bands: {bands}")
+
+    if geopolygon is None:
+        # Build a WGS84 geopolygon from the tile proj:bbox with AM-fixing.
+        tile_geom = box(proj_bbox[0], proj_bbox[1], proj_bbox[2], proj_bbox[3])
+        tile_gdf = GeoDataFrame(geometry=[tile_geom], crs=analysis_crs).to_crs(wgs84)
+        fixed = _fix_geometry(tile_gdf.geometry.iloc[0])
+        geopolygon = GeoDataFrame(geometry=[fixed], crs=wgs84)
+
+    geomad_ds = stac_load(
+        geomad_items,
+        chunks=chunks,
+        bands=bands,
+        fail_on_error=False,
+        geopolygon=geopolygon,
+    )
+
+    assert geomad_ds.odc.crs.epsg == int(analysis_crs.split(":")[1]), (
+        f"GeoMAD dataset CRS (EPSG:{geomad_ds.odc.crs.epsg}) "
+        f"does not match analysis CRS ({analysis_crs})"
+    )
+    logger.info(f"GeoMAD CRS: EPSG:{geomad_ds.odc.crs.epsg}")
+    logger.info(f"GeoMAD shape: {geomad_ds.dims}")
+
+    geomad_ds = geomad_ds.squeeze()
+
+    # Clip to tile proj:bbox (the dataset may span the full country extent)
+    geomad_ds = geomad_ds.rio.clip_box(
+        minx=proj_bbox[0],
+        miny=proj_bbox[1],
+        maxx=proj_bbox[2],
+        maxy=proj_bbox[3],
+        crs=analysis_crs,
+    )
+    logger.info(f"GeoMAD shape (after tile clip): {geomad_ds.dims}")
+
+    geomad_ds = scale_offset_landsat(geomad_ds)
+    geomad_ds = calculate_indices(geomad_ds)
+
+    dem_ds = load_dem_terrain(geomad_ds.odc.geobox)
+
+    # Drop spatial_ref from DEM to avoid WKT encoding conflicts with
+    # the GeoMAD spatial_ref during merge (odc vs rioxarray encodings).
+    if "spatial_ref" in dem_ds.coords:
+        dem_ds = dem_ds.drop_vars("spatial_ref")
+
+    # Align time coordinate so xr.merge works when GeoMAD has a time dim
+    if "time" in geomad_ds.coords:
+        dem_ds = dem_ds.assign_coords(time=geomad_ds.time)
+
+    merged = xr.merge([geomad_ds, dem_ds])
+    logger.info(f"Merged GeoMAD+DEM shape: {merged.dims}")
+    return merged
 
 
 def reshape_array_to_2d(
@@ -432,7 +588,7 @@ def do_prediction(
 
 
 class LulcProcessor(Processor):
-    """Processor that scales GeoMAD data, computes indices and terrain, and runs prediction."""
+    """Processor that scales GeoMAD, computes indices, loads terrain, and predicts."""
 
     def __init__(
         self,
@@ -448,7 +604,7 @@ class LulcProcessor(Processor):
             model: Fitted scikit-learn classifier.
             nodata_value: Integer nodata value for output bands.
             probability_threshold: Probability threshold for classification.
-            logger: Optional logger instance.
+            logger: Logger instance.
         """
         super().__init__(**kwargs)
         self._model = model
@@ -460,10 +616,10 @@ class LulcProcessor(Processor):
         """Scale GeoMAD, compute indices, load DEM terrain, and predict LULC.
 
         Args:
-            input_data: GeoMAD dataset loaded by OdcLoader.
+            input_data: GeoMAD dataset loaded by GeopolygonOdcLoader.
 
         Returns:
-            Dataset with classification and lulc_probability bands.
+            Dataset with classification and probability bands.
         """
         self._logger.info("Scaling GeoMAD reflectance bands")
         scaled_data = scale_offset_landsat(input_data).squeeze(drop=True)
@@ -478,6 +634,11 @@ class LulcProcessor(Processor):
         # Load DEM aligned to the GeoMAD grid
         self._logger.info("Loading DEM and computing terrain features")
         dem_ds = load_dem_terrain(data.odc.geobox)
+
+        # Drop spatial_ref from DEM to avoid WKT encoding conflicts with
+        # the GeoMAD spatial_ref during merge (odc vs rioxarray encodings).
+        if "spatial_ref" in dem_ds.coords:
+            dem_ds = dem_ds.drop_vars("spatial_ref")
 
         # Merge GeoMAD features with terrain features
         merged = xr.merge([data, dem_ds])
@@ -562,6 +723,9 @@ def run_classify_task(
 ) -> None:
     """Run LULC prediction for a single tile and year, writing results to S3.
 
+    Uses GeopolygonOdcLoader (geopolygon= with AM-fixing instead of
+    geobox=) so antimeridian-crossing tiles load correctly.
+
     Args:
         tile_id: Grid tile identifier (e.g. "136_142").
         datetime: Year string (e.g. "2020").
@@ -578,7 +742,8 @@ def run_classify_task(
         nodata_value: Integer nodata value for output bands.
     """
     logger.info(
-        f"Starting processing. Tile ID: {tile_id}, Year: {datetime}, Region: {region}, Version: {version}."
+        f"Starting processing. Tile ID: {tile_id}, Year: {datetime}, "
+        f"Region: {region}, Version: {version}."
     )
 
     # Split by any of [",", "-", "_"] to be robust.
@@ -589,6 +754,8 @@ def run_classify_task(
             f" from tile_id '{tile_id}'"
         )
     tile_id_tuple: tuple[int, int] = (tile_id_parts[0], tile_id_parts[1])
+
+    analysis_crs = "EPSG:3832" if region == "pacific" else "EPSG:6933"
 
     logger.info("Getting gridspec and geobox for tile")
     grid = get_gridspec(region)
@@ -630,29 +797,26 @@ def run_classify_task(
         logger.info(
             f"Item already exists at {itempath.stac_path(tile_id, absolute=True)}"
         )
-        raise typer.Exit()  # Exit successfully.
+        raise typer.Exit()
 
     logger.info(
         "Either item does not exist or overwrite is True, proceeding with processing."
     )
-
-    # Search GeoMAD STAC-Geoparquet for this tile's area and year
-    logger.info("Defining GeoMAD searcher.")
 
     searcher = StacGeoparquetSearcher(
         stac_geoparquet_url=GEOMAD_STAC_GEOPARQUET_URL,
         datetime=datetime,
     )
 
-    # Load GeoMAD bands (excluding count) aligned to the tile geobox
-    logger.info("Defining ODC Loader.")
-    loader = OdcLoader(
+    # GeopolygonOdcLoader converts the geobox to an AM-fixed WGS84
+    # geopolygon before calling stac_load, so AM-crossing tiles work.
+    loader = GeopolygonOdcLoader(
+        analysis_crs=analysis_crs,
         bands=GEOMAD_BANDS,
         chunks={"x": xy_chunk_size, "y": xy_chunk_size},
-        fail_on_error=False,  # TODO: Validate this.
+        fail_on_error=False,
     )
 
-    logger.info("Defining LULC Processor.")
     processor = LulcProcessor(
         model=joblib_load(loaded_model),
         nodata_value=nodata_value,
@@ -690,117 +854,48 @@ def run_classify_task(
     )
 
 
-# get_tile_year_geomad_dem_indices and get_buffered_country are now just for the notebooks.
-# TODO: Get for a tile. Can clip to buffered country geom (for training data, not clipped for prediction).
-# Actually Alex asked to clip prediction to GADM too. TODO: Make sure prediction works with this updated function.
+# get_tile_year_geomad_dem_indices and get_buffered_country are used by the notebooks.
 def get_tile_year_geomad_dem_indices(
     tile_id: str,
     year: str,
     country_wgs84_buffered: GeoDataFrame,
     analysis_crs: str,
 ) -> xr.Dataset:
-    """Load Geomedian, GeoMAD, and DEM data for a tile (clipped to country) and compute terrain/spectral features.
+    """Load GeoMAD + DEM features for a tile, clipped to buffered country.
 
-    The function loads GeoMAD bands for a tile and year, applies
-    Landsat scaling to geomedian bands, derives spectral indices, loads Copernicus
-    DEM data aligned to the GeoMAD grid, computes slope and aspect, and clips the
-    merged dataset to the tile geometry.
+    Delegates to load_geomad_for_tile for the shared search/load/scale/
+    indices/DEM logic, then clips to the intersection of the tile extent
+    and the buffered country geometry.
 
     Args:
-        tile_id: The ID of the tile to process.
-        year: Temporal filter used for GeoMAD item search.
-        country_wgs84_buffered: The (buffered) country to clip the results to.
+        tile_id: Grid tile identifier (e.g. "058_043").
+        year: Temporal filter used for GeoMAD item search (e.g. "2020").
+        country_wgs84_buffered: Buffered country geometry in WGS84.
+        analysis_crs: Projected CRS string (e.g. "EPSG:3832").
 
     Returns:
-        An xarray Dataset containing GeoMAD bands, derived spectral indices,
-        elevation, slope, and aspect clipped to the tile geometry.
+        Dataset with GeoMAD bands, spectral indices, elevation, slope,
+        and aspect, clipped to the tile-country intersection.
     """
-    # tile_x, tile_y = tile_id.split("_")
-    # TODO: get_tile_year_geomad_dem_indices has a lot of duplicated logic with the LulcProcessor. Maybe refactor to share code?
-    # Needed for Fiji.
-    geomad_items = search_sync(
-        GEOMAD_STAC_GEOPARQUET_URL,
-        ids=f"ausp_ls_geomad_{tile_id}_{year}",
+    merged = load_geomad_for_tile(
+        tile_id=tile_id,
+        year=year,
+        analysis_crs=analysis_crs,
+        bands=None,
+        chunks={},
+        geopolygon=country_wgs84_buffered,
     )
 
-    geomad_items = [Item.from_dict(doc) for doc in geomad_items]
-    logger.info(
-        f"Found {len(geomad_items)} GeoMAD items for tile {tile_id} and year {year}"
-    )
-
-    assert len(geomad_items) == 1, (
-        f"Must find exactly 1 GeoMAD item for this tile and year, found {len(geomad_items)} instead."
-    )
-
-    proj_bbox = geomad_items[0].properties.get("proj:bbox")
-    logger.info(proj_bbox)
-
-    bands = [b for b in geomad_items[0].assets.keys() if b != "count"]
-    logger.info(f"Available bands (excluding count): {bands}")
-
-    geomad_ds = stac_load(
-        geomad_items,
-        chunks={},  # Force lazy loading.
-        bands=bands,  # Only load the bands we need (exclude count).
-        fail_on_error=False,
-        geopolygon=country_wgs84_buffered,  # constrain extent (only bbox) - prevents globe-spanning load for antimeridian-crossing tiles.
-    )
-
-    assert geomad_ds.odc.crs.epsg == int(analysis_crs.split(":")[1]), (
-        f"GeoMAD dataset CRS (EPSG:{geomad_ds.odc.crs.epsg}) does not match analysis CRS ({analysis_crs})"
-    )
-    logger.info(f"GeoMAD dataset loaded CRS (is native): EPSG:{geomad_ds.odc.crs.epsg}")
-    logger.info(f"GeoMAD bands loaded: {list(geomad_ds.data_vars)}")
-    logger.info(f"GeoMAD dataset shape: {geomad_ds.dims}")
-
-    geomad_ds = (
-        geomad_ds.squeeze()
-    )  # .load() # TODO: Why do we load here? Why not keep it lazy?
-
-    # Now clip to tile. DS is shape of country. Clip before DEM search/load for performance.
-    geomad_ds = geomad_ds.rio.clip_box(
-        minx=proj_bbox[0],
-        miny=proj_bbox[1],
-        maxx=proj_bbox[2],
-        maxy=proj_bbox[3],
-        crs=analysis_crs,
-    )
-    logger.info(f"GeoMAD dataset shape (after tile clip): {geomad_ds.dims}")
-    # return geomad_ds, proj_bbox
-
-    # Scale + indices
-    geomad_ds = scale_offset_landsat(geomad_ds)
-
-    geomad_ds = calculate_indices(geomad_ds)
-
-    dem_ds = load_dem_terrain(geomad_ds.odc.geobox)
-
-    # Merge GeoMAD (10m native) and DEM (30m, resampled to 10m GeoMAD grid) on x, y, time.
-    dem_ds = dem_ds.assign_coords(
-        time=geomad_ds.time
-    )  # Add GeoMAD time coordinate to DEM dataset so they can be merged.
-
-    merged = xr.merge([geomad_ds, dem_ds])
-
-    # Write NaN as nodata for all bands before clipping (clip fills outside pixels with 0.0 otherwise)
+    # Write NaN as nodata before clipping (clip fills outside with 0.0 otherwise)
     for var in merged.data_vars:
         merged[var] = merged[var].rio.write_nodata(float("nan"))
 
-    # Do final clip: Make a nice geom of tile and country overlap to clip with.
-    # logger.info(merged.odc.geobox.extent.geom.bounds) # (3336000.0, -1888000.0, 3432000.0, -1792000.0)
-
+    # Clip to intersection of tile extent and buffered country
     country_prj = country_wgs84_buffered.to_crs(merged.odc.geobox.crs)
-    # logger.info(country_prj.geometry.total_bounds)
-
     tile_gdf = GeoDataFrame(
         geometry=[merged.odc.geobox.extent.geom], crs=merged.odc.geobox.crs
     )
-    # logger.info(tile_gdf)
-
     tile_clipped_to_country_gdf = clip(tile_gdf, country_prj)
-    # logger.info(tile_clipped_to_country_gdf)
-    # logger.info(type(tile_clipped_to_country_gdf))
-    # logger.info(tile_clipped_to_country_gdf.total_bounds)
 
     merged = merged.rio.clip(
         tile_clipped_to_country_gdf.geometry,
@@ -809,9 +904,7 @@ def get_tile_year_geomad_dem_indices(
         drop=True,
     )
 
-    logger.info(
-        f"Merged GeoMAD/DEM dataset shape (after tile+country clip): {merged.dims}"
-    )
+    logger.info(f"Merged GeoMAD/DEM shape (after country clip): {merged.dims}")
     return merged
 
 

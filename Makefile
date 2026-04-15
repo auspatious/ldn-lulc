@@ -13,7 +13,8 @@
 VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)")
 VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)")
 # TEST_TILES is a list of tuples: (tile_id, region, {country_name: country_code}) e.g. ("089_016", "pacific", {"Cook Islands": "COK"})
-TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
+# TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
+TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] == '089_016']))")
 
 DECIMATED ?= --no-decimated
 
