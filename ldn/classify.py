@@ -195,7 +195,10 @@ class GeopolygonOdcLoader(OdcLoader):
         """Load STAC items using geopolygon instead of geobox.
 
         Converts the geobox to a WGS84 GeoDataFrame with AM-fixing,
-        then delegates to the parent OdcLoader.
+        then delegates to the parent OdcLoader. After loading, reprojects
+        to the original geobox so the output has exact tile dimensions
+        (geopolygon-based loading can pull in neighbouring tiles when the
+        WGS84 footprint slightly overlaps their extent).
 
         Args:
             items: The STAC items to load.
@@ -204,13 +207,27 @@ class GeopolygonOdcLoader(OdcLoader):
         Returns:
             The loaded xarray Dataset or DataArray.
         """
+        original_geobox = None
         if isinstance(areas, GeoBox):
+            original_geobox = areas
             tile_geom = areas.extent.geom
             tile_gdf = GeoDataFrame(geometry=[tile_geom], crs=areas.crs).to_crs(wgs84)
             fixed = _fix_geometry(tile_gdf.geometry.iloc[0])
             areas = GeoDataFrame(geometry=[fixed], crs=wgs84)
 
-        return super().load(items, areas)
+        result = super().load(items, areas)
+
+        # Reproject to the original geobox to ensure exact tile dimensions.
+        # geopolygon-based loading may return a larger extent when the WGS84
+        # footprint overlaps neighbouring STAC items at tile boundaries.
+        if original_geobox is not None and result.odc.geobox != original_geobox:
+            logger.info(
+                f"Reprojecting loaded data from {result.odc.geobox.shape} "
+                f"to target geobox {original_geobox.shape}"
+            )
+            result = result.odc.reproject(original_geobox)
+
+        return result
 
 
 def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
