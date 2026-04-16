@@ -144,9 +144,9 @@ def mask_cloud_and_shadow(
     # Add a mask for medium confidence clouds. Don't dilate them though.
     CLOUD_CONFIDENCE_SHIFT = 8
     CLOUD_CONFIDENCE_MEDIUM = 2
-    # CLOUD_CONFIDENCE_HIGH = 3
-    # TODO: replace 0b11 with a named constant for clarity.
-    cloud_confidence = (qa_pixel.astype(int) >> CLOUD_CONFIDENCE_SHIFT) & 0b11
+    # Extracts a 2-bit field (values 0-3: none, low, medium, high).
+    TWO_BIT_MASK = 3
+    cloud_confidence = (qa_pixel.astype(int) >> CLOUD_CONFIDENCE_SHIFT) & TWO_BIT_MASK
     cloud_confidence_mask = cloud_confidence >= CLOUD_CONFIDENCE_MEDIUM
 
     cloud_confidence_mask = mask_cleanup(cloud_confidence_mask, [("opening", 2)])
