@@ -35,7 +35,7 @@ from rasterio.enums import Resampling
 from shapely.geometry import box
 
 from ldn.grids import get_gadm, get_gridspec
-from ldn.utils import GEOMAD_VERSION
+from ldn.utils import GEOMAD_VERSION, get_analysis_epsg
 
 logger = logging.getLogger(__name__)
 
@@ -379,9 +379,8 @@ def load_geomad_for_tile(
     tile_id: str,
     year: str,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
-    bands: list[str] | None,
     chunks: dict,
-    geopolygon: GeoDataFrame | None,
+    geopolygon: GeoDataFrame,
 ) -> xr.Dataset:
     """Search, load, scale, index, and merge GeoMAD + DEM for a tile.
 
@@ -398,11 +397,9 @@ def load_geomad_for_tile(
         tile_id: Grid tile identifier (e.g. "058_043").
         year: Year string for the GeoMAD item search (e.g. "2020").
         analysis_crs: The expected CRS of the GeoMAD data (either "EPSG:3832" or "EPSG:6933").
-        bands: Bands to load. None means all bands except "count".
         chunks: Dask chunking dict passed to stac_load.
         geopolygon: GeoDataFrame used to constrain the stac_load extent.
             Typically the buffered country geometry in WGS84 for training.
-            When None, constructed from the item proj:bbox with AM-fixing.
 
     Returns:
         Merged dataset with GeoMAD bands, spectral indices, elevation,
@@ -413,28 +410,21 @@ def load_geomad_for_tile(
         ids=f"ausp_ls_geomad_{tile_id}_{year}",
     )
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
+    geomad_items_n = len(geomad_items)
     logger.info(
-        f"Found {len(geomad_items)} GeoMAD items for tile {tile_id} and year {year}"
+        f"Found {geomad_items_n} GeoMAD items for tile {tile_id} and year {year}"
     )
 
-    assert len(geomad_items) == 1, (
+    assert geomad_items_n == 1, (
         f"Must find exactly 1 GeoMAD item for this tile and year, "
-        f"found {len(geomad_items)} instead."
+        f"found {geomad_items_n} instead."
     )
 
     proj_bbox = geomad_items[0].properties.get("proj:bbox")
     logger.info(f"proj:bbox = {proj_bbox}")
 
-    if bands is None:
-        bands = [b for b in geomad_items[0].assets.keys() if b != "count"]
+    bands = [b for b in geomad_items[0].assets.keys() if b != "count"]
     logger.info(f"Loading bands: {bands}")
-
-    if geopolygon is None:
-        # Build a WGS84 geopolygon from the tile proj:bbox with AM-fixing.
-        tile_geom = box(proj_bbox[0], proj_bbox[1], proj_bbox[2], proj_bbox[3])
-        tile_gdf = GeoDataFrame(geometry=[tile_geom], crs=analysis_crs).to_crs(wgs84)
-        fixed = _fix_geometry(tile_gdf.geometry.iloc[0])
-        geopolygon = GeoDataFrame(geometry=[fixed], crs=wgs84)
 
     geomad_ds = stac_load(
         geomad_items,
@@ -772,7 +762,7 @@ def run_classify_task(
         )
     tile_id_tuple: tuple[int, int] = (tile_id_parts[0], tile_id_parts[1])
 
-    analysis_crs = "EPSG:3832" if region == "pacific" else "EPSG:6933"
+    analysis_crs = get_analysis_epsg(region)
 
     logger.info("Getting gridspec and geobox for tile")
     grid = get_gridspec(region)
@@ -848,7 +838,7 @@ def run_classify_task(
         logger.info("Started dask client")
         paths = Task(
             itempath=itempath,
-            id=tile_id,
+            id=tile_id,  # TODO: Check this type
             area=geobox,
             searcher=searcher,
             loader=loader,
@@ -876,7 +866,7 @@ def get_tile_year_geomad_dem_indices(
     tile_id: str,
     year: str,
     country_wgs84_buffered: GeoDataFrame,
-    analysis_crs: str,
+    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
 ) -> xr.Dataset:
     """Load GeoMAD + DEM features for a tile, clipped to buffered country.
 
@@ -898,7 +888,6 @@ def get_tile_year_geomad_dem_indices(
         tile_id=tile_id,
         year=year,
         analysis_crs=analysis_crs,
-        bands=None,
         chunks={},
         geopolygon=country_wgs84_buffered,
     )
@@ -925,9 +914,11 @@ def get_tile_year_geomad_dem_indices(
     return merged
 
 
-# Dep tools utils have mask_to_gadm() but I want to buffer gadm.
+# Dep tools utils have mask_to_gadm() which would be helpful, but I want to buffer gadm before masking.
 def get_buffered_country(
-    country_of_interest: dict, wgs84: str, analysis_crs: str
+    country_of_interest: dict,
+    wgs84: str,
+    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
 ) -> GeoDataFrame:
     """Fetch and buffer a country geometry for analysis (antimeridian-fixed).
 
@@ -953,7 +944,6 @@ def get_buffered_country(
         crs=wgs84,
     )
     # Do antimeridian fix. Needed for Fiji.
-    # _fix_geometry takes Shapely geometry and returns Shapely geometry — no mapping() needed.
     rows = []
     for geom in country_gadm.geometry:
         fixed = _fix_geometry(geom)

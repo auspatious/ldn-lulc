@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
 
 logger = logging.getLogger(__name__)
@@ -91,3 +92,18 @@ TEST_TILES = [
 
 GEOMAD_VERSION = "0-0-4a"
 PREDICTION_VERSION = "0-0-3"
+
+training_data_year = "2020"
+
+class_attr = "lulc"
+
+wgs84 = "EPSG:4326"
+
+
+def get_analysis_epsg(
+    region: Literal["pacific", "non-pacific"],
+) -> Literal["EPSG:3832", "EPSG:6933"]:
+    if region == "pacific":
+        return "EPSG:3832"
+    else:
+        return "EPSG:6933"

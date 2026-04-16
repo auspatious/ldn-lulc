@@ -164,11 +164,6 @@ def geomad(
     For years in the Landsat 7 era (<=2012), a buffered temporal window
     controlled by --ls7-buffer-years is used to gather enough clear
     observations. Pacific tiles may additionally include Tier 2 data.
-
-    Example:
-
-        ldn geomad --tile-id 136_142 --year 2025 --version 0.0.0 \
-            --overwrite --decimated --no-all-bands --region pacific
     """
     logger.info(
         f"tile={tile_id} year={year} version={version} region={region} overwrite={overwrite} decimated={decimated} "
@@ -258,7 +253,13 @@ def geomad(
     loader = OdcLoader(
         bands=LANDSAT_BANDS
         if all_bands
-        else ["red", "green", "blue", "qa_pixel", "qa_radsat"],
+        else [
+            "red",
+            "green",
+            "blue",
+            "qa_pixel",
+            "qa_radsat",
+        ],  # Exclude NIR and 2 SWIR bands.
         chunks={"x": xy_chunk_size, "y": xy_chunk_size, "time": 1},
         groupby="solar_day",
         nodata=0,
@@ -304,7 +305,7 @@ def geomad(
         ):
             paths = Task(
                 itempath=itempath,
-                id=tile_index,
+                id=tile_index,  # TODO: Check this type
                 area=geobox,
                 searcher=searcher,
                 loader=loader,

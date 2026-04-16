@@ -11,7 +11,7 @@ from dep_tools.searchers import Searcher
 from dep_tools.stac_utils import StacCreator
 from dep_tools.task import AreaTask
 from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
-from geopandas import GeoDataFrame
+from odc.geo import GeoBox
 import numpy as np
 from odc.algo import mask_cleanup
 from xarray import DataArray, Dataset
@@ -82,6 +82,9 @@ def mask_nodata(xr: Dataset | DataArray, nodata_value: int = 0) -> Dataset | Dat
     """
     Mask out nodata pixels and fill pixels using qa_pixel bit 0.
     """
+
+    # TODO: Need to only apply the where function to the visual bands. Don't mask the qa_pixel band.
+
     filter_bands = ["red", "green", "blue"]
     for band in filter_bands:
         if band in xr.data_vars:
@@ -136,6 +139,7 @@ def mask_cloud_and_shadow(
     CLOUD_CONFIDENCE_SHIFT = 8
     CLOUD_CONFIDENCE_MEDIUM = 2
     # CLOUD_CONFIDENCE_HIGH = 3
+    # TODO: replace 0b11 with a named constant for clarity.
     cloud_confidence = (qa_pixel.astype(int) >> CLOUD_CONFIDENCE_SHIFT) & 0b11
     cloud_confidence_mask = cloud_confidence >= CLOUD_CONFIDENCE_MEDIUM
 
@@ -180,7 +184,6 @@ def mask_nodata_clouds_saturated(
         filters: Morphological filter sequence applied to the cloud mask only.
         include_shadow: Whether to include cloud shadow (qa_pixel bit 4).
     """
-    # TODO: Experiment with performance.
     xr = mask_nodata(xr)
 
     xr = mask_cloud_and_shadow(xr, filters=filters, include_shadow=include_shadow)
@@ -188,7 +191,8 @@ def mask_nodata_clouds_saturated(
     xr = mask_saturated(xr)
 
     # return erase_bad(xr, combined_mask)
-    return xr  # TODO: This might be less performant than the erase_bad approach.
+    # Performance seems fine using this method (compared to erase_bad), but could be checked more closely.
+    return xr
 
 
 class GeoMADProcessor(Processor):
@@ -247,8 +251,8 @@ class AwsStacTask(AreaTask):
     def __init__(
         self,
         itempath: S3ItemPath,
-        id: str,
-        area: GeoDataFrame,  # TODO: This is a GeoBox, not a GeoDataFrame.
+        id: str,  # TODO: Check this type. str or tuple?
+        area: GeoBox,
         searcher: Searcher,
         loader: StacLoader,
         processor: Processor,
