@@ -5,7 +5,7 @@ from cogeo_mosaic.mosaic import MosaicJSON
 from typer.testing import CliRunner
 
 from ldn.cli import _stac_self_link, _build_mosaic_for_year, app
-from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION
+from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION, LdnError
 
 
 runner = CliRunner()
@@ -81,7 +81,7 @@ def test_build_mosaic_for_year_raises_on_empty(mock_item_collection, mock_search
     mock_search.return_value = []
     mock_item_collection.return_value = []
 
-    with pytest.raises(ValueError, match="No STAC items found for year 2020"):
+    with pytest.raises(LdnError, match="No STAC items found for year 2020"):
         _build_mosaic_for_year("2020", "https://example.com/stac.parquet")
 
 
