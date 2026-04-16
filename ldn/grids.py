@@ -49,9 +49,9 @@ def get_gadm(
     # If no local file or overwrite requested, download everything and return early.
     if not GADM_FILE.exists() or overwrite:
         logger.info(
-            "Overwrite is True or GADM file does not exist — downloading GADM data for all countries."
+            f"Overwrite is True or GADM file does not exist — downloading GADM data for requested countries ({', '.join(requested_countries)})."
         )
-        all_gadm = do_get_gadm(ALL_COUNTRIES)
+        all_gadm = do_get_gadm(countries)
         all_gadm.to_file(GADM_FILE, driver="GPKG")
         return all_gadm[all_gadm["GID_0"].isin(requested_countries)]
 

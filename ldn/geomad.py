@@ -14,7 +14,7 @@ from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from odc.geo import GeoBox
 import numpy as np
 from odc.algo import mask_cleanup
-from xarray import DataArray, Dataset
+from xarray import Dataset
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +47,7 @@ def http_to_s3_url(http_url):
     return s3_url
 
 
-def set_stac_properties(
-    input_xr: DataArray | Dataset, output_xr: DataArray | Dataset
-) -> Dataset | DataArray:
+def set_stac_properties(input_xr: Dataset, output_xr: Dataset) -> Dataset:
     start_year = np.datetime64(input_xr.time.min().values, "Y")
     end_year = np.datetime64(input_xr.time.max().values, "Y")
     start_year_index = int(start_year.astype("int64"))
@@ -61,12 +59,8 @@ def set_stac_properties(
     )
 
     midpoint_year_index = (start_year_index + end_year_index) // 2
-    midpoint_year = np.datetime64("1970", "Y") + np.timedelta64(
-        midpoint_year_index, "Y"
-    )
-    midpoint_datetime = _to_utc_ms_string(
-        midpoint_year + np.timedelta64(181, "D")
-    )  # June 30th
+    midpoint_year = 1970 + midpoint_year_index
+    midpoint_datetime = f"{midpoint_year}-06-30T00:00:00.000Z"
 
     output_xr.attrs["stac_properties"] = dict(
         start_datetime=start_datetime,
@@ -78,7 +72,7 @@ def set_stac_properties(
     return output_xr
 
 
-def mask_nodata(xr: Dataset | DataArray, nodata_value: int = 0) -> Dataset | DataArray:
+def mask_nodata(xr: Dataset, nodata_value: int = 0) -> Dataset:
     """
     Mask out nodata pixels and fill pixels using qa_pixel bit 0.
     """
@@ -101,19 +95,19 @@ def mask_nodata(xr: Dataset | DataArray, nodata_value: int = 0) -> Dataset | Dat
 
 
 def mask_cloud_and_shadow(
-    xr: Dataset | DataArray,
+    xr: Dataset,
     filters: Iterable[Tuple[str, int]] | None = None,
     include_shadow: bool = True,
     nodata_value: int = 0,
-) -> Dataset | DataArray:
+) -> Dataset:
     """
     Mask out cloud, cirrus, and optionally shadow pixels using qa_pixel bits.
     Args:
-        xr: Input xarray Dataset or DataArray.
+        xr: Input xarray Dataset.
         filters: Morphological filter sequence applied to the cloud mask only.
         include_shadow: Whether to include cloud shadow (qa_pixel bit 4).
     Returns:
-        Masked xarray Dataset or DataArray.
+        Masked xarray Dataset.
     """
     DILATED_CLOUD = 1
     CIRRUS = 2
@@ -149,9 +143,7 @@ def mask_cloud_and_shadow(
     return xr.where(~(cloud_mask | cloud_confidence_mask), other=nodata_value)
 
 
-def mask_saturated(
-    xr: Dataset | DataArray, nodata_value: int = 0
-) -> Dataset | DataArray:
+def mask_saturated(xr: Dataset, nodata_value: int = 0) -> Dataset:
     if "qa_radsat" in xr.data_vars:
         # Must use other here so uint16 values don't get converted to float32 with nan.
         xr = xr.where(xr.qa_radsat == 0, other=nodata_value)
@@ -167,10 +159,10 @@ def mask_saturated(
 
 
 def mask_nodata_clouds_saturated(
-    xr: Dataset | DataArray,  # TODO: Type this to DataArray?
+    xr: Dataset,
     filters: Iterable[Tuple[str, int]] | None = None,
     include_shadow: bool = True,
-) -> Dataset | DataArray:
+) -> Dataset:
     # Only valid for LS8 and LS9, but we can still apply
     # it to LS7 data without error, it just won't mask anything.
     """Mask clouds, shadows, fill, and saturated pixels from Landsat data.
@@ -222,7 +214,7 @@ class GeoMADProcessor(Processor):
         self.preprocessor = preprocessor
         self.mask_kwargs = mask_clouds_kwargs
 
-    def process(self, xr: DataArray) -> Dataset:
+    def process(self, xr: Dataset) -> Dataset:
         if xr.time.size < self.min_timesteps:
             raise EmptyCollectionError(
                 f"{xr.time.size} is less than {self.min_timesteps} timesteps"

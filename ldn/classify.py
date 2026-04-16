@@ -256,10 +256,14 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
 
     dem_items = search_across_180(geobox, client, collections=[DEM_COLLECTION])
     logger.info(f"Found {len(dem_items)} DEM items")
-    assert len(dem_items) > 0, "Must find at least 1 DEM item."
-    assert len(dem_items) < 30, (
-        "No world-spanning DEMs, should be a small number of tiles (~4)."
-    )
+    if len(dem_items) == 0:
+        raise EmptyCollectionError(
+            "No DEM items found for the tile. This should not happen since COP-DEM-GLO-30 is global."
+        )
+    if len(dem_items) >= 10:
+        raise ValueError(
+            f"Too many DEM items found for the tile ({len(dem_items)}). This should only return a small number of tiles (~4), otherwise the data is probably world-spanning."
+        )
 
     tile_bbox = bbox_across_180(geobox_wgs84)
 
@@ -405,6 +409,9 @@ def load_geomad_for_tile(
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
+    logging.info(
+        f"Searching for GeoMAD item for tile {tile_id} and year {year}, using latest version {GEOMAD_VERSION}"
+    )
     geomad_items = search_sync(
         GEOMAD_STAC_GEOPARQUET_URL,
         ids=f"ausp_ls_geomad_{tile_id}_{year}",
@@ -415,10 +422,11 @@ def load_geomad_for_tile(
         f"Found {geomad_items_n} GeoMAD items for tile {tile_id} and year {year}"
     )
 
-    assert geomad_items_n == 1, (
-        f"Must find exactly 1 GeoMAD item for this tile and year, "
-        f"found {geomad_items_n} instead."
-    )
+    if geomad_items_n != 1:
+        raise ValueError(
+            f"Must find exactly 1 GeoMAD item for this tile and year, "
+            f"found {geomad_items_n} instead."
+        )
 
     proj_bbox = geomad_items[0].properties.get("proj:bbox")
     logger.info(f"proj:bbox = {proj_bbox}")
@@ -434,10 +442,11 @@ def load_geomad_for_tile(
         geopolygon=geopolygon,
     )
 
-    assert geomad_ds.odc.crs.epsg == int(analysis_crs.split(":")[1]), (
-        f"GeoMAD dataset CRS (EPSG:{geomad_ds.odc.crs.epsg}) "
-        f"does not match analysis CRS ({analysis_crs})"
-    )
+    if geomad_ds.odc.crs.epsg != int(analysis_crs.split(":")[1]):
+        raise ValueError(
+            f"GeoMAD dataset CRS (EPSG:{geomad_ds.odc.crs.epsg}) "
+            f"does not match analysis CRS ({analysis_crs})"
+        )
     logger.info(f"GeoMAD CRS: EPSG:{geomad_ds.odc.crs.epsg}")
     logger.info(f"GeoMAD shape: {geomad_ds.dims}")
 
@@ -753,6 +762,16 @@ def run_classify_task(
         f"Region: {region}, Version: {version}."
     )
 
+    if version_geomad != GEOMAD_VERSION:
+        logger.info(
+            "Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
+        )
+        geomad_stac_geoparquet_url = GEOMAD_STAC_GEOPARQUET_URL.replace(
+            GEOMAD_VERSION, version_geomad
+        )
+    else:
+        geomad_stac_geoparquet_url = GEOMAD_STAC_GEOPARQUET_URL
+
     # Split by any of [",", "-", "_"] to be robust.
     tile_id_parts = [int(i) for i in re.split(r"[,\-_]", tile_id)]
     if len(tile_id_parts) != 2:
@@ -811,7 +830,7 @@ def run_classify_task(
     )
 
     searcher = StacGeoparquetSearcher(
-        stac_geoparquet_url=GEOMAD_STAC_GEOPARQUET_URL,
+        stac_geoparquet_url=geomad_stac_geoparquet_url,
         datetime=datetime,
     )
 

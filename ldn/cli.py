@@ -97,8 +97,10 @@ def print_tasks(
     else:
         years_list = [years]
 
-    assert len(years_list) > 0, "No years provided"
-    assert all(y.isdigit() for y in years_list), "Years must be integers"
+    if len(years_list) == 0:
+        raise ValueError("Must provide at least one year.")
+    if not all(y.isdigit() for y in years_list):
+        raise ValueError("Years must be integers")
 
     tiles = get_grid_tiles(format="list", grids=grids, overwrite=False)
 
@@ -392,15 +394,13 @@ def _load_stac_docs(
 @app.command("index-to-stac-geoparquet")
 def _index_to_stac_geoparquet(
     prefix: str = typer.Option(
-        "ausp_ls_lulc_prediction",
+        ...,
         help="S3 path prefix to search for STAC items to index (e.g. for a given dataset).",
     ),
     output_filename: str = typer.Option(
-        "ausp_ls_lulc_prediction", help="Output filename for the STAC-Geoparquet index."
+        ..., help="Output filename for the STAC-Geoparquet index."
     ),
-    version: str = typer.Option(
-        GEOMAD_VERSION, help=f"Dataset version string e.g. '{GEOMAD_VERSION}'."
-    ),
+    version: str = typer.Option(..., help="Dataset version string e.g. '0-0-1'."),
     bucket: str = typer.Option(
         "data.ldn.auspatious.com", help="S3 bucket containing STAC items."
     ),
