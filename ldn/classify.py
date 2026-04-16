@@ -21,6 +21,7 @@ from dep_tools.stac_utils import StacCreator
 from dep_tools.task import AwsStacTask as Task
 from geopandas import GeoDataFrame, clip
 from joblib import load as joblib_load
+from sklearn.ensemble import RandomForestClassifier
 from odc.geo.geobox import GeoBox
 from odc.stac import configure_s3_access
 from odc.stac import load as stac_load
@@ -539,7 +540,10 @@ def probability_binary(
 
 
 def do_prediction(
-    ds: xr.Dataset, model, probability_threshold: float, nodata_value: int
+    ds: xr.Dataset,
+    model: RandomForestClassifier,
+    probability_threshold: float,
+    nodata_value: int,
 ) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
     """Run random forest prediction and extract target class probability.
 
@@ -608,7 +612,7 @@ class LulcProcessor(Processor):
 
     def __init__(
         self,
-        model,
+        model: RandomForestClassifier,
         logger: logging.Logger,
         probability_threshold: float,
         nodata_value: int,
@@ -617,7 +621,7 @@ class LulcProcessor(Processor):
         """Create a LULC prediction processor.
 
         Args:
-            model: Fitted scikit-learn classifier.
+            model: Fitted scikit-learn RandomForestClassifier.
             nodata_value: Integer nodata value for output bands.
             probability_threshold: Probability threshold for classification.
             logger: Logger instance.
