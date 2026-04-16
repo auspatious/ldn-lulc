@@ -90,6 +90,26 @@ TEST_TILES = [
     ("089_016", "pacific", {"Cook Islands": "COK"}),
 ]
 
+TEST_TILES_PACIFIC = [
+    # Already ran a tile for these (in TEST_TILES):
+    # Cook Islands
+    # Fiji
+    # Kiribati
+    # New ones to run:
+    # Selecting the main island of each country.
+    ("051_052", "pacific", {"Marshall Islands": "MHL"}),  # Kwajalein Atoll
+    ("040_049", "pacific", {"Micronesia": "FSM"}),  # Pohnpei
+    ("050_041", "pacific", {"Nauru": "NRU"}),
+    ("077_019", "pacific", {"Niue": "NIU"}),
+    ("013_050", "pacific", {"Palau": "PLW"}),
+    ("028_030", "pacific", {"Papua New Guinea": "PNG"}),
+    ("075_025", "pacific", {"Samoa": "WSM"}),
+    ("042_030", "pacific", {"Solomon Islands": "SLB"}),
+    ("071_016", "pacific", {"Tonga": "TON"}),
+    ("065_031", "pacific", {"Tuvalu": "TUV"}),
+    ("052_021", "pacific", {"Vanuatu": "VUT"}),
+]
+
 GEOMAD_VERSION = "0-0-4a"
 PREDICTION_VERSION = "0-0-3"
 
