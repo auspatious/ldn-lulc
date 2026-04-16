@@ -107,3 +107,8 @@ def get_analysis_epsg(
         return "EPSG:3832"
     else:
         return "EPSG:6933"
+
+
+# Our custom exception class for the project. Good for filtering errors in processing.
+class LdnError(Exception):
+    """Base exception for the ldn-lulc project."""

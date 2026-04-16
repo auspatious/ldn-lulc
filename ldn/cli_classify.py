@@ -4,7 +4,7 @@ from typing import Literal
 import typer
 
 from ldn.classify import run_classify_task
-from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION
+from ldn.utils import GEOMAD_VERSION, LdnError, PREDICTION_VERSION
 
 classify_app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ def _train_model() -> None:
     # 4. Write model to S3.
 
     # TODO: Adapt from notebooks/training_data/1_Train_Predict.ipynb.
-    raise NotImplementedError("This command is not implemented yet.")
+    raise LdnError("This command is not implemented yet.")
 
 
 @classify_app.command("classify")
@@ -67,7 +67,7 @@ def _classify(
     ),
 ) -> None:
     if int(year) < 2000 or int(year) > 2025:
-        raise ValueError("Year must be between 2000 and 2025.")
+        raise LdnError("Year must be between 2000 and 2025.")
 
     run_classify_task(
         tile_id,

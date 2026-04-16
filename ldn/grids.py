@@ -4,7 +4,7 @@ from typing import Literal
 
 import pandas as pd
 import geopandas as gpd
-from ldn.utils import ALL_COUNTRIES
+from ldn.utils import ALL_COUNTRIES, LdnError
 
 from odc.geo.geom import Geometry
 
@@ -144,10 +144,10 @@ def get_grid_tiles(
     where label is "x_index_y_index".
     """
     if format not in ["list", "gdf"]:
-        raise ValueError("Invalid format. Must be 'list' or 'gdf'.")
+        raise LdnError("Invalid format. Must be 'list' or 'gdf'.")
 
     if grids not in ["all", "pacific", "non-pacific"]:
-        raise ValueError(
+        raise LdnError(
             "Invalid grids value. Must be 'all', 'pacific', or 'non-pacific'."
         )
 
@@ -174,7 +174,7 @@ def get_grid_tiles(
             for country, code in countries.items():
                 selection = gadm[gadm["GID_0"] == code]
                 if selection.empty:
-                    raise ValueError(
+                    raise LdnError(
                         f"No geometry found for country: {country} with code {code}. Check get_gadm has been run for all countries with overwrite on."
                     )
                 polygon = Geometry(selection.geometry.union_all(), crs=gadm.crs)
@@ -239,7 +239,7 @@ def get_grid_tiles(
 
     all_tiles_df = pd.concat(grid_dfs)
     if all_tiles_df.empty:
-        raise ValueError("No tiles found for the requested grids and countries.")
+        raise LdnError("No tiles found for the requested grids and countries.")
 
     all_tiles_gdf = gpd.GeoDataFrame(all_tiles_df, geometry="geometry", crs="epsg:4326")
 

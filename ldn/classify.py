@@ -35,7 +35,7 @@ from rasterio.enums import Resampling
 from shapely.geometry import box
 
 from ldn.grids import get_gadm, get_gridspec
-from ldn.utils import GEOMAD_VERSION, get_analysis_epsg
+from ldn.utils import GEOMAD_VERSION, LdnError, get_analysis_epsg
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ class StacGeoparquetSearcher(Searcher):
         items = [Item.from_dict(doc) for doc in raw]
 
         if len(items) == 0:
-            raise EmptyCollectionError()
+            raise LdnError("No GeoMAD items found")
 
         logger.info(f"Found {len(items)} GeoMAD items")
         return ItemCollection(items)
@@ -257,11 +257,11 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     dem_items = search_across_180(geobox, client, collections=[DEM_COLLECTION])
     logger.info(f"Found {len(dem_items)} DEM items")
     if len(dem_items) == 0:
-        raise EmptyCollectionError(
+        raise LdnError(
             "No DEM items found for the tile. This should not happen since COP-DEM-GLO-30 is global."
         )
     if len(dem_items) >= 10:
-        raise ValueError(
+        raise LdnError(
             f"Too many DEM items found for the tile ({len(dem_items)}). This should only return a small number of tiles (~4), otherwise the data is probably world-spanning."
         )
 
@@ -423,7 +423,7 @@ def load_geomad_for_tile(
     )
 
     if geomad_items_n != 1:
-        raise ValueError(
+        raise LdnError(
             f"Must find exactly 1 GeoMAD item for this tile and year, "
             f"found {geomad_items_n} instead."
         )
@@ -443,7 +443,7 @@ def load_geomad_for_tile(
     )
 
     if geomad_ds.odc.crs.epsg != int(analysis_crs.split(":")[1]):
-        raise ValueError(
+        raise LdnError(
             f"GeoMAD dataset CRS (EPSG:{geomad_ds.odc.crs.epsg}) "
             f"does not match analysis CRS ({analysis_crs})"
         )
@@ -567,7 +567,7 @@ def do_prediction(
     # Validate that all model features are present before reindexing.
     missing = set(model.feature_names_in_) - set(obs.columns)
     if missing:
-        raise ValueError(
+        raise LdnError(
             f"Dataset is missing features required by the model: {sorted(missing)}"
         )
     obs = obs.reindex(columns=model.feature_names_in_)
@@ -709,7 +709,7 @@ def _load_joblib_model(model_path: str):
         model = model_path
 
     else:
-        raise ValueError(
+        raise LdnError(
             f"Model path must be a '.joblib' file or a URL to a '.joblib' file,"
             f" not {model_path}"
         )
@@ -719,7 +719,7 @@ def _load_joblib_model(model_path: str):
         return model
     except Exception as e:
         logger.exception(f"Failed to load model from {model}: {e}")
-        raise typer.Exit(code=1)
+        raise LdnError(f"Failed to load model from {model}") from e
 
 
 def run_classify_task(
@@ -775,7 +775,7 @@ def run_classify_task(
     # Split by any of [",", "-", "_"] to be robust.
     tile_id_parts = [int(i) for i in re.split(r"[,\-_]", tile_id)]
     if len(tile_id_parts) != 2:
-        raise ValueError(
+        raise LdnError(
             f"Tile ID must split into 2 integers, got {tile_id_parts}"
             f" from tile_id '{tile_id}'"
         )
@@ -823,7 +823,9 @@ def run_classify_task(
         logger.info(
             f"Item already exists at {itempath.stac_path(tile_id, absolute=True)}"
         )
-        raise typer.Exit()
+        raise LdnError(
+            f"Item already exists at {itempath.stac_path(tile_id, absolute=True)}"
+        )
 
     logger.info(
         "Either item does not exist or overwrite is True, proceeding with processing."
@@ -867,10 +869,10 @@ def run_classify_task(
         ).run()
     except EmptyCollectionError:
         logger.exception("No items found for this tile")
-        raise typer.Exit(code=1)
+        raise LdnError("No items found for this tile")
     except Exception as e:
         logger.exception(f"Failed to process with error: {e}")
-        raise typer.Exit(code=1)
+        raise LdnError(f"Failed to process tile {tile_id}") from e
     finally:
         dask_client.close()
 

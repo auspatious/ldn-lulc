@@ -3,7 +3,6 @@ import logging
 from typing import Iterable, Tuple
 
 from datacube_compute import geomedian_with_mads
-from dep_tools.exceptions import EmptyCollectionError
 from dep_tools.loaders import StacLoader
 from dep_tools.namers import S3ItemPath
 from dep_tools.processors import Processor
@@ -15,6 +14,7 @@ from odc.geo import GeoBox
 import numpy as np
 from odc.algo import mask_cleanup
 from xarray import Dataset
+from ldn.utils import LdnError
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +216,7 @@ class GeoMADProcessor(Processor):
 
     def process(self, xr: Dataset) -> Dataset:
         if xr.time.size < self.min_timesteps:
-            raise EmptyCollectionError(
+            raise LdnError(
                 f"{xr.time.size} is less than {self.min_timesteps} timesteps"
             )
 

@@ -40,7 +40,7 @@ from ldn import get_version
 from ldn.cli_grid import cli_grid_app
 from ldn.cli_classify import classify_app
 from ldn.grids import get_gridspec
-from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION
+from ldn.utils import GEOMAD_VERSION, LdnError, PREDICTION_VERSION
 
 app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -98,9 +98,9 @@ def print_tasks(
         years_list = [years]
 
     if len(years_list) == 0:
-        raise ValueError("Must provide at least one year.")
+        raise LdnError("Must provide at least one year.")
     if not all(y.isdigit() for y in years_list):
-        raise ValueError("Years must be integers")
+        raise LdnError("Years must be integers")
 
     tiles = get_grid_tiles(format="list", grids=grids, overwrite=False)
 
@@ -157,7 +157,7 @@ def geomad(
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
 ) -> None:
-    """Run GeoMAD processing on a single Landsat tile.
+    """Run GeoMAD processing on a single tile for a year.
 
     Searches USGS STAC for Landsat scenes covering the given tile and year,
     applies cloud masking, computes the geometric median and median absolute
@@ -236,7 +236,7 @@ def geomad(
     # If we don't want to overwrite, and the destination file already exists, skip it
     if not overwrite and object_exists(bucket, stac_key, client=client):
         typer.echo(f"Item already exists at {stac_document}")
-        raise typer.Exit()  # Exit successfully.
+        raise LdnError(f"Item already exists at {stac_document}")
     else:
         if not overwrite:
             typer.echo(f"Item does not exist at {stac_document}, processing tile.")
@@ -318,10 +318,10 @@ def geomad(
             typer.echo(f"Wrote {len(paths)} files...")
     except EmptyCollectionError:
         typer.echo("No items found for this tile")
-        raise typer.Exit(code=1)
+        raise LdnError("No items found for this tile")
     except Exception as e:
         typer.echo(f"Failed to process with error: {e}")
-        raise typer.Exit(code=1)
+        raise LdnError("Failed to process tile") from e
 
     typer.echo(f"Finished writing to {stac_document}")
 
@@ -416,7 +416,7 @@ def _index_to_stac_geoparquet(
 
     if len(keys) == 0:
         logger.warning("No STAC items found, nothing to index.")
-        raise typer.Exit(code=1)
+        raise LdnError("No STAC items found, nothing to index.")
 
     logger.info("Loading STAC item documents into memory")
     docs = _load_stac_docs(bucket, keys, aws_region)
@@ -434,7 +434,7 @@ def _stac_self_link(feature: dict) -> str:
     links = {link["rel"]: link["href"] for link in feature.get("links", [])}
     self_link = links.get("self")
     if self_link is None:
-        raise ValueError(
+        raise LdnError(
             f"Feature {feature.get('id', 'unknown')} has no self link, cannot determine STAC item URL."
         )
     return self_link
@@ -459,7 +459,7 @@ def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
     features = [f.to_dict() for f in items]
 
     if not features:
-        raise ValueError(f"No STAC items found for year {year}")
+        raise LdnError(f"No STAC items found for year {year}")
 
     logger.info(f"  {len(features)} features found")
 
@@ -517,7 +517,7 @@ def make_mosaics(
         years_list = [y.strip() for y in years.split(",")]
 
     if any(int(y) < 2000 for y in years_list) or any(int(y) > 2025 for y in years_list):
-        raise ValueError("Years must be between 2000 and 2025 inclusive.")
+        raise LdnError("Years must be between 2000 and 2025 inclusive.")
 
     # MosaicBackend needs s3:// style paths.
     output_path_geomad = (
