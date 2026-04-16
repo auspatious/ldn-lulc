@@ -72,30 +72,42 @@ def set_stac_properties(input_xr: Dataset, output_xr: Dataset) -> Dataset:
     return output_xr
 
 
-def mask_nodata(xr: Dataset, nodata_value: int = 0) -> Dataset:
+# TODO: In version 0-0-5, need to test this because it's been refactored to preserve QA bands and only apply masking to spectral bands.
+def mask_nodata(ds: Dataset, nodata_value: int = 0) -> Dataset:
+    """Mask nodata and fill pixels, preserving QA bands.
+
+    Applies masking only to spectral bands so that qa_pixel and
+    qa_radsat retain their original values for downstream use.
+
+    Args:
+        ds: Input dataset with Landsat bands.
+        nodata_value: Value used to identify and fill nodata pixels.
+
+    Returns:
+        Dataset with spectral bands masked, QA bands unchanged.
     """
-    Mask out nodata pixels and fill pixels using qa_pixel bit 0.
-    """
+    qa_bands = {"qa_pixel", "qa_radsat"}
+    spectral_bands = [b for b in ds.data_vars if b not in qa_bands]
 
-    # TODO: Need to only apply the where function to the visual bands. Don't mask the qa_pixel band.
+    # Combine nodata from all spectral bands into a single mask.
+    nodata_mask = np.zeros_like(ds[spectral_bands[0]], dtype=bool)
+    for band in spectral_bands:
+        nodata_mask = nodata_mask | (ds[band] == nodata_value)
 
-    filter_bands = ["red", "green", "blue"]
-    for band in filter_bands:
-        if band in xr.data_vars:
-            # Must use other here so uint16 values don't get converted to float32 with nan.
-            xr = xr.where(xr[band] != nodata_value, other=nodata_value)
-
-    if "qa_pixel" in xr.data_vars:
+    if "qa_pixel" in ds.data_vars:
         FILL = 0
-        fill_mask = (xr["qa_pixel"].astype(int) & (1 << FILL)) != 0
-        # Must use other here so uint16 values don't get converted to float32 with nan.
-        xr = xr.where(~fill_mask, other=nodata_value)
+        fill_mask = (ds["qa_pixel"].astype(int) & (1 << FILL)) != 0
+        nodata_mask = nodata_mask | fill_mask
 
-    return xr
+    for sband in spectral_bands:
+        # Must use other here so uint16 values don't get converted to float32 with nan.
+        ds[sband] = ds[sband].where(~nodata_mask, other=nodata_value)
+
+    return ds
 
 
 def mask_cloud_and_shadow(
-    xr: Dataset,
+    ds: Dataset,
     filters: Iterable[Tuple[str, int]] | None = None,
     include_shadow: bool = True,
     nodata_value: int = 0,
@@ -103,7 +115,7 @@ def mask_cloud_and_shadow(
     """
     Mask out cloud, cirrus, and optionally shadow pixels using qa_pixel bits.
     Args:
-        xr: Input xarray Dataset.
+        ds: Input xarray Dataset.
         filters: Morphological filter sequence applied to the cloud mask only.
         include_shadow: Whether to include cloud shadow (qa_pixel bit 4).
     Returns:
@@ -122,7 +134,7 @@ def mask_cloud_and_shadow(
     for field in cloud_fields:
         cloud_bitmask |= 1 << field
 
-    qa_pixel = xr["qa_pixel"] if "qa_pixel" in xr.data_vars else xr.qa_pixel
+    qa_pixel = ds["qa_pixel"] if "qa_pixel" in ds.data_vars else ds.qa_pixel
     cloud_mask = (qa_pixel.astype(int) & cloud_bitmask) != 0
 
     if filters is not None:
@@ -140,26 +152,26 @@ def mask_cloud_and_shadow(
     cloud_confidence_mask = mask_cleanup(cloud_confidence_mask, [("opening", 2)])
 
     # Must use other here so uint16 values don't get converted to float32 with nan.
-    return xr.where(~(cloud_mask | cloud_confidence_mask), other=nodata_value)
+    return ds.where(~(cloud_mask | cloud_confidence_mask), other=nodata_value)
 
 
-def mask_saturated(xr: Dataset, nodata_value: int = 0) -> Dataset:
-    if "qa_radsat" in xr.data_vars:
+def mask_saturated(ds: Dataset, nodata_value: int = 0) -> Dataset:
+    if "qa_radsat" in ds.data_vars:
         # Must use other here so uint16 values don't get converted to float32 with nan.
-        xr = xr.where(xr.qa_radsat == 0, other=nodata_value)
+        ds = ds.where(ds.qa_radsat == 0, other=nodata_value)
 
     for band in ["red", "green", "blue"]:
-        if band in xr.data_vars:
+        if band in ds.data_vars:
             # Must use other here so uint16 values don't get converted to float32 with nan.
-            # xr = xr.where(xr[band] != 65_535, other=nodata_value)
+            # ds = ds.where(ds[band] != 65_535, other=nodata_value)
             # This catches overly saturated pixels (after qa_pixel and qa_radsat masking).
-            xr = xr.where(xr[band] < 43_636, other=nodata_value)
+            ds = ds.where(ds[band] < 43_636, other=nodata_value)
 
-    return xr
+    return ds
 
 
 def mask_nodata_clouds_saturated(
-    xr: Dataset,
+    ds: Dataset,
     filters: Iterable[Tuple[str, int]] | None = None,
     include_shadow: bool = True,
 ) -> Dataset:
@@ -172,19 +184,19 @@ def mask_nodata_clouds_saturated(
     Landsat 7 SLC-off gaps or sensor saturation holes.
 
     Args:
-        xr: Input dataset containing qa_pixel and optionally qa_radsat.
+        ds: Input dataset containing qa_pixel and optionally qa_radsat.
         filters: Morphological filter sequence applied to the cloud mask only.
         include_shadow: Whether to include cloud shadow (qa_pixel bit 4).
     """
-    xr = mask_nodata(xr)
+    ds = mask_nodata(ds)
 
-    xr = mask_cloud_and_shadow(xr, filters=filters, include_shadow=include_shadow)
+    ds = mask_cloud_and_shadow(ds, filters=filters, include_shadow=include_shadow)
 
-    xr = mask_saturated(xr)
+    ds = mask_saturated(ds)
 
-    # return erase_bad(xr, combined_mask)
+    # return erase_bad(ds, combined_mask)
     # Performance seems fine using this method (compared to erase_bad), but could be checked more closely.
-    return xr
+    return ds
 
 
 class GeoMADProcessor(Processor):
@@ -214,14 +226,14 @@ class GeoMADProcessor(Processor):
         self.preprocessor = preprocessor
         self.mask_kwargs = mask_clouds_kwargs
 
-    def process(self, xr: Dataset) -> Dataset:
-        if xr.time.size < self.min_timesteps:
+    def process(self, ds: Dataset) -> Dataset:
+        if ds.time.size < self.min_timesteps:
             raise LdnError(
-                f"{xr.time.size} is less than {self.min_timesteps} timesteps"
+                f"{ds.time.size} is less than {self.min_timesteps} timesteps"
             )
 
-        xr = mask_nodata_clouds_saturated(xr, **self.mask_kwargs)
-        data = xr.drop_vars(self.drop_vars) if len(self.drop_vars) > 0 else xr
+        ds = mask_nodata_clouds_saturated(ds, **self.mask_kwargs)
+        data = ds.drop_vars(self.drop_vars) if len(self.drop_vars) > 0 else ds
 
         geomad = geomedian_with_mads(data, **self.geomad_options)
 
