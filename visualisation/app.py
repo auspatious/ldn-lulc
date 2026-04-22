@@ -5,6 +5,8 @@ Uses TiTiler to visualise a MosaicJSON of either GeoMedian/GeoMAD or predicted L
 Tiles from separate per-band COGs using TiTiler + STACReader.
 """
 
+# TODO: Make the map so I can see geomad, and prediction overlaying each other (with visability toggle) (and other layers too but default them to off). Give the user a year selector in the map.
+
 import logging
 import os
 import re

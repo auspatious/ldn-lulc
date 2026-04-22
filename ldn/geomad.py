@@ -165,6 +165,7 @@ def mask_saturated(ds: Dataset, nodata_value: int = 0) -> Dataset:
             # Must use other here so uint16 values don't get converted to float32 with nan.
             # ds = ds.where(ds[band] != 65_535, other=nodata_value)
             # This catches overly saturated pixels (after qa_pixel and qa_radsat masking).
+            # TODO: Should these high values be masked (removed)? Later they get clipped to 1.
             ds = ds.where(ds[band] < 43_636, other=nodata_value)
 
     return ds

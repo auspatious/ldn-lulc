@@ -73,6 +73,7 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     for band in bands_to_scale:
         raw = data[band]
         nodata = (raw == nodata_values[0]) | (raw == nodata_values[1])
+        # TODO: Clip to 0.01 instead of 0 so indices still work? Also would clipping to 0 mean that this becomes nodata?
         scaled = (raw * scale_factor + offset).clip(0, 1).astype("float32")
         data[band] = scaled.where(~nodata, other=np.nan)
     return data
