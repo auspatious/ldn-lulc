@@ -5,6 +5,8 @@ Uses TiTiler to visualise a MosaicJSON of either GeoMedian/GeoMAD or predicted L
 Tiles from separate per-band COGs using TiTiler + STACReader.
 """
 
+# TODO: Make the map so I can see geomad, and prediction overlaying each other (with visability toggle) (and other layers too but default them to off). Give the user a year selector in the map.
+
 import logging
 import os
 import re
@@ -25,6 +27,14 @@ from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
 from mangum import Mangum
 
+GEOMAD_VERSION = os.environ.get("GEOMAD_VERSION")
+PREDICTION_VERSION = os.environ.get("PREDICTION_VERSION")
+
+if not GEOMAD_VERSION or not PREDICTION_VERSION:
+    raise ValueError(
+        "GEOMAD_VERSION and PREDICTION_VERSION environment variables must be set (e.g. to '0-0-4a' and '0-0-3')."
+    )
+
 logger = logging.getLogger(__name__)
 
 logging.basicConfig(
@@ -40,14 +50,14 @@ logger.setLevel(logging.INFO)  # Our logging level.
 cmap = default_cmap.register(
     {
         "lulc": {
-            255: (255, 255, 255, 0),  # No data    — transparent
-            1: (0, 100, 0, 255),  # Tree Cover — darkgreen
-            2: (50, 205, 50, 255),  # Grassland  — limegreen
-            3: (0, 255, 0, 255),  # Cropland   — lime
-            4: (64, 224, 208, 255),  # Wetland    — turquoise
-            5: (128, 128, 128, 255),  # Built-up   — gray
-            6: (0, 0, 255, 255),  # Water      — blue
-            7: (255, 255, 0, 255),  # Other      — yellow
+            255: (255, 255, 255, 0),  # No data   — transparent
+            1: (0, 100, 0, 255),  # Tree Cover — dark green
+            2: (255, 255, 76, 255),  # Grassland  — yellow
+            3: (240, 150, 255, 255),  # Cropland   — pink
+            4: (0, 150, 160, 255),  # Wetland    — teal
+            5: (250, 0, 0, 255),  # Built-up   — red
+            6: (0, 100, 200, 255),  # Water      — blue
+            7: (180, 180, 180, 255),  # Other      — grey
         }
     }
 )
@@ -77,9 +87,7 @@ os.environ.update(
 
 MOSAIC_S3_BUCKET = "data.ldn.auspatious.com"
 GEOMAD_DATASET_PREFIX = "ausp_ls_geomad"
-GEOMAD_DATASET_VERSION = "0-0-2b"
 PREDICTION_DATASET_PREFIX = "ausp_ls_lulc_prediction"
-PREDICTION_DATASET_VERSION = "0-0-1"
 MOSAIC_PATHS_GEOMAD: dict[str, str] = {}
 MOSAIC_PATHS_PREDICTION: dict[str, str] = {}
 
@@ -89,11 +97,11 @@ s3 = boto3.client("s3")
 MOSAIC_PATTERN = re.compile(r"(\w+)_(\d{4})_mosaic\.json$")
 
 for prefix, dataset_prefix, version, paths_dict in [
-    ("geomad", GEOMAD_DATASET_PREFIX, GEOMAD_DATASET_VERSION, MOSAIC_PATHS_GEOMAD),
+    ("geomad", GEOMAD_DATASET_PREFIX, GEOMAD_VERSION, MOSAIC_PATHS_GEOMAD),
     (
         "prediction",
         PREDICTION_DATASET_PREFIX,
-        PREDICTION_DATASET_VERSION,
+        PREDICTION_VERSION,
         MOSAIC_PATHS_PREDICTION,
     ),
 ]:
@@ -219,11 +227,11 @@ def root():
           <div class="selectors">
             <select id="dataset-select">
               <option value="" disabled selected>Select dataset</option>
-              <option value="geomedian">GeoMedian (RGB)</option>
-              <option value="geomad">GeoMAD (S, E, BC)</option>
-              <option value="classification">Classification</option>
-              <option value="classification_unfiltered">Classification (unfiltered)</option>
-              <option value="classification_probability">Classification (probability)</option>
+              <option value="geomedian">GeoMedian (RGB) v{GEOMAD_VERSION}</option>
+              <option value="geomad">GeoMAD (S, E, BC) v{GEOMAD_VERSION}</option>
+              <option value="classification">Classification v{PREDICTION_VERSION}</option>
+              <option value="classification_unfiltered">Classification (unfiltered) v{PREDICTION_VERSION}</option>
+              <option value="classification_probability">Classification (probability) v{PREDICTION_VERSION}</option>
             </select>
             <select id="year-select" disabled>
               <option value="" disabled selected>Select year</option>
@@ -294,13 +302,13 @@ def map_viewer(
 ):
     """Render a full-page map viewer for the given dataset, year, and assets."""
     LULC_LEGEND = [
-        (1, "rgb(0,100,0)", "Tree Cover"),
-        (2, "rgb(50,205,50)", "Grassland"),
-        (3, "rgb(0,255,0)", "Cropland"),
-        (4, "rgb(64,224,208)", "Wetland"),
-        (5, "rgb(128,128,128)", "Built-up"),
-        (6, "rgb(0,0,255)", "Water"),
-        (7, "rgb(255,255,0)", "Other"),
+        (1, "rgb(0,100,0)", "Tree cover"),
+        (2, "rgb(255,255,76)", "Grassland"),
+        (3, "rgb(240,150,255)", "Cropland"),
+        (4, "rgb(0,150,160)", "Wetland"),
+        (5, "rgb(250,0,0)", "Built-up"),
+        (6, "rgb(0,100,200)", "Water"),
+        (7, "rgb(180,180,180)", "Other"),
     ]
 
     # Build the tile URL from the incoming query parameters.

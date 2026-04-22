@@ -4,6 +4,8 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from ldn.utils import LdnError
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,7 +70,7 @@ def random_sampling(
         "random",
         "manual",
     ]:
-        raise ValueError(
+        raise LdnError(
             "Sampling strategy must be one of 'stratified_random', "
             + "'equal_stratified_random', 'random', or 'manual'"
         )
@@ -222,7 +224,7 @@ def random_sampling(
             #                         pass
 
             else:
-                raise ValueError(
+                raise LdnError(
                     "Some or all of the classes in 'manual_class_ratio' dictionary do not"
                     + " match the classes in the supplied dataArray. "
                     + "DataArray classes: "
@@ -232,7 +234,7 @@ def random_sampling(
                 )
 
         else:
-            raise ValueError(
+            raise LdnError(
                 "Must supply a dictionary mapping {'class': numofpoints} if sampling"
                 + " is set to 'manual'"
             )
@@ -252,12 +254,15 @@ def random_sampling(
     else:
         crs = da.attrs.get("crs", None)
 
-    # Create geopandas dataframe
+    # Create geopandas dataframe and ensure output is in WGS84.
     gdf = gpd.GeoDataFrame(
         all_samples, crs=crs, geometry=gpd.points_from_xy(x, y)
     ).reset_index()
 
     gdf = gdf.drop(["latitude", "longitude"], axis=1)
+
+    if crs is not None and gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs("EPSG:4326")
 
     if out_fname is not None:
         gdf.to_file(out_fname)

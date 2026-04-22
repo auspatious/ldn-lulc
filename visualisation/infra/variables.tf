@@ -27,3 +27,13 @@ variable "timeout" {
   type        = number
   default     = 60
 }
+
+variable "geomad_version" {
+  description = "GeoMAD dataset version string (e.g. 0-0-4a)"
+  type        = string
+}
+
+variable "prediction_version" {
+  description = "LULC prediction dataset version string (e.g. 0-0-3)"
+  type        = string
+}

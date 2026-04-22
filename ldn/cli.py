@@ -40,6 +40,7 @@ from ldn import get_version
 from ldn.cli_grid import cli_grid_app
 from ldn.cli_classify import classify_app
 from ldn.grids import get_gridspec
+from ldn.utils import GEOMAD_VERSION, LdnError, PREDICTION_VERSION
 
 app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -54,7 +55,6 @@ logging.basicConfig(
     force=True,
 )
 logging.getLogger("ldn").setLevel(logging.INFO)  # Our logging level.
-
 
 # Add the subcommands
 app.add_typer(
@@ -97,8 +97,10 @@ def print_tasks(
     else:
         years_list = [years]
 
-    assert len(years_list) > 0, "No years provided"
-    assert all(y.isdigit() for y in years_list), "Years must be integers"
+    if len(years_list) == 0:
+        raise LdnError("Must provide at least one year.")
+    if not all(y.isdigit() for y in years_list):
+        raise LdnError("Years must be integers")
 
     tiles = get_grid_tiles(format="list", grids=grids, overwrite=False)
 
@@ -136,8 +138,18 @@ def geomad(
     bucket: Annotated[str, typer.Option()] = "data.ldn.auspatious.com",
     overwrite: Annotated[bool, typer.Option()] = False,
     decimated: Annotated[bool, typer.Option()] = False,
-    include_shadow: Annotated[bool, typer.Option()] = False,
-    ls7_buffer_years: Annotated[int, typer.Option()] = 1,
+    include_shadow: Annotated[
+        bool,
+        typer.Option(
+            help="True to mask cloud shadows, false to not mask them (leave them in). Defaults to True."
+        ),
+    ] = True,
+    ls7_buffer_years: Annotated[
+        int,
+        typer.Option(
+            help="Half-width of the temporal buffer for LS7 era (<=2012). E.g. 1 searches year-1 to year+1."
+        ),
+    ] = 1,
     all_bands: Annotated[bool, typer.Option()] = True,
     memory_limit: Annotated[str, typer.Option()] = "10GB",
     n_workers: Annotated[int, typer.Option()] = 2,
@@ -145,28 +157,21 @@ def geomad(
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
 ) -> None:
-    """Run GeoMAD processing on Landsat data.
+    """Run GeoMAD processing on a single tile for a year.
 
-    Example command is:
+    Searches USGS STAC for Landsat scenes covering the given tile and year,
+    applies cloud masking, computes the geometric median and median absolute
+    deviations (GeoMAD), and writes COG outputs to S3.
 
-    ldn geomad --tile-id 136_142 --year 2025 --version 0.0.0 \
-        --overwrite \
-        --decimated \
-        --no-all-bands \
-        --region pacific
+    For years in the Landsat 7 era (<=2012), a buffered temporal window
+    controlled by --ls7-buffer-years is used to gather enough clear
+    observations. Pacific tiles may additionally include Tier 2 data.
     """
-    info = (
-        f"Running GeoMAD processing for tile {tile_id}, year {year}, version {version},"
-        f" region {region} with overwrite={overwrite}, decimated={decimated},"
-        f" all_bands={all_bands}, memory_limit={memory_limit}, n_workers={n_workers},"
-        f" threads_per_worker={threads_per_worker}, xy_chunk_size={xy_chunk_size}, "
-        f"geomad_threads={geomad_threads}, include_shadow={include_shadow}"
+    logger.info(
+        f"tile={tile_id} year={year} version={version} region={region} overwrite={overwrite} decimated={decimated} "
+        f"all_bands={all_bands} include_shadow={include_shadow} memory={memory_limit} workers={n_workers} threads={threads_per_worker} "
+        f"chunk={xy_chunk_size} geomad_threads={geomad_threads}",
     )
-    typer.echo(info)
-    if region not in ["pacific", "non-pacific"]:
-        raise ValueError(
-            f"Invalid region: {region}. Must be 'pacific' or 'non-pacific'."
-        )
 
     year_int = int(year)
     search_year = year
@@ -186,7 +191,7 @@ def geomad(
         if year_int <= 2012:
             # Searching for nothing gives us everything
             typer.echo("Using both T1 and T2 data for Pacific for LS7 era")
-            search_kwargs == {}
+            search_kwargs = {}
 
     # Fixed variables
     sensor = "ls"
@@ -210,6 +215,7 @@ def geomad(
     # Configure for checking item existence
     client = boto3.client("s3")
 
+    # TODO: Do we need different paths for the 2 regions? One would make things easier to maintain. But 2 is clearer that they have different CRSs etc.
     prefix = "ausp"
     if product_owner is None:
         prefix = "ci" if region == "non-pacific" else "dep"
@@ -230,7 +236,7 @@ def geomad(
     # If we don't want to overwrite, and the destination file already exists, skip it
     if not overwrite and object_exists(bucket, stac_key, client=client):
         typer.echo(f"Item already exists at {stac_document}")
-        raise typer.Exit()  # Exit successfully.
+        raise LdnError(f"Item already exists at {stac_document}")
     else:
         if not overwrite:
             typer.echo(f"Item does not exist at {stac_document}, processing tile.")
@@ -238,7 +244,6 @@ def geomad(
     load_kwargs = {}
 
     # Searcher finds STAC Items
-    # TODO: Set up fallback for if there's not enough T1 data
     searcher = PystacSearcher(
         catalog=USGS_CATALOG,
         collections=[USGS_COLLECTION],
@@ -246,12 +251,21 @@ def geomad(
         **search_kwargs,
     )
 
-    # Loader loads the data from STAC Items
+    # Loader loads the data from STAC Items.
     loader = OdcLoader(
-        bands=LANDSAT_BANDS if all_bands else ["red", "green", "blue", "qa_pixel"],
+        bands=LANDSAT_BANDS
+        if all_bands
+        else [
+            "red",
+            "green",
+            "blue",
+            "qa_pixel",
+            "qa_radsat",
+        ],  # Exclude NIR and 2 SWIR bands.
         chunks={"x": xy_chunk_size, "y": xy_chunk_size, "time": 1},
         groupby="solar_day",
-        fail_on_error=False,
+        nodata=0,
+        fail_on_error=False,  # We don't control the Landsat data so it may have issues, but we still want to load what we can.
         **load_kwargs,
     )
 
@@ -273,11 +287,14 @@ def geomad(
             scale=LANDSAT_SCALE,
             offset=LANDSAT_OFFSET,
             nodata=0,
+            is_float=False,
         ),
-        min_timesteps=5,
-        drop_vars=["qa_pixel"],
+        min_timesteps=10,
+        drop_vars=["qa_pixel", "qa_radsat"],
         mask_clouds_kwargs={
-            "filters": [("dilation", 3), ("erosion", 2)],
+            # Opening(3) removes isolated 1-3 pixel false cloud flags. These should not be dilated.
+            # Dilation(3) grows remaining cloud masks by 3 pixels to catch haze/edges
+            "filters": [("opening", 3), ("dilation", 5), ("erosion", 2)],
             "include_shadow": include_shadow,
         },
     )
@@ -290,7 +307,7 @@ def geomad(
         ):
             paths = Task(
                 itempath=itempath,
-                id=tile_index,
+                id=tile_index,  # TODO: Check this type
                 area=geobox,
                 searcher=searcher,
                 loader=loader,
@@ -301,10 +318,10 @@ def geomad(
             typer.echo(f"Wrote {len(paths)} files...")
     except EmptyCollectionError:
         typer.echo("No items found for this tile")
-        raise typer.Exit(code=1)
+        raise LdnError("No items found for this tile")
     except Exception as e:
         typer.echo(f"Failed to process with error: {e}")
-        raise typer.Exit(code=1)
+        raise LdnError("Failed to process tile") from e
 
     typer.echo(f"Finished writing to {stac_document}")
 
@@ -377,13 +394,13 @@ def _load_stac_docs(
 @app.command("index-to-stac-geoparquet")
 def _index_to_stac_geoparquet(
     prefix: str = typer.Option(
-        "ausp_ls_lulc_prediction",
+        ...,
         help="S3 path prefix to search for STAC items to index (e.g. for a given dataset).",
     ),
     output_filename: str = typer.Option(
-        "ausp_ls_lulc_prediction", help="Output filename for the STAC-Geoparquet index."
+        ..., help="Output filename for the STAC-Geoparquet index."
     ),
-    version: str = typer.Option("0-0-1", help="Dataset version string e.g. '0-0-1'."),
+    version: str = typer.Option(..., help="Dataset version string e.g. '0-0-1'."),
     bucket: str = typer.Option(
         "data.ldn.auspatious.com", help="S3 bucket containing STAC items."
     ),
@@ -399,7 +416,7 @@ def _index_to_stac_geoparquet(
 
     if len(keys) == 0:
         logger.warning("No STAC items found, nothing to index.")
-        raise typer.Exit(code=1)
+        raise LdnError("No STAC items found, nothing to index.")
 
     logger.info("Loading STAC item documents into memory")
     docs = _load_stac_docs(bucket, keys, aws_region)
@@ -417,7 +434,7 @@ def _stac_self_link(feature: dict) -> str:
     links = {link["rel"]: link["href"] for link in feature.get("links", [])}
     self_link = links.get("self")
     if self_link is None:
-        raise ValueError(
+        raise LdnError(
             f"Feature {feature.get('id', 'unknown')} has no self link, cannot determine STAC item URL."
         )
     return self_link
@@ -427,12 +444,22 @@ def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
     """Read STAC-Geoparquet, filter by year, build mosaic.json."""
 
     logger.info(f"Building mosaic for year {year}")
-    item_collection = search_sync(stac_geoparquet_url, datetime=year)
+    search_year = year
+    int_year = int(year)
+    # If we're in the LS7 era, use a buffered window of data
+    if int_year <= 2012:
+        logging.info(
+            "GeoMAD used a year of data on either side to create the annual product so we need to search for +- 1 year."
+        )
+        search_year = f"{int_year - 1}/{int_year + 1}"
+
+    item_collection = search_sync(stac_geoparquet_url, datetime=search_year)
+
     items = ItemCollection(item_collection)
     features = [f.to_dict() for f in items]
 
     if not features:
-        raise ValueError(f"No STAC items found for year {year}")
+        raise LdnError(f"No STAC items found for year {year}")
 
     logger.info(f"  {len(features)} features found")
 
@@ -450,10 +477,6 @@ def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
         accessor=_stac_self_link,
     )
 
-    logger.info(
-        f"  quadkey_zoom={mosaic.quadkey_zoom}, {len(mosaic.tiles)} tile entries"
-    )
-
     return mosaic
 
 
@@ -462,7 +485,7 @@ def make_mosaics(
     years: Annotated[
         str,
         typer.Option(
-            help="Comma-separated list of years (e.g. '2020,2021') to build mosaics for."
+            help="Either a comma-separated list of years (e.g. '2020,2021') or a range of years (e.g. '2020-2025') to build mosaics for."
         ),
     ],
     dataset: Annotated[
@@ -474,20 +497,27 @@ def make_mosaics(
     version_geomad: Annotated[
         str,
         typer.Option(
-            help="Version string to use for the GeoMAD mosaic files, e.g. '0-0-1'."
+            help=f"Version string to use for the GeoMAD mosaic files, e.g. '{GEOMAD_VERSION}'."
         ),
-    ],
+    ] = GEOMAD_VERSION,
     version_prediction: Annotated[
         str,
         typer.Option(
-            help="Version string to use for the Prediction mosaic files, e.g. '0-0-1'."
+            help=f"Version string to use for the Prediction mosaic files, e.g. '{PREDICTION_VERSION}'."
         ),
-    ],
+    ] = PREDICTION_VERSION,
 ) -> None:
     """Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files."""
 
     logger.info(f"Making mosaics for dataset '{dataset}' and years: {years}")
-    years_list = [y.strip() for y in years.split(",")]
+    if "-" in years:
+        start_year, end_year = map(int, years.split("-"))
+        years_list = [str(y) for y in range(start_year, end_year + 1)]
+    else:
+        years_list = [y.strip() for y in years.split(",")]
+
+    if any(int(y) < 2000 for y in years_list) or any(int(y) > 2025 for y in years_list):
+        raise LdnError("Years must be between 2000 and 2025 inclusive.")
 
     # MosaicBackend needs s3:// style paths.
     output_path_geomad = (

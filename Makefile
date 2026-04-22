@@ -3,15 +3,24 @@
 # Workflow:
 # 1. Run GeoMAD for all tiles/years
 # 2. Run index GeoMAD (STAC-Geoparquet)
-# 3. Run prediction for all tiles/years
-# 4. Run index prediction (STAC-Geoparquet)
-# 5. Run make-mosaic for geomad and prediction datasets
-# 6. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
+# 3. Make training data (in notebooks/training_data/0_Generate_Training_Points.ipynb)
+# 4. Train model (in notebooks/training_data/1_Train_Predict.ipynb)
+# 5. Run prediction for all tiles/years
+# 6. Run index prediction (STAC-Geoparquet)
+# 7. Run make-mosaic for geomad and prediction datasets
+# 8. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
-VERSION_GEOMAD ?= 0-0-2b
-VERSION_PREDICTION ?= 0-0-1
-DECIMATED ?= --decimated
-YEAR ?= 2020
+VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)")
+VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)")
+# TEST_TILES is a list of tuples: (tile_id, region, {country_name: country_code}) e.g. ("089_016", "pacific", {"Cook Islands": "COK"})
+TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
+# TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] == '312_106']))")
+# TEST_TILES_PACIFIC := $(shell python3 -c "from ldn.utils import TEST_TILES_PACIFIC; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES_PACIFIC]))")
+# TEST_TILES = $(TEST_TILES_PACIFIC)
+
+
+DECIMATED ?= --no-decimated
+
 
 # Get grid tiles - all
 grid-get-tiles-all:
@@ -30,39 +39,12 @@ grid-list-countries-non-pacific:
 print-tasks-2000-2024-all-grids:
 	ldn print-tasks --years="2000-2024" --grids="all"
 
-# Test case sites as tile_id:region pairs.
-KIRIBATI_ATOLLS      := 58_43:pacific
-FIJI_VOLCANIC        := 63_20:pacific
-FIJI_ANTIMERIDIAN    := 66_22:pacific
-BELIZE_ATOLLS        := 119_126:non-pacific
-SURINAME             := 152_110:non-pacific
-CAPE_VERDE           := 185_125:non-pacific
-COMOROS              := 251_88:non-pacific
-SINGAPORE            := 312_105:non-pacific 312_106:non-pacific
-
-TEST_SITES := $(KIRIBATI_ATOLLS) $(FIJI_VOLCANIC) $(FIJI_ANTIMERIDIAN) \
-	$(BELIZE_ATOLLS) $(SURINAME) $(CAPE_VERDE) $(COMOROS) $(SINGAPORE)
-
-# Run geomad for all test case sites for the one YEAR.
-geomad-test-case-sites-2020:
-	for site in $(TEST_SITES); do \
-		tile_id=$${site%%:*}; \
-		region=$${site##*:}; \
-		ldn geomad \
-			--tile-id $$tile_id \
-			--region $$region \
-			--year $(YEAR) \
-			--version $(VERSION_GEOMAD) \
-			--product-owner ausp \
-			$(DECIMATED) \
-			--overwrite; \
-	done
 
 # Run geomad for all test case sites for years 2000-2025.
 geomad-2000-2025:
-	for site in $(TEST_SITES); do \
+	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
-		region=$${site##*:}; \
+		region=$${site#*:}; region=$${region%%:*}; \
 		for year in $$(seq 2000 2025); do \
 			ldn geomad \
 				--tile-id $$tile_id \
@@ -70,6 +52,8 @@ geomad-2000-2025:
 				--year $$year \
 				--version $(VERSION_GEOMAD) \
 				--product-owner ausp \
+				--include-shadow \
+				--ls7-buffer-years 1 \
 				--overwrite; \
 		done; \
 	done
@@ -90,22 +74,26 @@ index-geomad:
 # train-model:
 # 	ldn classify train-model
 
-# 3. Predict LULC for the test tiles and 2020.
-predict-lulc-test-tiles-2020:
-	for site in $(TEST_SITES); do \
+
+# 3. Predict LULC for the test tiles and one year (2025).
+# TODO: Run for all years in future
+predict-lulc-test-tiles-a-few-years:
+	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
-		region=$${site##*:}; \
-		ldn classify classify \
-			--tile-id $$tile_id \
-			--year $(YEAR) \
-			--version $(VERSION_PREDICTION) \
-			--version-geomad $(VERSION_GEOMAD) \
-			--region $$region \
-			--output-bucket="data.ldn.auspatious.com" \
-			--model-path="ldn/lulc_random_forest_model.joblib" \
-			--xy-chunk-size 1024 \
-			$(DECIMATED) \
-			--overwrite; \
+		region=$${site#*:}; region=$${region%%:*}; \
+		for year in $$(seq 2023 2025); do \
+			ldn classify classify \
+				--tile-id $$tile_id \
+				--year $$year \
+				--version $(VERSION_PREDICTION) \
+				--version-geomad $(VERSION_GEOMAD) \
+				--region $$region \
+				--output-bucket="data.ldn.auspatious.com" \
+				--model-path="ldn/models/$(VERSION_PREDICTION)/lulc_random_forest_model.joblib" \
+				--xy-chunk-size 1024 \
+				$(DECIMATED) \
+				--overwrite; \
+		done; \
 	done
 
 
@@ -116,22 +104,24 @@ index-predictions:
 	--output-filename "ausp_ls_lulc_prediction" \
 	--version $(VERSION_PREDICTION)
 
+
 # Visualisation
-make-mosaic-all-2020:
-	ldn make-mosaics \
-	--dataset all \
-	--years $(YEAR) \
-	--version-geomad $(VERSION_GEOMAD) \
-	--version-prediction $(VERSION_PREDICTION)
-make-mosaic-geomad-2020:
+# make-mosaics-all:
+# 	ldn make-mosaics \
+# 	--dataset all \
+# 	--years "2000-2025" \
+# 	--version-geomad $(VERSION_GEOMAD) \
+# 	--version-prediction $(VERSION_PREDICTION)
+make-mosaics-geomad-all-years:
 	ldn make-mosaics \
 	--dataset geomad \
-	--years $(YEAR) \
+	--years "2000-2025" \
 	--version-geomad $(VERSION_GEOMAD) \
 	--version-prediction $(VERSION_PREDICTION)
-make-mosaic-prediction-2020:
+# TODO: Run for all years in future
+make-mosaics-prediction-a-few-years:
 	ldn make-mosaics \
 	--dataset prediction \
-	--years $(YEAR) \
+	--years "2023-2025" \
 	--version-geomad $(VERSION_GEOMAD) \
 	--version-prediction $(VERSION_PREDICTION)

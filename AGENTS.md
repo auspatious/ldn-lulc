@@ -8,6 +8,7 @@
 
 ## General
 - Never use emojis or uncommon characters like "→".
+- Use f strings, not %s, %d.
 
 ## Comments
 - Keep comments simple and minimal when needed.

@@ -1,5 +1,3 @@
-from unittest.mock import patch
-
 import numpy as np
 import xarray as xr
 
@@ -31,7 +29,7 @@ def _make_landsat_input(n_times: int, size: int) -> xr.Dataset:
     rng = np.random.default_rng(42)
     data_vars = {}
     for band in LANDSAT_BANDS:
-        if band == "qa_pixel":
+        if band in ("qa_pixel", "qa_radsat"):
             data_vars[band] = (
                 ["time", "y", "x"],
                 np.zeros((n_times, size, size), dtype="uint16"),
@@ -44,40 +42,23 @@ def _make_landsat_input(n_times: int, size: int) -> xr.Dataset:
     return xr.Dataset(data_vars, coords=coords)
 
 
-def _fake_geomedian_with_mads(data, **kwargs):
-    """Mimic geomedian_with_mads: median each input band, add MAD stats and count."""
-    median = data.median(dim="time")
-    ones = xr.DataArray(
-        np.ones((data.sizes["y"], data.sizes["x"]), dtype="float32"),
-        dims=["y", "x"],
-        coords={"y": data.y, "x": data.x},
-    )
-    median["smad"] = ones
-    median["bcmad"] = ones
-    median["emad"] = ones
-    median["count"] = xr.DataArray(
-        np.full(
-            (data.sizes["y"], data.sizes["x"]), data.sizes.get("time", 1), dtype="int16"
-        ),
-        dims=["y", "x"],
-        coords={"y": data.y, "x": data.x},
-    )
-    return median
-
-
-@patch("ldn.geomad.geomedian_with_mads", side_effect=_fake_geomedian_with_mads)
-def test_geomad_processor_output_has_expected_bands(mock_geomad) -> None:
-    """GeoMADProcessor output must contain exactly EXPECTED_BANDS."""
+def test_geomad_processor_output_has_expected_bands_nodata_and_dtype() -> None:
+    """GeoMADProcessor output must contain exactly EXPECTED_BANDS, and the correct nodata value and dtype."""
     input_ds = _make_landsat_input(n_times=3, size=4)
 
     processor = GeoMADProcessor(
         load_data_before_writing=False,
-        drop_vars=["qa_pixel"],
+        min_timesteps=1,
+        drop_vars=["qa_pixel", "qa_radsat"],
         mask_clouds_kwargs={"filters": None, "include_shadow": False},
     )
     result = processor.process(input_ds)
 
     assert set(result.data_vars) == set(EXPECTED_BANDS)
+    assert result["red"].attrs["nodata"] == 0
+    assert result["red"].dtype == np.uint16
+    assert np.isnan(result["emad"].attrs["nodata"])
+    assert result["emad"].dtype == np.float32
 
 
 def test_set_stac_properties_datetime_same_year() -> None:
@@ -92,9 +73,10 @@ def test_set_stac_properties_datetime_same_year() -> None:
     expected_start = np.datetime_as_string(
         np.datetime64("2020", "Y"), unit="ms", timezone="UTC"
     )
+    expected_midpoint = "2020-06-30T00:00:00.000Z"
 
     assert props["start_datetime"] == expected_start
-    assert props["datetime"] == expected_start
+    assert props["datetime"] == expected_midpoint
 
 
 def test_set_stac_properties_datetime_midpoint_when_years_differ() -> None:
@@ -106,9 +88,7 @@ def test_set_stac_properties_datetime_midpoint_when_years_differ() -> None:
     result = set_stac_properties(input_xr, output_xr)
     props = result.attrs["stac_properties"]
 
-    expected_midpoint = np.datetime_as_string(
-        np.datetime64("2020", "Y"), unit="ms", timezone="UTC"
-    )
+    expected_midpoint = "2020-06-30T00:00:00.000Z"
 
     assert props["datetime"] == expected_midpoint
 
@@ -122,9 +102,7 @@ def test_set_stac_properties_datetime_three_year_span() -> None:
     result = set_stac_properties(input_xr, output_xr)
     props = result.attrs["stac_properties"]
 
-    expected_midpoint = np.datetime_as_string(
-        np.datetime64("2000", "Y"), unit="ms", timezone="UTC"
-    )
+    expected_midpoint = "2000-06-30T00:00:00.000Z"
     expected_start = np.datetime_as_string(
         np.datetime64("1999", "Y"), unit="ms", timezone="UTC"
     )

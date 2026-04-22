@@ -4,6 +4,7 @@ from typing import Literal
 import typer
 
 from ldn.classify import run_classify_task
+from ldn.utils import GEOMAD_VERSION, LdnError, PREDICTION_VERSION
 
 classify_app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -19,16 +20,20 @@ def _train_model() -> None:
     # 4. Write model to S3.
 
     # TODO: Adapt from notebooks/training_data/1_Train_Predict.ipynb.
-    raise NotImplementedError("This command is not implemented yet.")
+    raise LdnError("This command is not implemented yet.")
 
 
 @classify_app.command("classify")
 def _classify(
     tile_id: str = typer.Option(..., help="Tile ID to predict LULC for."),
     year: str = typer.Option(..., help="Year to predict LULC for."),
-    version: str = typer.Option(..., help="Version of the model to use e.g. '0-0-1'."),
+    version: str = typer.Option(
+        PREDICTION_VERSION,
+        help=f"Version of the model to use e.g. '{PREDICTION_VERSION}'.",
+    ),
     version_geomad: str = typer.Option(
-        ..., help="Version of the GeoMAD data to use e.g. '0-0-1'."
+        GEOMAD_VERSION,
+        help=f"Version of the GeoMAD data to use e.g. '{GEOMAD_VERSION}'.",
     ),
     region: Literal["pacific", "non-pacific"] = typer.Option(
         ..., help="Region to predict LULC for. Can be 'pacific' or 'non-pacific'."
@@ -37,7 +42,7 @@ def _classify(
         "data.ldn.auspatious.com", help="S3 bucket to write predictions to."
     ),
     model_path: str = typer.Option(
-        "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/lulc_random_forest_model.joblib",
+        f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/{PREDICTION_VERSION}/lulc_random_forest_model.joblib",
         help="Model to use for prediction.",
     ),
     xy_chunk_size: int = typer.Option(
@@ -62,7 +67,7 @@ def _classify(
     ),
 ) -> None:
     if int(year) < 2000 or int(year) > 2025:
-        raise ValueError("Year must be between 2000 and 2025.")
+        raise LdnError("Year must be between 2000 and 2025.")
 
     run_classify_task(
         tile_id,

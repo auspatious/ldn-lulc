@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
 
 logger = logging.getLogger(__name__)
@@ -75,3 +76,59 @@ NON_DEP_COUNTRIES = {
     for k, v in SIDS_COUNTRIES_AND_CODES.items()
     if k not in DEP_COUNTRIES_AND_CODES
 }
+
+TEST_TILES = [
+    ("058_043", "pacific", {"Kiribati": "KIR"}),
+    ("063_020", "pacific", {"Fiji": "FJI"}),
+    ("066_022", "pacific", {"Fiji": "FJI"}),
+    ("119_126", "non-pacific", {"Belize": "BLZ"}),
+    ("152_110", "non-pacific", {"Suriname": "SUR"}),
+    ("185_125", "non-pacific", {"Cabo Verde": "CPV"}),  # Cape?
+    ("251_088", "non-pacific", {"Comoros": "COM"}),
+    ("312_105", "non-pacific", {"Singapore": "SGP"}),
+    ("312_106", "non-pacific", {"Singapore": "SGP"}),
+    ("089_016", "pacific", {"Cook Islands": "COK"}),
+]
+
+TEST_TILES_PACIFIC = [
+    # Already ran a tile for these (in TEST_TILES):
+    # Cook Islands
+    # Fiji
+    # Kiribati
+    # New ones to run:
+    # Selecting the main island of each country.
+    ("051_052", "pacific", {"Marshall Islands": "MHL"}),  # Kwajalein Atoll
+    ("040_049", "pacific", {"Micronesia": "FSM"}),  # Pohnpei
+    ("050_041", "pacific", {"Nauru": "NRU"}),
+    ("077_019", "pacific", {"Niue": "NIU"}),
+    ("013_050", "pacific", {"Palau": "PLW"}),
+    ("028_030", "pacific", {"Papua New Guinea": "PNG"}),
+    ("075_025", "pacific", {"Samoa": "WSM"}),
+    ("042_030", "pacific", {"Solomon Islands": "SLB"}),
+    ("071_016", "pacific", {"Tonga": "TON"}),
+    ("065_031", "pacific", {"Tuvalu": "TUV"}),
+    ("052_021", "pacific", {"Vanuatu": "VUT"}),
+]
+
+GEOMAD_VERSION = "0-0-4a"
+PREDICTION_VERSION = "0-0-3"
+
+training_data_year = "2020"
+
+class_attr = "lulc"
+
+wgs84 = "EPSG:4326"
+
+
+def get_analysis_epsg(
+    region: Literal["pacific", "non-pacific"],
+) -> Literal["EPSG:3832", "EPSG:6933"]:
+    if region == "pacific":
+        return "EPSG:3832"
+    else:
+        return "EPSG:6933"
+
+
+# Our custom exception class for the project. Good for filtering errors in processing.
+class LdnError(Exception):
+    """Base exception for the ldn-lulc project."""

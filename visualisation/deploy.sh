@@ -7,13 +7,22 @@ set -euo pipefail
 AWS_REGION=${AWS_REGION:-us-west-2}
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
-echo "==> Building mosaics..."
-# TODO: make mosaics for all years (when available).
-poetry run ldn make-mosaics --dataset all --years 2020 --version-geomad 0-0-2b --version-prediction 0-0-1
+eval $(python3 -c "from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION; print(f'export GEOMAD_VERSION={GEOMAD_VERSION}; export PREDICTION_VERSION={PREDICTION_VERSION}')")
 
+# TODO: Run index here too? To ensure mosaics are created with the latest data.
+
+echo "==> Building mosaics..."
+# Make mosaics for all years for geomad.
+# TODO: Uncomment this to create geomad mosaics. I have already done this for 0-0-4a so no need to wait to recreate.
+# poetry run ldn make-mosaics --dataset "geomad" --years "2000-2025" --version-geomad $GEOMAD_VERSION --version-prediction $PREDICTION_VERSION
+# Make mosaics for one year for prediction.
+# poetry run ldn make-mosaics --dataset "prediction" --years "2023-2025" --version-geomad $GEOMAD_VERSION --version-prediction $PREDICTION_VERSION
 echo "==> Creating ECR repository..."
 terraform -chdir=visualisation/infra init
-terraform -chdir=visualisation/infra apply -target=aws_ecr_repository.app -target=aws_ecr_lifecycle_policy.app # -auto-approve
+terraform -chdir=visualisation/infra apply \
+  -var="geomad_version=${GEOMAD_VERSION}" \
+  -var="prediction_version=${PREDICTION_VERSION}" \
+  -target=aws_ecr_repository.app -target=aws_ecr_lifecycle_policy.app # -auto-approve
 
 FUNCTION_NAME=$(terraform -chdir=visualisation/infra output -raw function_name)
 echo "==> Function name: ${FUNCTION_NAME}"
@@ -39,7 +48,9 @@ if [ "$LOCAL_DIGEST" != "$REMOTE_DIGEST" ]; then
 fi
 
 echo "==> Applying remaining infrastructure..."
-terraform -chdir=visualisation/infra apply # -auto-approve
+terraform -chdir=visualisation/infra apply \
+  -var="geomad_version=${GEOMAD_VERSION}" \
+  -var="prediction_version=${PREDICTION_VERSION}" # -auto-approve
 
 terraform -chdir=visualisation/infra output api_url
 echo "==> Done."

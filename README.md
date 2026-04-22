@@ -21,6 +21,14 @@ rustup-init
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
+TODO: Migrate from Poetry to UV.
+```bash
+poetry lock --no-update
+poetry export -f requirements.txt --output requirements.txt --with dev --with visualisation --without-hashes
+uv pip install -r requirements.txt
+uv run ldn --help
+```
+
 3. Install Poetry if you don't have it already:
 ```bash
   pip install poetry
@@ -100,6 +108,18 @@ Once built, you can run any command in the container:
 
 `docker run --rm ldn-lulc:latest ldn grid list-countries`
 
+
+## Running in EC2 VM
+
+Much faster than running locally.
+
+1. Need to set up SSH access
+2. SSH in to VM "Alex Hack Box 2026"
+3. Your public key path equivalent of `ssh -i ~/.ssh/id_ed25519 ubuntu@44.230.85.235`
+4. Pull code
+5. Install
+6. Run. Use `tmux` so that even if it disconnects the command will keep running.
+Run `tmux new -s geomad` then when inside run `uv run make geomad-2000-2025`. To detach, run `Ctrl+B, D` and it'll keep running. To reattach run `tmux attach -t geomad`. To kill it from outside run `tmux kill-session -t geomad`.
 
 ## Visualisation
 

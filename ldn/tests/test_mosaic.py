@@ -5,12 +5,10 @@ from cogeo_mosaic.mosaic import MosaicJSON
 from typer.testing import CliRunner
 
 from ldn.cli import _stac_self_link, _build_mosaic_for_year, app
+from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION, LdnError
 
 
 runner = CliRunner()
-
-version_geomad = "0-0-2b"
-version_prediction = "0-0-1"
 
 
 # _stac_self_link
@@ -83,7 +81,7 @@ def test_build_mosaic_for_year_raises_on_empty(mock_item_collection, mock_search
     mock_search.return_value = []
     mock_item_collection.return_value = []
 
-    with pytest.raises(ValueError, match="No STAC items found for year 2020"):
+    with pytest.raises(LdnError, match="No STAC items found for year 2020"):
         _build_mosaic_for_year("2020", "https://example.com/stac.parquet")
 
 
@@ -139,16 +137,16 @@ def test_make_mosaics_geomad_single_year(mock_build, mock_backend):
             "--dataset",
             "geomad",
             "--version-geomad",
-            version_geomad,
+            GEOMAD_VERSION,
             "--version-prediction",
-            version_prediction,
+            PREDICTION_VERSION,
         ],
     )
 
     assert result.exit_code == 0, result.output
     mock_build.assert_called_once_with(
         "2020",
-        "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/0-0-2b/ausp_ls_geomad.parquet",
+        f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/{GEOMAD_VERSION}/ausp_ls_geomad.parquet",
     )
     mock_backend.assert_called_once()
     # Check the output path contains the expected pattern
@@ -172,9 +170,9 @@ def test_make_mosaics_prediction_single_year(mock_build, mock_backend):
             "--dataset",
             "prediction",
             "--version-geomad",
-            version_geomad,
+            GEOMAD_VERSION,
             "--version-prediction",
-            version_prediction,
+            PREDICTION_VERSION,
         ],
     )
 
@@ -200,9 +198,9 @@ def test_make_mosaics_all_builds_both_datasets(mock_build, mock_backend):
             "--dataset",
             "all",
             "--version-geomad",
-            version_geomad,
+            GEOMAD_VERSION,
             "--version-prediction",
-            version_prediction,
+            PREDICTION_VERSION,
         ],
     )
 
@@ -230,9 +228,9 @@ def test_make_mosaics_multiple_years(mock_build, mock_backend):
             "--dataset",
             "geomad",
             "--version-geomad",
-            version_geomad,
+            GEOMAD_VERSION,
             "--version-prediction",
-            version_prediction,
+            PREDICTION_VERSION,
         ],
     )
 
@@ -266,9 +264,9 @@ def test_make_mosaics_writes_with_overwrite(mock_build, mock_backend):
             "--dataset",
             "geomad",
             "--version-geomad",
-            version_geomad,
+            GEOMAD_VERSION,
             "--version-prediction",
-            version_prediction,
+            PREDICTION_VERSION,
         ],
     )
 
