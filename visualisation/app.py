@@ -427,6 +427,22 @@ def root():
       return BASE + "dataset=" + L.ds + "&year=" + year + "&" + L.qs;
     }}
 
+    var CHECKBOX_MAP = {{"class":"chk-class", rgb:"chk-rgb", geomad:"chk-geomad", classuf:"chk-classuf", prob:"chk-prob"}};
+
+    function updateCheckboxAvailability() {{
+      for (var key in CHECKBOX_MAP) {{
+        var cb = document.getElementById(CHECKBOX_MAP[key]);
+        var lbl = cb.parentElement;
+        var available = LAYERS[key].dsYears.indexOf(currentYear) >= 0;
+        cb.disabled = !available;
+        lbl.style.opacity = available ? "1" : "0.4";
+        lbl.style.cursor = available ? "pointer" : "default";
+        if (!available && cb.checked) {{
+          cb.checked = false;
+        }}
+      }}
+    }}
+
     function createTileLayer(key, year) {{
       return L.tileLayer(tileUrl(key, year), {{
         opacity: 0.75, maxZoom: 18, tileSize: 256,
@@ -441,10 +457,11 @@ def root():
       }}
       tileLayers = {{}};
 
+      updateCheckboxAvailability();
+
       // Create layers in z-order (first added = bottom)
-      var checks = {{"class":"chk-class", rgb:"chk-rgb", geomad:"chk-geomad", classuf:"chk-classuf", prob:"chk-prob"}};
       LAYER_ORDER.forEach(function(key) {{
-        var cb = document.getElementById(checks[key]);
+        var cb = document.getElementById(CHECKBOX_MAP[key]);
         if (cb && cb.checked && LAYERS[key].dsYears.indexOf(currentYear) >= 0) {{
           tileLayers[key] = createTileLayer(key, currentYear);
           tileLayers[key].addTo(map);
