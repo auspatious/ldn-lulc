@@ -15,9 +15,8 @@ spec:
       app: ls-geomad
     annotations:
       karpenter.sh/do-not-disrupt: "true"
-  # TODO: Process on SPOT nodes?
-  # nodeSelector:
-  #   karpenter.sh/capacity-type: "spot"
+  nodeSelector:
+    karpenter.sh/capacity-type: "spot"
   arguments:
     parameters:
       - name: version
