@@ -116,14 +116,14 @@ for prefix, dataset_prefix, version, paths_dict in [
 logger.info(f"GeoMAD mosaics: {sorted(MOSAIC_PATHS_GEOMAD.keys())}")
 logger.info(f"Prediction mosaics: {sorted(MOSAIC_PATHS_PREDICTION.keys())}")
 
-datasets = [
-    ("geomad", MOSAIC_PATHS_GEOMAD),
-    ("prediction", MOSAIC_PATHS_PREDICTION),
-]
+DATASETS: dict[str, dict[str, str]] = {
+    "geomad": MOSAIC_PATHS_GEOMAD,
+    "prediction": MOSAIC_PATHS_PREDICTION,
+}
 
 
 # Custom path dependency
-def MosaicPathParams(
+def mosaic_path_params(
     year: Annotated[
         str,
         Query(description="Year (e.g. '2020')", pattern=r"^\d{4}$"),
@@ -134,14 +134,13 @@ def MosaicPathParams(
     ],
 ) -> str:
     """Resolve dataset and year query parameters to a mosaic.json file path."""
-    dataset_set = next((d for d in datasets if d[0] == dataset), None)
-    if not dataset_set:
+    mosaic_paths = DATASETS.get(dataset)
+    if mosaic_paths is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Unknown dataset '{dataset}'. Valid options: {[d[0] for d in datasets]}.",
+            detail=f"Unknown dataset '{dataset}'. Valid options: {list(DATASETS.keys())}.",
         )
 
-    mosaic_paths = dataset_set[1]
     if year in mosaic_paths:
         return str(mosaic_paths[year])
     else:
@@ -184,7 +183,7 @@ async def add_cache_control(request, call_next):
 mosaic_factory = MosaicTilerFactory(
     backend=MosaicBackend,  # type: ignore
     dataset_reader=STACReader,
-    path_dependency=MosaicPathParams,
+    path_dependency=mosaic_path_params,
     layer_dependency=AssetsExprParams,
     router_prefix="/mosaic",
     colormap_dependency=ColorMapParams,
@@ -193,6 +192,17 @@ app.include_router(mosaic_factory.router, prefix="/mosaic", tags=["Mosaic"])
 
 add_exception_handlers(app, DEFAULT_STATUS_CODES)
 add_exception_handlers(app, MOSAIC_STATUS_CODES)
+
+
+# Load balancers (ALB, CloudFront, ECS, etc.) need a lightweight endpoint to probe
+# whether the service is alive — without this, they'd hit / which renders the full
+# HTML page (wasteful), or a tile endpoint which requires S3 access. The health
+# check is fast, has no dependencies, and returns a 200 that any health checker can
+# validate.
+@app.get("/health", tags=["Health"])
+def health():
+    """Health check endpoint for load balancers and monitoring."""
+    return {"status": "ok"}
 
 
 @app.get("/", tags=["Viewer"])
