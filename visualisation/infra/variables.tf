@@ -29,7 +29,7 @@ variable "timeout" {
 }
 
 variable "geomad_version" {
-  description = "GeoMAD dataset version string (e.g. 0-0-4a)"
+  description = "GeoMAD dataset version string (e.g. 0-1-0)"
   type        = string
 }
 

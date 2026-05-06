@@ -1,0 +1,144 @@
+kind: Workflow
+metadata:
+  generateName: landsat-geomad-
+  namespace: argo
+spec:
+  entrypoint: workflow-entrypoint
+  serviceAccountName: public-bucket-writer
+  podGC:
+    strategy: OnWorkflowSuccess
+    deleteDelayDuration: 600s
+  parallelism: 50
+  podMetadata:
+    labels:
+      app: ls-geomad
+    annotations:
+      karpenter.sh/do-not-disrupt: "true"
+  # TODO: Process on SPOT nodes?
+  # nodeSelector:
+  #   karpenter.sh/capacity-type: "spot"
+  arguments:
+    parameters:
+      - name: version
+        value: "0.1.0" # The version of the data product being made
+      - name: image-name
+        value: "ghcr.io/auspatious/ldn-lulc" # The Docker image name (in GHCR)
+      - name: image-tag
+        value: "b1999d8" # TODO: Update to latest?
+      - name: bucket
+        value: "dep-public-staging" # The bucket to store the data
+      - name: grids
+        value: "pacific" # Which grid(s) to process: "all", "pacific", "non-pacific"
+      - name: overwrite
+        value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
+      - name: decimated
+        # TODO: Disable decimated after testing.
+        value: "--decimated" # Can be "--decimated" or "--no-decimated"
+  templates:
+    - name: workflow-entrypoint
+      dag:
+        tasks:
+          - name: print-tasks
+            template: print-tasks
+
+          - name: process-id
+            depends: print-tasks.Succeeded
+            template: process
+            arguments:
+              parameters:
+                - name: tile-id
+                  value: "{{item.id}}"
+                - name: year
+                  value: "{{item.year}}"
+                - name: region
+                  value: "{{item.region}}"
+            withParam: "{{ tasks.print-tasks.outputs.result }}"
+
+          # TODO: Should these steps be done in this workflow too? They are the next steps.
+          # - name: index-geomad
+          # - name: mosaic-geomad
+
+    - name: print-tasks
+      inputs:
+        parameters:
+          - name: grids
+          - name: years
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: 100Mi
+            cpu: 1.0
+        command: [ldn]
+        args:
+          - print-tasks
+          - --years
+          - "{{ workflow.parameters.years }}"
+          - --grids
+          - "{{ workflow.parameters.grids }}"
+
+    - name: process
+      inputs:
+        parameters:
+          - name: tile-id
+          - name: year
+          - name: region
+          - name: version
+          - name: bucket
+          - name: overwrite
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          # TODO: Rightsize these.
+          requests:
+            memory: 16Gi
+            cpu: 4
+          limits:
+            memory: 64Gi
+            cpu: 16
+          # What DEP was using for S2 annual geomad:
+          #   memory: 320Gi
+          #   cpu: 42
+          # limits:
+          #   cpu: 48
+          #   memory: 360Gi
+        command: [ldn]
+        args:
+          - geomad
+          - --tile-id
+          - "{{ inputs.parameters.tile-id }}"
+          - --year
+          - "{{ inputs.parameters.year }}"
+          - --region
+          - "{{ inputs.parameters.region }}"
+          - --version
+          - "{{ workflow.parameters.version }}"
+          - --bucket
+          - "{{ workflow.parameters.bucket }}"
+          - "{{ workflow.parameters.decimated }}"
+          - --product-owner
+          - ausp
+          - --include-shadow
+          - --ls7-buffer-years
+          - "1"
+          # TODO: Rightsize these:
+          - --memory-limit
+          - "16GB"
+          - --n-workers
+          - "4"
+          - --threads-per-worker
+          - "32"
+          - --xy-chunk-size
+          - "1600"
+          # What DEP was using for S2 annual geomad:
+          # - --memory-limit
+          # - "128GB"
+          # - --n-workers
+          # - "4"
+          # - --threads-per-worker
+          # - "32"
+          # - --xy-chunk-size
+          # - "1600"
+          - "{{ workflow.parameters.overwrite }}"
