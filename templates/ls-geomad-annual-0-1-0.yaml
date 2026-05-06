@@ -29,6 +29,8 @@ spec:
         value: "dep-public-staging" # The bucket to store the data
       - name: grids
         value: "pacific" # Which grid(s) to process: "all", "pacific", "non-pacific"
+      - name: years
+        value: "2000-2025" # Which year(s) to process (e.g. "2000-2025" or "2000,2005,2010")
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated

@@ -36,8 +36,11 @@ grid-list-countries-pacific:
 grid-list-countries-non-pacific:
 	ldn grid list-countries --grids="non-pacific"
 
-print-tasks-2000-2024-all-grids:
-	ldn print-tasks --years="2000-2024" --grids="all"
+print-tasks-2000-2025-all-grids:
+	ldn print-tasks --years="2000-2025" --grids="all"
+
+print-tasks-2000-2025-pacific:
+	ldn print-tasks --years="2000-2025" --grids="pacific"
 
 
 # Run geomad for all test case sites for years 2000-2025.

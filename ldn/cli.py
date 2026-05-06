@@ -125,6 +125,9 @@ def print_tasks(
         f.write(tasks_json_str)
 
     typer.echo(tasks_json_str)
+    logger.info(
+        f"{len(tasks)} tasks written to tasks.json for years: {years} and grids: {grids}."
+    )
     return
 
 
