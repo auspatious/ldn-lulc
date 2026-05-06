@@ -24,7 +24,7 @@ spec:
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc" # The Docker image name (in GHCR)
       - name: image-tag
-        value: "v0.0.1"
+        value: "v0.0.1" # TODO: Will need to make a new release because the geomad-argo-template branch has fixes that weren't in main for the first release.
       - name: bucket
         value: "dep-public-staging" # The bucket to store the data
       - name: grids
