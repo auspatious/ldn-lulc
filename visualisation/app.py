@@ -140,13 +140,13 @@ def MosaicPathParams(
             detail=f"Unknown dataset '{dataset}'. Valid options: {[d[0] for d in datasets]}.",
         )
 
-    mocasic_paths = dataset_set[1]
-    if year in mocasic_paths:
-        return str(mocasic_paths[year])
+    mosaic_paths = dataset_set[1]
+    if year in mosaic_paths:
+        return str(mosaic_paths[year])
     else:
         raise HTTPException(
             status_code=404,
-            detail=f"No mosaic found for year '{year}' in dataset '{dataset}'. Available years: {sorted(mocasic_paths.keys())}.",
+            detail=f"No mosaic found for year '{year}' in dataset '{dataset}'. Available years: {sorted(mosaic_paths.keys())}.",
         )
 
 
@@ -169,22 +169,11 @@ app.add_middleware(
 )
 
 
-GDAL_ENV = {
-    "GDAL_HTTP_MULTIPLEX": "YES",
-    "GDAL_HTTP_MERGE_CONSECUTIVE_RANGES": "YES",
-    "VSI_CACHE": "TRUE",
-    "VSI_CACHE_SIZE": 536_870_912,
-    "GDAL_CACHEMAX": 512,
-    "GDAL_BAND_BLOCK_CACHE": "HASHSET",
-    "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
-}
-
 mosaic_factory = MosaicTilerFactory(
     backend=MosaicBackend,  # type: ignore
     dataset_reader=STACReader,
     path_dependency=MosaicPathParams,
     layer_dependency=AssetsExprParams,
-    environment_dependency=lambda: GDAL_ENV,
     router_prefix="/mosaic",
     colormap_dependency=ColorMapParams,
 )
@@ -560,7 +549,7 @@ def root():
       tooltip.style.top = (e.originalEvent.pageY + 14) + "px";
 
       if (tooltipThrottle) return;
-      tooltipThrottle = setTimeout(function() {{ tooltipThrottle = null; }}, 300);
+      tooltipThrottle = setTimeout(function() {{ tooltipThrottle = null; }}, 1000);
 
       var activeKeys = Object.keys(tileLayers);
       if (activeKeys.length === 0) {{ tooltip.style.display = "none"; return; }}
