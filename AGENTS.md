@@ -23,3 +23,4 @@
 ## Quality
 - Give advice on improving code quality.
 - Use best practices.
+- Advise if a proposed solution is a "hack".

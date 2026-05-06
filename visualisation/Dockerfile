@@ -17,7 +17,9 @@ RUN poetry config virtualenvs.in-project true && \
     poetry install --no-root --only visualisation
 RUN .venv/bin/pip install awslambdaric
 
+# Copy app.py and static HTML.
 COPY visualisation/app.py ./
+COPY visualisation/static/index.html ./static/index.html
 
 ENTRYPOINT [".venv/bin/python", "-m", "awslambdaric"]
 CMD ["app.handler"]

@@ -5,19 +5,17 @@ Uses TiTiler to visualise a MosaicJSON of either GeoMedian/GeoMAD or predicted L
 Tiles from separate per-band COGs using TiTiler + STACReader.
 """
 
-# TODO: Make the map so I can see geomad, and prediction overlaying each other (with visability toggle) (and other layers too but default them to off). Give the user a year selector in the map.
-
 import logging
 import os
 import re
 import sys
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal
 
 import boto3
 from cogeo_mosaic.backends import MosaicBackend
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse
 from rio_tiler.io import STACReader
 from rio_tiler.colormap import cmap as default_cmap
 from titiler.core.dependencies import create_colormap_dependency
@@ -93,38 +91,46 @@ MOSAIC_PATHS_PREDICTION: dict[str, str] = {}
 
 # Scan S3 for mosaic JSONs on startup and populate paths dicts.
 # Expects filenames like geomad_2020_mosaic.json or prediction_2020_mosaic.json.
-s3 = boto3.client("s3")
 MOSAIC_PATTERN = re.compile(r"(\w+)_(\d{4})_mosaic\.json$")
 
-for prefix, dataset_prefix, version, paths_dict in [
-    ("geomad", GEOMAD_DATASET_PREFIX, GEOMAD_VERSION, MOSAIC_PATHS_GEOMAD),
-    (
-        "prediction",
-        PREDICTION_DATASET_PREFIX,
-        PREDICTION_VERSION,
-        MOSAIC_PATHS_PREDICTION,
-    ),
-]:
-    s3_prefix = f"{dataset_prefix}/{version}/mosaics/"
-    response = s3.list_objects_v2(Bucket=MOSAIC_S3_BUCKET, Prefix=s3_prefix)
-    for obj in response.get("Contents", []):
-        key = obj["Key"]
-        match = MOSAIC_PATTERN.search(key)
-        if match:
-            year = match.group(2)
-            paths_dict[year] = f"s3://{MOSAIC_S3_BUCKET}/{key}"
+try:
+    s3 = boto3.client("s3")
+    for dataset_prefix, version, paths_dict in [
+        (GEOMAD_DATASET_PREFIX, GEOMAD_VERSION, MOSAIC_PATHS_GEOMAD),
+        (
+            PREDICTION_DATASET_PREFIX,
+            PREDICTION_VERSION,
+            MOSAIC_PATHS_PREDICTION,
+        ),
+    ]:
+        s3_prefix = f"{dataset_prefix}/{version}/mosaics/"
+        # Capped at 1000 items (no pagination). Fine because there is one mosaic per year.
+        response = s3.list_objects_v2(Bucket=MOSAIC_S3_BUCKET, Prefix=s3_prefix)
+        for obj in response.get("Contents", []):
+            key = obj["Key"]
+            match = MOSAIC_PATTERN.search(key)
+            if match:
+                year = match.group(2)
+                paths_dict[year] = f"s3://{MOSAIC_S3_BUCKET}/{key}"
+except Exception as e:
+    logger.error(f"Failed to scan S3 for mosaics: {e}")
+    if not MOSAIC_PATHS_GEOMAD and not MOSAIC_PATHS_PREDICTION:
+        raise RuntimeError(
+            f"Cannot start: failed to discover any mosaics from s3://{MOSAIC_S3_BUCKET}. "
+            f"Check AWS credentials and network connectivity. Error: {e}"
+        ) from e
 
 logger.info(f"GeoMAD mosaics: {sorted(MOSAIC_PATHS_GEOMAD.keys())}")
 logger.info(f"Prediction mosaics: {sorted(MOSAIC_PATHS_PREDICTION.keys())}")
 
-datasets = [
-    ("geomad", MOSAIC_PATHS_GEOMAD),
-    ("prediction", MOSAIC_PATHS_PREDICTION),
-]
+DATASETS: dict[str, dict[str, str]] = {
+    "geomad": MOSAIC_PATHS_GEOMAD,
+    "prediction": MOSAIC_PATHS_PREDICTION,
+}
 
 
 # Custom path dependency
-def MosaicPathParams(
+def mosaic_path_params(
     year: Annotated[
         str,
         Query(description="Year (e.g. '2020')", pattern=r"^\d{4}$"),
@@ -135,20 +141,19 @@ def MosaicPathParams(
     ],
 ) -> str:
     """Resolve dataset and year query parameters to a mosaic.json file path."""
-    dataset_set = next((d for d in datasets if d[0] == dataset), None)
-    if not dataset_set:
+    mosaic_paths = DATASETS.get(dataset)
+    if mosaic_paths is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Unknown dataset '{dataset}'. Valid options: {[d[0] for d in datasets]}.",
+            detail=f"Unknown dataset '{dataset}'. Valid options: {list(DATASETS.keys())}.",
         )
 
-    mocasic_paths = dataset_set[1]
-    if year in mocasic_paths:
-        return str(mocasic_paths[year])
+    if year in mosaic_paths:
+        return str(mosaic_paths[year])
     else:
         raise HTTPException(
             status_code=404,
-            detail=f"No mosaic found for year '{year}' in dataset '{dataset}'. Available years: {sorted(mocasic_paths.keys())}.",
+            detail=f"No mosaic found for year '{year}' in dataset '{dataset}'. Available years: {sorted(mosaic_paths.keys())}.",
         )
 
 
@@ -171,22 +176,22 @@ app.add_middleware(
 )
 
 
-GDAL_ENV = {
-    "GDAL_HTTP_MULTIPLEX": "YES",
-    "GDAL_HTTP_MERGE_CONSECUTIVE_RANGES": "YES",
-    "VSI_CACHE": "TRUE",
-    "VSI_CACHE_SIZE": 536_870_912,
-    "GDAL_CACHEMAX": 512,
-    "GDAL_BAND_BLOCK_CACHE": "HASHSET",
-    "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
-}
+@app.middleware("http")
+async def add_cache_control(request, call_next):
+    """Add Cache-Control headers to tile responses for browser caching."""
+    response = await call_next(request)
+    if "/tiles/" in request.url.path and response.status_code == 200:
+        # browsers cache tiles for 24 hours
+        # CDN/proxy caches (e.g. CloudFront) cache for 7 days
+        response.headers["Cache-Control"] = "public, max-age=86400, s-maxage=604800"
+    return response
+
 
 mosaic_factory = MosaicTilerFactory(
     backend=MosaicBackend,  # type: ignore
     dataset_reader=STACReader,
-    path_dependency=MosaicPathParams,
+    path_dependency=mosaic_path_params,
     layer_dependency=AssetsExprParams,
-    environment_dependency=lambda: GDAL_ENV,
     router_prefix="/mosaic",
     colormap_dependency=ColorMapParams,
 )
@@ -196,221 +201,36 @@ add_exception_handlers(app, DEFAULT_STATUS_CODES)
 add_exception_handlers(app, MOSAIC_STATUS_CODES)
 
 
-@app.get("/", tags=["Info"])
-def root():
+@app.get("/health", tags=["Health"])
+def health():
+    """Health check endpoint for load balancers and monitoring."""
+    return {"status": "ok"}
+
+
+@app.get("/config.json", tags=["Viewer"])
+def config():
+    """Return dynamic configuration for the frontend."""
     years_geomad = sorted(MOSAIC_PATHS_GEOMAD.keys())
     years_prediction = sorted(MOSAIC_PATHS_PREDICTION.keys())
-
-    html = f"""<!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8"/>
-        <title>LDN LULC Mosaic Viewer</title>
-        <style>
-          body {{ font-family: monospace; max-width: 70vh; margin: 60px auto; padding: 0 20px; }}
-          h1 {{ text-align: center; }}
-          a {{ margin-right: .75rem; }}
-          .item {{ margin-top: 2rem;  margin-bottom: 2rem; border-bottom: 2px solid #e7e7e7; padding-bottom: 1rem; }}
-          .logo {{ height: 160px; margin: auto; display: block; margin-bottom: 1rem; }}
-          select {{ font-family: monospace; font-size: 1rem; padding: 0.4rem 0.6rem; }}
-          .selectors {{ display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }}
-        </style>
-      </head>
-      <body>
-        <a href="https://auspatious.com/" target="_blank" rel="noopener noreferrer"><img class="logo" src="https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/as-logo-horz-tag-colour.svg" alt="Auspatious logo"/></a>
-
-        <div class="item">
-          <h1>LDN LULC Mosaic Viewer</h1>
-        </div>
-
-        <div class="item">
-          <div class="selectors">
-            <select id="dataset-select">
-              <option value="" disabled selected>Select dataset</option>
-              <option value="geomedian">GeoMedian (RGB) v{GEOMAD_VERSION}</option>
-              <option value="geomad">GeoMAD (S, E, BC) v{GEOMAD_VERSION}</option>
-              <option value="classification">Classification v{PREDICTION_VERSION}</option>
-              <option value="classification_unfiltered">Classification (unfiltered) v{PREDICTION_VERSION}</option>
-              <option value="classification_probability">Classification (probability) v{PREDICTION_VERSION}</option>
-            </select>
-            <select id="year-select" disabled>
-              <option value="" disabled selected>Select year</option>
-            </select>
-          </div>
-          <script>
-            var yearsByDataset = {{
-              geomedian: {list(years_geomad)},
-              geomad: {list(years_geomad)},
-              classification: {list(years_prediction)},
-              classification_unfiltered: {list(years_prediction)},
-              classification_probability: {list(years_prediction)},
-            }};
-            var datasetSelect = document.getElementById("dataset-select");
-            var yearSelect = document.getElementById("year-select");
-
-            datasetSelect.addEventListener("change", function() {{
-              var years = yearsByDataset[datasetSelect.value] || [];
-              yearSelect.innerHTML = '<option value="" disabled selected>Select year</option>';
-              years.forEach(function(y) {{
-                var opt = document.createElement("option");
-                opt.value = y; opt.textContent = y;
-                yearSelect.appendChild(opt);
-              }});
-              yearSelect.disabled = years.length === 0;
-            }});
-
-            yearSelect.addEventListener("change", function() {{
-              var ds = datasetSelect.value;
-              var yr = yearSelect.value;
-              if (!ds || !yr) return;
-              if (ds === "geomedian") {{
-                window.location.href = "/map?dataset=geomad&year=" + yr +
-                  "&assets=red&assets=green&assets=blue&rescale=7200,12000&rescale=7200,12000&rescale=7200,12000";
-              }} else if (ds === "geomad") {{
-                window.location.href = "/map?dataset=geomad&year=" + yr +
-                  "&assets=smad&assets=emad&assets=bcmad&rescale=0,0.0012&rescale=262,2150&rescale=0.006,0.04";
-              }} else if (ds === "classification") {{
-                window.location.href = "/map?dataset=prediction&year=" + yr +
-                  "&assets=classification";
-              }} else if (ds === "classification_unfiltered") {{
-                window.location.href = "/map?dataset=prediction&year=" + yr +
-                  "&assets=classification_unfiltered";
-              }} else if (ds === "classification_probability") {{
-                window.location.href = "/map?dataset=prediction&year=" + yr +
-                  "&assets=classification_probability&colormap_name=rdylgn&rescale=0,100";
-              }}
-            }});
-          </script>
-        </div>
-
-        <div class="item">
-          <p class="docs"><a href="/docs">API docs</a></p>
-        </div>
-      </body>
-      </html>"""
-
-    return HTMLResponse(content=html)
+    all_years = sorted(set(years_geomad + years_prediction))
+    default_year = all_years[-1] if all_years else "2020"
+    return {
+        "years_geomad": years_geomad,
+        "years_prediction": years_prediction,
+        "all_years": all_years,
+        "default_year": default_year,
+    }
 
 
-@app.get("/map", tags=["Viewer"])
-def map_viewer(
-    dataset: Literal["geomad", "prediction"] = Query(...),
-    year: str = Query(..., pattern=r"^\d{4}$"),
-    assets: list[str] = Query(...),
-    rescale: Optional[list[str]] = Query(None),
-    colormap_name: Optional[str] = Query(None),
-):
-    """Render a full-page map viewer for the given dataset, year, and assets."""
-    LULC_LEGEND = [
-        (1, "rgb(0,100,0)", "Tree cover"),
-        (2, "rgb(255,255,76)", "Grassland"),
-        (3, "rgb(240,150,255)", "Cropland"),
-        (4, "rgb(0,150,160)", "Wetland"),
-        (5, "rgb(250,0,0)", "Built-up"),
-        (6, "rgb(0,100,200)", "Water"),
-        (7, "rgb(180,180,180)", "Other"),
-    ]
-
-    # Build the tile URL from the incoming query parameters.
-    assets_qs = "&".join(f"assets={a}" for a in assets)
-    tile_url = (
-        f"/mosaic/WebMercatorQuad/map.html?dataset={dataset}&year={year}&{assets_qs}"
-    )
-
-    if rescale:
-        tile_url += "&" + "&".join(f"rescale={r}" for r in rescale)
-    if colormap_name:
-        tile_url += f"&colormap_name={colormap_name}"
-
-    # Show the LULC legend only for classification assets.
-    classification_assets = {"classification", "classification_unfiltered"}
-    if dataset == "prediction" and classification_assets.intersection(assets):
-        if not colormap_name:
-            tile_url += "&colormap_name=lulc"
-        legend_items = "".join(
-            f"""<div class="legend-item">
-                  <span class="swatch" style="background:{color};border:1px solid #ccc;"></span>
-                  <span>{label}</span>
-                </div>"""
-            for _, color, label in LULC_LEGEND
-        )
-        legend_html = f"""
-        <div id="legend">
-          <div class="legend-title">Land Cover</div>
-          {legend_items}
-        </div>"""
-    elif dataset == "prediction" and "classification_probability" in assets:
-        legend_html = """
-        <div id="legend">
-          <div class="legend-title">Probability</div>
-          <div style="display:flex;align-items:stretch;gap:6px;">
-            <div style="width:18px;height:120px;background:linear-gradient(to bottom,#1a9641,#a6d96a,#ffffbf,#fdae61,#d7191c);border:1px solid #ccc;border-radius:3px;"></div>
-            <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:11px;">
-              <span>100</span>
-              <span>75</span>
-              <span>50</span>
-              <span>25</span>
-              <span>0</span>
-            </div>
-          </div>
-        </div>"""
-    else:
-        legend_html = ""
-
-    html = f"""<!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8"/>
-      <title>LDN {dataset} {year}</title>
-      <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        html, body {{ height: 100%; }}
-        iframe {{ width: 100%; height: 100%; border: none; display: block; }}
-
-        #legend {{
-          position: fixed;
-          bottom: 50px;
-          right: 10px;
-          z-index: 9999;
-          background: #FFF;
-          border: 2px solid rgba(0, 0, 0, 0.2);
-          border-radius: 4px;
-          padding: 12px 14px;
-          font-family: monospace;
-          font-size: 12px;
-          color: #000;
-          pointer-events: none;
-          backdrop-filter: blur(4px);
-        }}
-        .legend-title {{
-          font-weight: bold;
-          margin-bottom: 8px;
-          font-size: 11px;
-          text-transform: uppercase;
-          letter-spacing: .06em;
-        }}
-        .legend-item {{
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-bottom: 5px;
-        }}
-        .legend-item:last-child {{ margin-bottom: 0; }}
-        .swatch {{
-          width: 14px;
-          height: 14px;
-          border-radius: 3px;
-          flex-shrink: 0;
-        }}
-      </style>
-    </head>
-    <body>
-      <iframe src="{tile_url}"></iframe>
-      {legend_html}
-    </body>
-    </html>"""
-
-    return HTMLResponse(content=html)
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 
-handler = Mangum(app, lifespan="off")
+@app.get("/", tags=["Viewer"])
+def root():
+    """Serve the single-page map viewer."""
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"), media_type="text/html")
+
+
+handler = Mangum(
+    app, lifespan="off"
+)  # Lifespan "off" disables startup/shutdown events which can slow down Lambda cold starts.
