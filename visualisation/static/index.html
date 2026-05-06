@@ -235,8 +235,8 @@
     var swipeControl = null;
 
     function tileUrl(key, year) {
-      var L = LAYERS[key];
-      return BASE + "dataset=" + L.ds + "&year=" + year + "&" + L.qs;
+      var layer = LAYERS[key];
+      return BASE + "dataset=" + layer.ds + "&year=" + year + "&" + layer.qs;
     }
 
     var CHECKBOX_MAP = {"class":"chk-class", rgb:"chk-rgb", geomad:"chk-geomad", classuf:"chk-classuf", prob:"chk-prob"};
