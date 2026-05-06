@@ -245,8 +245,8 @@ def geomad(
 
     # If we don't want to overwrite, and the destination file already exists, skip it
     if not overwrite and object_exists(bucket, stac_key, client=client):
-        typer.echo(f"Item already exists at {stac_document}")
-        raise LdnError(f"Item already exists at {stac_document}")
+        typer.echo(f"Item already exists at {stac_document}, skipping.")
+        return
     else:
         if not overwrite:
             typer.echo(f"Item does not exist at {stac_document}, processing tile.")
