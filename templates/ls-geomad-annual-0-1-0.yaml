@@ -9,7 +9,7 @@ spec:
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 1 # TODO: 50 once tested.
+  parallelism: 50
   podMetadata:
     labels:
       app: ls-geomad
@@ -30,7 +30,8 @@ spec:
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc" # The Docker image name (in GHCR)
       - name: image-tag
-        value: "v0.0.2"
+        # value: "v0.0.2" # TODO: make new release with latest code
+        value: "latest" # Use latest for testing, to pick up any changes without having to make a new image tag.
       - name: bucket
         value: "dep-public-staging" # The bucket to store the data
       - name: grids
@@ -66,8 +67,13 @@ spec:
         imagePullPolicy: IfNotPresent
         resources:
           requests:
-            memory: 10Gi
-            cpu: 8
+            # Requesting a lot of resources for this simple task
+            # This is a scheduling trick, if print-tasks requests small, karpenter would
+            # provision a small node first (c6.xlarge/large), then process geomad can't fit
+            #and has to wait for another node to come up. Not critical, just saves a few minutes
+            # of waiting between tasks.
+            memory: 18Gi
+            cpu: 10
         command: [ldn]
         args:
           - print-tasks
@@ -95,13 +101,14 @@ spec:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
         resources:
-          # TODO: Rightsize these.
           requests:
-            memory: 10Gi
-            cpu: 8
+            # Pod memory needed = (n_workers * memory_limit) + scheduler_overhead + main_process_overhead
+            memory: 18Gi
+            # Pod CPU needed = (n_workers * threads_per_worker) + scheduler_threads
+            cpu: 10
           limits:
             memory: 24Gi
-            cpu: 12
+            cpu: 13
           # What DEP was using for S2 annual geomad:
           #   memory: 320Gi
           #   cpu: 42
@@ -121,15 +128,14 @@ spec:
           - "{{ workflow.parameters.version }}"
           - --bucket
           - "{{ workflow.parameters.bucket }}"
-          # TODO: Rightsize these.
           - --memory-limit
-          - "4GB"
+          - "8GB"
           - --n-workers
           - "2"
           - --threads-per-worker
           - "4"
           - --xy-chunk-size
-          - "1600"
+          - "800"
           # What DEP was using for S2 annual geomad:
           # - --memory-limit
           # - "128GB"
