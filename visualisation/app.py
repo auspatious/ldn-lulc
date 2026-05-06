@@ -209,6 +209,7 @@ def root():
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>LDN LULC Viewer</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-compare@1/dist/leaflet-compare.css"/>
   <style>
     * {{ margin:0; padding:0; box-sizing:border-box; }}
     html, body {{ height:100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; }}
@@ -249,14 +250,6 @@ def root():
       background:rgba(0,0,0,0.8); color:#fff; border-radius:4px;
       padding:6px 10px; font-size:12px; font-family:monospace;
       white-space:pre-line; display:none;
-    }}
-
-    /* Swipe label */
-    .swipe-label {{
-      position:absolute; top:50%; z-index:1000;
-      background:rgba(0,0,0,0.7); color:#fff; padding:4px 10px;
-      border-radius:4px; font-size:11px; font-weight:bold;
-      transform:translateY(-50%); pointer-events:none;
     }}
   </style>
 </head>
@@ -338,24 +331,13 @@ def root():
   <div id="tooltip"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-    // Shims for leaflet-side-by-side CommonJS require/module
-    window.require = function(m) {{ if (m === "leaflet") return L; }};
-    window.module = {{ exports: {{}} }};
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/leaflet-side-by-side@2.0.0/index.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-side-by-side@2.0.0/layout.css"/>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-side-by-side@2.0.0/range.css"/>
+  <script src="https://unpkg.com/leaflet-compare@1/dist/leaflet-compare.js"></script>
   <script>
     var YEARS_GEOMAD = {list(years_geomad)};
     var YEARS_PREDICTION = {list(years_prediction)};
     var CLASS_LABELS = {{1:"Tree cover",2:"Grassland",3:"Cropland",4:"Wetland",5:"Built-up",6:"Water",7:"Other",255:"No data"}};
 
     var map = L.map("map", {{center:[0,160], zoom:3}});
-
-    // Dedicated panes for swipe layers (z-index above tilePane at 200)
-    map.createPane("swipeLeftPane").style.zIndex = 450;
-    map.createPane("swipeRightPane").style.zIndex = 451;
 
     var BASEMAPS = {{
       hybrid: [
@@ -451,6 +433,12 @@ def root():
     }}
 
     function rebuildLayers() {{
+      // Remove swipe control before removing layers it references
+      if (swipeControl) {{
+        swipeControl.remove();
+        swipeControl = null;
+      }}
+
       // Remove existing tile layers from map
       for (var k in tileLayers) {{
         if (map.hasLayer(tileLayers[k])) map.removeLayer(tileLayers[k]);
@@ -505,13 +493,6 @@ def root():
           return function(e) {{
             var op = parseFloat(e.target.value);
             tileLayers[k].setOpacity(op);
-            // Also update swipe layers if active
-            if (window._swipeLeft && document.getElementById("swipe-left").value === k) {{
-              window._swipeLeft.setOpacity(op);
-            }}
-            if (window._swipeRight && document.getElementById("swipe-right").value === k) {{
-              window._swipeRight.setOpacity(op);
-            }}
             v.textContent = Math.round(op * 100) + "%";
           }};
         }})(key, val));
@@ -528,29 +509,23 @@ def root():
         var sel = document.getElementById(id);
         var prev = sel.value;
         sel.innerHTML = '<option value="">None</option>';
+        var found = false;
         displayOrder.forEach(function(k) {{
           if (!tileLayers[k]) return;
           var opt = document.createElement("option");
           opt.value = k;
           opt.textContent = LAYERS[k].label;
-          if (k === prev) opt.selected = true;
+          if (k === prev) {{ opt.selected = true; found = true; }}
           sel.appendChild(opt);
         }});
+        if (!found) sel.value = "";
       }});
     }}
 
     function updateSwipe() {{
-      // Clean up previous swipe layers and control
       if (swipeControl) {{
         swipeControl.remove();
         swipeControl = null;
-      }}
-      if (window._swipeLeft) {{ map.removeLayer(window._swipeLeft); window._swipeLeft = null; }}
-      if (window._swipeRight) {{ map.removeLayer(window._swipeRight); window._swipeRight = null; }}
-      // Restore normal layer visibility
-      for (var k in tileLayers) {{
-        var c = tileLayers[k].getContainer();
-        if (c) c.style.display = "";
       }}
 
       var leftKey = document.getElementById("swipe-left").value;
@@ -558,25 +533,10 @@ def root():
       if (!leftKey || !rightKey || leftKey === rightKey) return;
       if (!tileLayers[leftKey] || !tileLayers[rightKey]) return;
 
-      // Hide all normal layers during swipe
-      for (var k in tileLayers) {{
-        var c = tileLayers[k].getContainer();
-        if (c) c.style.display = "none";
-      }}
-
-      // Create fresh tile layers in dedicated panes for the swipe
-      window._swipeLeft = L.tileLayer(tileUrl(leftKey, currentYear), {{
-        opacity: tileLayers[leftKey].options.opacity,
-        maxZoom: 18, tileSize: 256, pane: "swipeLeftPane"
-      }}).addTo(map);
-
-      window._swipeRight = L.tileLayer(tileUrl(rightKey, currentYear), {{
-        opacity: tileLayers[rightKey].options.opacity,
-        maxZoom: 18, tileSize: 256, pane: "swipeRightPane"
-      }}).addTo(map);
-
-      swipeControl = L.control.sideBySide(window._swipeLeft, window._swipeRight);
+      swipeControl = new L.Control.Compare(tileLayers[leftKey], tileLayers[rightKey]);
       swipeControl.addTo(map);
+      L.DomEvent.disableClickPropagation(swipeControl._container);
+      L.DomEvent.on(swipeControl._range, "mousedown", L.DomEvent.stopPropagation);
     }}
 
     document.getElementById("swipe-left").addEventListener("change", updateSwipe);
