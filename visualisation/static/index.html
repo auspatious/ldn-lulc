@@ -464,6 +464,8 @@
       tooltip.style.left = (e.originalEvent.pageX + 14) + "px";
       tooltip.style.top = (e.originalEvent.pageY + 14) + "px";
 
+      // Don't query for tooltip data if zoomed out too far.
+      if (map.getZoom() < 10) { tooltip.style.display = "none"; return; }
       if (tooltipThrottle) return;
       tooltipThrottle = setTimeout(function() { tooltipThrottle = null; }, 1000);
 
