@@ -206,8 +206,10 @@ def geomad(
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_index)
 
-    if not bucket.startswith("https://"):
-        full_path_prefix = "https://data.ldn.auspatious.com"
+    if bucket.startswith("https://"):
+        full_path_prefix = bucket
+    else:
+        full_path_prefix = f"https://{bucket}"
 
     if decimated:
         typer.echo("Warning, using decimated (low resolution) for testing purposes.")
