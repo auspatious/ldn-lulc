@@ -44,9 +44,9 @@ spec:
           - name: print-tasks
             template: print-tasks
 
-          - name: process-id
+          - name: process-geomad
             depends: print-tasks.Succeeded
-            template: process
+            template: process-geomad
             arguments:
               parameters:
                 - name: tile-id
@@ -77,7 +77,7 @@ spec:
           - --grids
           - "{{ workflow.parameters.grids }}"
 
-    - name: process
+    - name: process-geomad
       inputs:
         parameters:
           - name: tile-id
