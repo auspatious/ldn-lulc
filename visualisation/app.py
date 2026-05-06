@@ -325,8 +325,10 @@ def root():
 
     <div class="section">
       <h3>Swipe compare</h3>
+      <p style="font-size:11px;color:#666;margin-bottom:6px;">Select two different layers to compare side-by-side.</p>
       <label>Left: <select id="swipe-left"><option value="">None</option></select></label>
       <label>Right: <select id="swipe-right"><option value="">None</option></select></label>
+      <p id="swipe-hint" style="font-size:11px;color:#c00;margin-top:4px;display:none;"></p>
     </div>
 
     <div class="section" style="text-align:center;">
@@ -572,6 +574,10 @@ def root():
     }}
 
     function updateSwipe() {{
+      var hint = document.getElementById("swipe-hint");
+      hint.style.display = "none";
+      hint.textContent = "";
+
       if (swipeControl) {{
         swipeControl.remove();
         swipeControl = null;
@@ -579,7 +585,23 @@ def root():
 
       var leftKey = document.getElementById("swipe-left").value;
       var rightKey = document.getElementById("swipe-right").value;
-      if (!leftKey || !rightKey || leftKey === rightKey) return;
+
+      if (!leftKey && !rightKey) return;
+      if (leftKey && !rightKey) {{
+        hint.textContent = "Select a right layer to compare.";
+        hint.style.display = "block";
+        return;
+      }}
+      if (!leftKey && rightKey) {{
+        hint.textContent = "Select a left layer to compare.";
+        hint.style.display = "block";
+        return;
+      }}
+      if (leftKey === rightKey) {{
+        hint.textContent = "Left and right must be different layers.";
+        hint.style.display = "block";
+        return;
+      }}
       if (!tileLayers[leftKey] || !tileLayers[rightKey]) return;
 
       swipeControl = new L.Control.Compare(tileLayers[leftKey], tileLayers[rightKey]);
