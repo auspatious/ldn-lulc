@@ -494,6 +494,8 @@ def root():
         if (map.hasLayer(tileLayers[k])) map.removeLayer(tileLayers[k]);
       }}
       tileLayers = {{}};
+      tilesLoading = 0;
+      updateLoadingIndicator();
 
       updateCheckboxAvailability();
 
@@ -501,6 +503,38 @@ def root():
       LAYER_ORDER.forEach(function(key) {{
         var cb = document.getElementById(CHECKBOX_MAP[key]);
         if (cb && cb.checked && LAYERS[key].dsYears.indexOf(currentYear) >= 0) {{
+          tileLayers[key] = createTileLayer(key, currentYear);
+          tileLayers[key].addTo(map);
+        }}
+      }});
+
+      rebuildOpacitySliders();
+      rebuildSwipeSelects();
+      updateSwipe();
+      updateLegends();
+    }}
+
+    function syncLayers() {{
+      // Only add/remove layers that changed, preserving existing ones
+      var desired = {{}};
+      LAYER_ORDER.forEach(function(key) {{
+        var cb = document.getElementById(CHECKBOX_MAP[key]);
+        if (cb && cb.checked && LAYERS[key].dsYears.indexOf(currentYear) >= 0) {{
+          desired[key] = true;
+        }}
+      }});
+
+      // Remove layers no longer desired
+      for (var k in tileLayers) {{
+        if (!desired[k]) {{
+          map.removeLayer(tileLayers[k]);
+          delete tileLayers[k];
+        }}
+      }}
+
+      // Add new layers (in z-order)
+      LAYER_ORDER.forEach(function(key) {{
+        if (desired[key] && !tileLayers[key]) {{
           tileLayers[key] = createTileLayer(key, currentYear);
           tileLayers[key].addTo(map);
         }}
@@ -619,7 +653,7 @@ def root():
     }});
 
     ["chk-rgb","chk-geomad","chk-class","chk-classuf","chk-prob"].forEach(function(id) {{
-      document.getElementById(id).addEventListener("change", rebuildLayers);
+      document.getElementById(id).addEventListener("change", syncLayers);
     }});
 
     // Tooltip on hover
