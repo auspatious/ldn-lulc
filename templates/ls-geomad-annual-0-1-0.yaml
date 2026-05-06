@@ -16,12 +16,12 @@ spec:
     annotations:
       karpenter.sh/do-not-disrupt: "true"
   nodeSelector:
-    karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-production nodepool can only pick spot instances
-    dep/workload: data-production
+    karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-processing nodepool can only pick spot instances
+    dep/workload: data-processing
   tolerations:
     - key: dep/workload
       operator: Equal
-      value: data-production
+      value: data-processing
       effect: NoSchedule
   arguments:
     parameters:
