@@ -91,27 +91,35 @@ MOSAIC_PATHS_PREDICTION: dict[str, str] = {}
 
 # Scan S3 for mosaic JSONs on startup and populate paths dicts.
 # Expects filenames like geomad_2020_mosaic.json or prediction_2020_mosaic.json.
-s3 = boto3.client("s3")
 MOSAIC_PATTERN = re.compile(r"(\w+)_(\d{4})_mosaic\.json$")
 
-for prefix, dataset_prefix, version, paths_dict in [
-    ("geomad", GEOMAD_DATASET_PREFIX, GEOMAD_VERSION, MOSAIC_PATHS_GEOMAD),
-    (
-        "prediction",
-        PREDICTION_DATASET_PREFIX,
-        PREDICTION_VERSION,
-        MOSAIC_PATHS_PREDICTION,
-    ),
-]:
-    s3_prefix = f"{dataset_prefix}/{version}/mosaics/"
-    # This doesn't have pagination so is capped at 1000 items. We won't hit this because it is one mosaic per year.
-    response = s3.list_objects_v2(Bucket=MOSAIC_S3_BUCKET, Prefix=s3_prefix)
-    for obj in response.get("Contents", []):
-        key = obj["Key"]
-        match = MOSAIC_PATTERN.search(key)
-        if match:
-            year = match.group(2)
-            paths_dict[year] = f"s3://{MOSAIC_S3_BUCKET}/{key}"
+try:
+    s3 = boto3.client("s3")
+    for prefix, dataset_prefix, version, paths_dict in [
+        ("geomad", GEOMAD_DATASET_PREFIX, GEOMAD_VERSION, MOSAIC_PATHS_GEOMAD),
+        (
+            "prediction",
+            PREDICTION_DATASET_PREFIX,
+            PREDICTION_VERSION,
+            MOSAIC_PATHS_PREDICTION,
+        ),
+    ]:
+        s3_prefix = f"{dataset_prefix}/{version}/mosaics/"
+        # Capped at 1000 items (no pagination). Fine because there is one mosaic per year.
+        response = s3.list_objects_v2(Bucket=MOSAIC_S3_BUCKET, Prefix=s3_prefix)
+        for obj in response.get("Contents", []):
+            key = obj["Key"]
+            match = MOSAIC_PATTERN.search(key)
+            if match:
+                year = match.group(2)
+                paths_dict[year] = f"s3://{MOSAIC_S3_BUCKET}/{key}"
+except Exception as e:
+    logger.error(f"Failed to scan S3 for mosaics: {e}")
+    if not MOSAIC_PATHS_GEOMAD and not MOSAIC_PATHS_PREDICTION:
+        raise RuntimeError(
+            f"Cannot start: failed to discover any mosaics from s3://{MOSAIC_S3_BUCKET}. "
+            f"Check AWS credentials and network connectivity. Error: {e}"
+        ) from e
 
 logger.info(f"GeoMAD mosaics: {sorted(MOSAIC_PATHS_GEOMAD.keys())}")
 logger.info(f"Prediction mosaics: {sorted(MOSAIC_PATHS_PREDICTION.keys())}")
