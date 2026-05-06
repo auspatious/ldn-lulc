@@ -16,7 +16,12 @@ spec:
     annotations:
       karpenter.sh/do-not-disrupt: "true"
   nodeSelector:
-    karpenter.sh/capacity-type: "spot"
+    dep/workload: data-production
+  tolerations:
+    - key: dep/workload
+      operator: Equal
+      value: data-production
+      effect: NoSchedule
   arguments:
     parameters:
       - name: version
