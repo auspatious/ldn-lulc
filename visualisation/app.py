@@ -170,6 +170,17 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def add_cache_control(request, call_next):
+    """Add Cache-Control headers to tile responses for browser caching."""
+    response = await call_next(request)
+    if "/tiles/" in request.url.path and response.status_code == 200:
+        # browsers cache tiles for 24 hours
+        # CDN/proxy caches (e.g. CloudFront) cache for 7 days
+        response.headers["Cache-Control"] = "public, max-age=86400, s-maxage=604800"
+    return response
+
+
 mosaic_factory = MosaicTilerFactory(
     backend=MosaicBackend,  # type: ignore
     dataset_reader=STACReader,
