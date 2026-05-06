@@ -13,7 +13,7 @@ variable "function_name" {
 variable "s3_bucket" {
   description = "S3 bucket containing mosaic JSONs and COGs"
   type        = string
-  default     = "data.ldn.auspatious.com"
+  default     = "data.ldn.auspatious.com" # TODO: update.
 }
 
 variable "memory_size" {

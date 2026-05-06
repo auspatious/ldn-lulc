@@ -83,6 +83,7 @@ os.environ.update(
     }
 )
 
+# TODO: Update bucket and prefix variables.
 MOSAIC_S3_BUCKET = "data.ldn.auspatious.com"
 GEOMAD_DATASET_PREFIX = "ausp_ls_geomad"
 PREDICTION_DATASET_PREFIX = "ausp_ls_lulc_prediction"
