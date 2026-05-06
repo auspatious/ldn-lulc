@@ -13,8 +13,6 @@ spec:
   podMetadata:
     labels:
       app: ls-geomad
-    annotations:
-      karpenter.sh/do-not-disrupt: "true"
   nodeSelector:
     karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-production nodepool can only pick spot instances
     dep/workload: data-production
@@ -66,8 +64,8 @@ spec:
         imagePullPolicy: IfNotPresent
         resources:
           requests:
-            memory: 100Mi
-            cpu: 1.0
+            memory: 10Gi
+            cpu: 8
         command: [ldn]
         args:
           - print-tasks
