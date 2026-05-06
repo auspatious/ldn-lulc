@@ -104,6 +104,7 @@ for prefix, dataset_prefix, version, paths_dict in [
     ),
 ]:
     s3_prefix = f"{dataset_prefix}/{version}/mosaics/"
+    # This doesn't have pagination so is capped at 1000 items. We won't hit this because it is one mosaic per year.
     response = s3.list_objects_v2(Bucket=MOSAIC_S3_BUCKET, Prefix=s3_prefix)
     for obj in response.get("Contents", []):
         key = obj["Key"]
@@ -240,10 +241,26 @@ def root():
       padding:6px 10px; font-size:12px; font-family:monospace;
       white-space:pre-line; display:none;
     }}
+
+    /* Loading indicator */
+    #loading {{
+      position:absolute; top:10px; right:10px; z-index:1001;
+      background:rgba(0,0,0,0.7); color:#fff; border-radius:6px;
+      padding:8px 14px; font-size:12px; display:none;
+      align-items:center; gap:8px;
+    }}
+    #loading.active {{ display:flex; }}
+    .spinner {{
+      width:14px; height:14px; border:2px solid rgba(255,255,255,0.3);
+      border-top-color:#fff; border-radius:50%;
+      animation:spin 0.8s linear infinite;
+    }}
+    @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div id="loading"><div class="spinner"></div><span>Loading tiles...</span></div>
 
   <div id="controls">
     <div style="text-align:center;margin-bottom:10px;">
@@ -414,11 +431,25 @@ def root():
       }}
     }}
 
+    var loadingEl = document.getElementById("loading");
+    var tilesLoading = 0;
+
+    function updateLoadingIndicator() {{
+      if (tilesLoading > 0) {{
+        loadingEl.classList.add("active");
+      }} else {{
+        loadingEl.classList.remove("active");
+      }}
+    }}
+
     function createTileLayer(key, year) {{
-      return L.tileLayer(tileUrl(key, year), {{
+      var layer = L.tileLayer(tileUrl(key, year), {{
         opacity: 0.75, maxZoom: 18, tileSize: 256,
         errorTileUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
       }});
+      layer.on("tileloadstart", function() {{ tilesLoading++; updateLoadingIndicator(); }});
+      layer.on("tileload tileunload tileerror", function() {{ tilesLoading = Math.max(0, tilesLoading - 1); updateLoadingIndicator(); }});
+      return layer;
     }}
 
     function rebuildLayers() {{
