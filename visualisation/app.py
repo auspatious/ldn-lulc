@@ -95,10 +95,9 @@ MOSAIC_PATTERN = re.compile(r"(\w+)_(\d{4})_mosaic\.json$")
 
 try:
     s3 = boto3.client("s3")
-    for prefix, dataset_prefix, version, paths_dict in [
-        ("geomad", GEOMAD_DATASET_PREFIX, GEOMAD_VERSION, MOSAIC_PATHS_GEOMAD),
+    for dataset_prefix, version, paths_dict in [
+        (GEOMAD_DATASET_PREFIX, GEOMAD_VERSION, MOSAIC_PATHS_GEOMAD),
         (
-            "prediction",
             PREDICTION_DATASET_PREFIX,
             PREDICTION_VERSION,
             MOSAIC_PATHS_PREDICTION,
