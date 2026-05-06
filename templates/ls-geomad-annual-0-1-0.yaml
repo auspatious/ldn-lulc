@@ -1,3 +1,4 @@
+apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
   generateName: landsat-geomad-
@@ -61,10 +62,6 @@ spec:
           # - name: mosaic-geomad
 
     - name: print-tasks
-      inputs:
-        parameters:
-          - name: grids
-          - name: years
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
@@ -86,20 +83,17 @@ spec:
           - name: tile-id
           - name: year
           - name: region
-          - name: version
-          - name: bucket
-          - name: overwrite
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
         resources:
-          # TODO: Rightsize these.
+          # TODO: Rightsize these. This should work for decimated testing.
           requests:
-            memory: 16Gi
-            cpu: 4
+            memory: 10Gi
+            cpu: 8
           limits:
-            memory: 64Gi
-            cpu: 16
+            memory: 24Gi
+            cpu: 12
           # What DEP was using for S2 annual geomad:
           #   memory: 320Gi
           #   cpu: 42
@@ -119,19 +113,18 @@ spec:
           - "{{ workflow.parameters.version }}"
           - --bucket
           - "{{ workflow.parameters.bucket }}"
-          - "{{ workflow.parameters.decimated }}"
           - --product-owner
-          - ausp
-          - --include-shadow
-          - --ls7-buffer-years
-          - "1"
-          # TODO: Rightsize these:
+          - ausp # TODO: This overrides pacific vs. non-pacific folders in S3 path. Do we want this?
+          # - --include-shadow # Default.
+          # - --ls7-buffer-years # Default.
+          # - "1" # Default.
+          # TODO: Rightsize these. This should work for decimated testing.
           - --memory-limit
-          - "16GB"
+          - "4GB"
           - --n-workers
-          - "4"
+          - "2"
           - --threads-per-worker
-          - "32"
+          - "4"
           - --xy-chunk-size
           - "1600"
           # What DEP was using for S2 annual geomad:
@@ -144,3 +137,4 @@ spec:
           # - --xy-chunk-size
           # - "1600"
           - "{{ workflow.parameters.overwrite }}"
+          - "{{ workflow.parameters.decimated }}"

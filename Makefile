@@ -44,6 +44,7 @@ print-tasks-2000-2025-pacific:
 
 
 # Run geomad for all test case sites for years 2000-2025.
+# TODO: do we want to use the product owner flag? This puts all regions in the same S3 path.
 geomad-2000-2025:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
@@ -55,8 +56,6 @@ geomad-2000-2025:
 				--year $$year \
 				--version $(VERSION_GEOMAD) \
 				--product-owner ausp \
-				--include-shadow \
-				--ls7-buffer-years 1 \
 				--overwrite; \
 		done; \
 	done
