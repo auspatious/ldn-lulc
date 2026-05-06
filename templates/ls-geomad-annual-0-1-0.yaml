@@ -25,18 +25,16 @@ spec:
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc" # The Docker image name (in GHCR)
       - name: image-tag
-        value: "b1999d8" # TODO: Update to latest?
+        value: "v0.0.1"
       - name: bucket
         value: "dep-public-staging" # The bucket to store the data
       - name: grids
         value: "pacific" # Which grid(s) to process: "all", "pacific", "non-pacific"
       - name: years
-        value: "2000-2025" # Which year(s) to process (e.g. "2000-2025" or "2000,2005,2010")
+        # value: "2000-2025" # Which year(s) to process (e.g. "2000-2025" or "2000,2005,2010")
+        value: "2025" # Just 2025 to test.
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
-      - name: decimated
-        # TODO: Disable decimated after testing.
-        value: "--decimated" # Can be "--decimated" or "--no-decimated"
   templates:
     - name: workflow-entrypoint
       dag:
@@ -56,10 +54,6 @@ spec:
                 - name: region
                   value: "{{item.region}}"
             withParam: "{{ tasks.print-tasks.outputs.result }}"
-
-          # TODO: Should these steps be done in this workflow too? They are the next steps.
-          # - name: index-geomad
-          # - name: mosaic-geomad
 
     - name: print-tasks
       container:
@@ -87,7 +81,7 @@ spec:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
         resources:
-          # TODO: Rightsize these. This should work for decimated testing.
+          # TODO: Rightsize these.
           requests:
             memory: 10Gi
             cpu: 8
@@ -113,12 +107,7 @@ spec:
           - "{{ workflow.parameters.version }}"
           - --bucket
           - "{{ workflow.parameters.bucket }}"
-          - --product-owner
-          - ausp # TODO: This overrides pacific vs. non-pacific folders in S3 path. Do we want this?
-          # - --include-shadow # Default.
-          # - --ls7-buffer-years # Default.
-          # - "1" # Default.
-          # TODO: Rightsize these. This should work for decimated testing.
+          # TODO: Rightsize these.
           - --memory-limit
           - "4GB"
           - --n-workers
@@ -137,4 +126,3 @@ spec:
           # - --xy-chunk-size
           # - "1600"
           - "{{ workflow.parameters.overwrite }}"
-          - "{{ workflow.parameters.decimated }}"
