@@ -41,7 +41,7 @@ docker push ${ECR_URL}:latest
 
 # Verify the pushed image digest matches the local image
 LOCAL_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${ECR_URL}:latest | cut -d@ -f2)
-REMOTE_DIGEST=$(aws ecr describe-images --repository-name ${FUNCTION_NAME} --image-ids imageTag=latest --query 'imageDetails[0].imageDigest' --output text)
+REMOTE_DIGEST=$(aws ecr describe-images --region ${AWS_REGION} --repository-name ${FUNCTION_NAME} --image-ids imageTag=latest --query 'imageDetails[0].imageDigest' --output text)
 if [ "$LOCAL_DIGEST" != "$REMOTE_DIGEST" ]; then
   echo "ERROR: Push verification failed. Local digest: $LOCAL_DIGEST, Remote digest: $REMOTE_DIGEST"
   exit 1

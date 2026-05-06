@@ -137,7 +137,7 @@ A tile server for viewing GeoMedian/GeoMAD and predicted LULC mosaics, built wit
 From the project root:
 ```bash
 poetry install --with visualisation # Needed for ldn make-mosaics command.
-bash visualisation/deploy.sh
+poetry run bash visualisation/deploy.sh
 ```
 
 This will:
