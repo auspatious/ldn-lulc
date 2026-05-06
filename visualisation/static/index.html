@@ -306,6 +306,7 @@
       rebuildSwipeSelects();
       updateSwipe();
       updateLegends();
+      pushState();
     }
 
     function syncLayers() {
@@ -344,6 +345,7 @@
       rebuildSwipeSelects();
       updateSwipe();
       updateLegends();
+      pushState();
     }
 
     function updateLegends() {
@@ -641,15 +643,11 @@
         if (initState.swipeLeft && initState.swipeRight) updateSwipe();
       }
 
-      // Update hash on map move and state changes
+      // Update hash on map move and basemap/swipe changes
       map.on("moveend", pushState);
-      document.getElementById("year-select").addEventListener("change", pushState);
       document.getElementById("basemap-select").addEventListener("change", pushState);
       document.getElementById("swipe-left").addEventListener("change", pushState);
       document.getElementById("swipe-right").addEventListener("change", pushState);
-      ["chk-rgb","chk-geomad","chk-class","chk-classuf","chk-prob"].forEach(function(id) {
-        document.getElementById(id).addEventListener("change", pushState);
-      });
     }).catch(function(err) {
       console.error("Failed to load config:", err);
       var panel = document.getElementById("controls");
