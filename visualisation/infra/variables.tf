@@ -13,7 +13,7 @@ variable "function_name" {
 variable "s3_bucket" {
   description = "S3 bucket containing mosaic JSONs and COGs"
   type        = string
-  default     = "data.ldn.auspatious.com"
+  default     = "data.ldn.auspatious.com" # TODO: update.
 }
 
 variable "memory_size" {
@@ -29,7 +29,7 @@ variable "timeout" {
 }
 
 variable "geomad_version" {
-  description = "GeoMAD dataset version string (e.g. 0-0-4a)"
+  description = "GeoMAD dataset version string (e.g. 0-1-0)"
   type        = string
 }
 

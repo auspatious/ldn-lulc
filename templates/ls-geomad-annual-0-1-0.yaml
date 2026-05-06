@@ -1,0 +1,133 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: landsat-geomad-
+  namespace: argo
+spec:
+  entrypoint: workflow-entrypoint
+  serviceAccountName: public-bucket-writer
+  podGC:
+    strategy: OnWorkflowSuccess
+    deleteDelayDuration: 600s
+  parallelism: 1 # TODO: 50 once tested.
+  podMetadata:
+    labels:
+      app: ls-geomad
+    annotations:
+      karpenter.sh/do-not-disrupt: "true"
+  nodeSelector:
+    karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-production nodepool can only pick spot instances
+    dep/workload: data-production
+  tolerations:
+    - key: dep/workload
+      operator: Equal
+      value: data-production
+      effect: NoSchedule
+  arguments:
+    parameters:
+      - name: version
+        value: "0.1.0" # The version of the data product being made
+      - name: image-name
+        value: "ghcr.io/auspatious/ldn-lulc" # The Docker image name (in GHCR)
+      - name: image-tag
+        value: "v0.0.1" # TODO: Will need to make a new release because the geomad-argo-template branch has fixes that weren't in main for the first release.
+      - name: bucket
+        value: "dep-public-staging" # The bucket to store the data
+      - name: grids
+        value: "pacific" # Which grid(s) to process: "all", "pacific", "non-pacific"
+      - name: years
+        # value: "2000-2025" # Which year(s) to process (e.g. "2000-2025" or "2000,2005,2010")
+        value: "2025" # Just 2025 to test.
+      - name: overwrite
+        value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
+  templates:
+    - name: workflow-entrypoint
+      dag:
+        tasks:
+          - name: print-tasks
+            template: print-tasks
+
+          - name: process-geomad
+            depends: print-tasks.Succeeded
+            template: process-geomad
+            arguments:
+              parameters:
+                - name: tile-id
+                  value: "{{item.id}}"
+                - name: year
+                  value: "{{item.year}}"
+                - name: region
+                  value: "{{item.region}}"
+            withParam: "{{ tasks.print-tasks.outputs.result }}"
+
+    - name: print-tasks
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: 100Mi
+            cpu: 1.0
+        command: [ldn]
+        args:
+          - print-tasks
+          - --years
+          - "{{ workflow.parameters.years }}"
+          - --grids
+          - "{{ workflow.parameters.grids }}"
+
+    - name: process-geomad
+      inputs:
+        parameters:
+          - name: tile-id
+          - name: year
+          - name: region
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          # TODO: Rightsize these.
+          requests:
+            memory: 10Gi
+            cpu: 8
+          limits:
+            memory: 24Gi
+            cpu: 12
+          # What DEP was using for S2 annual geomad:
+          #   memory: 320Gi
+          #   cpu: 42
+          # limits:
+          #   cpu: 48
+          #   memory: 360Gi
+        command: [ldn]
+        args:
+          - geomad
+          - --tile-id
+          - "{{ inputs.parameters.tile-id }}"
+          - --year
+          - "{{ inputs.parameters.year }}"
+          - --region
+          - "{{ inputs.parameters.region }}"
+          - --version
+          - "{{ workflow.parameters.version }}"
+          - --bucket
+          - "{{ workflow.parameters.bucket }}"
+          # TODO: Rightsize these.
+          - --memory-limit
+          - "4GB"
+          - --n-workers
+          - "2"
+          - --threads-per-worker
+          - "4"
+          - --xy-chunk-size
+          - "1600"
+          # What DEP was using for S2 annual geomad:
+          # - --memory-limit
+          # - "128GB"
+          # - --n-workers
+          # - "4"
+          # - --threads-per-worker
+          # - "32"
+          # - --xy-chunk-size
+          # - "1600"
+          - "{{ workflow.parameters.overwrite }}"

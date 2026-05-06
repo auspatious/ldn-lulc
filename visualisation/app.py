@@ -30,7 +30,7 @@ PREDICTION_VERSION = os.environ.get("PREDICTION_VERSION")
 
 if not GEOMAD_VERSION or not PREDICTION_VERSION:
     raise ValueError(
-        "GEOMAD_VERSION and PREDICTION_VERSION environment variables must be set (e.g. to '0-0-4a' and '0-0-3')."
+        "GEOMAD_VERSION and PREDICTION_VERSION environment variables must be set (e.g. to '0-1-0' and '0-0-3')."
     )
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,7 @@ os.environ.update(
     }
 )
 
+# TODO: Update bucket and prefix variables.
 MOSAIC_S3_BUCKET = "data.ldn.auspatious.com"
 GEOMAD_DATASET_PREFIX = "ausp_ls_geomad"
 PREDICTION_DATASET_PREFIX = "ausp_ls_lulc_prediction"

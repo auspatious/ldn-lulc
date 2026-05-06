@@ -125,6 +125,9 @@ def print_tasks(
         f.write(tasks_json_str)
 
     typer.echo(tasks_json_str)
+    logger.info(
+        f"{len(tasks)} tasks written to tasks.json for years: {years} and grids: {grids}."
+    )
     return
 
 
@@ -203,8 +206,10 @@ def geomad(
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_index)
 
-    if not bucket.startswith("https://"):
-        full_path_prefix = "https://data.ldn.auspatious.com"
+    if bucket.startswith("https://"):
+        full_path_prefix = bucket
+    else:
+        full_path_prefix = f"https://{bucket}"
 
     if decimated:
         typer.echo("Warning, using decimated (low resolution) for testing purposes.")
@@ -215,9 +220,9 @@ def geomad(
     # Configure for checking item existence
     client = boto3.client("s3")
 
-    # TODO: Do we need different paths for the 2 regions? One would make things easier to maintain. But 2 is clearer that they have different CRSs etc.
-    prefix = "ausp"
-    if product_owner is None:
+    if product_owner is not None:
+        prefix = product_owner
+    else:
         prefix = "ci" if region == "non-pacific" else "dep"
 
     # Check if we've done this tile before
@@ -274,7 +279,7 @@ def geomad(
 
     # Metadata creator
     stac_creator = StacCreator(
-        collection_url_root=f"https://data.ldn.auspatious.com/#{prefix}_{sensor}_{dataset_id}/",
+        collection_url_root=f"{full_path_prefix}/#{prefix}_{sensor}_{dataset_id}/",
         itempath=itempath,
         with_raster=True,
     )
@@ -480,6 +485,7 @@ def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
     return mosaic
 
 
+# TODO: Make bucket and prefix variables.
 @app.command()
 def make_mosaics(
     years: Annotated[
