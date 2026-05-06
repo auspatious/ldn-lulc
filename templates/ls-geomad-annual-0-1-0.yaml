@@ -16,12 +16,12 @@ spec:
     annotations:
       karpenter.sh/do-not-disrupt: "true"
   nodeSelector:
-    karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-production nodepool can only pick spot instances
-    dep/workload: data-production
+    karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-processing nodepool can only pick spot instances
+    dep/workload: data-processing
   tolerations:
     - key: dep/workload
       operator: Equal
-      value: data-production
+      value: data-processing
       effect: NoSchedule
   arguments:
     parameters:
@@ -66,8 +66,8 @@ spec:
         imagePullPolicy: IfNotPresent
         resources:
           requests:
-            memory: 100Mi
-            cpu: 1.0
+            memory: 10Gi
+            cpu: 8
         command: [ldn]
         args:
           - print-tasks
@@ -82,6 +82,15 @@ spec:
           - name: tile-id
           - name: year
           - name: region
+      retryStrategy:
+        limit: "3"
+        retryPolicy: OnFailure
+        backoff:
+          duration: "5s"
+          factor: 2
+          maxDuration: "5m"
+        # Don't retry OOMKills (exit 137)
+        expression: "asInt(lastRetry.exitCode) != 137"
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
