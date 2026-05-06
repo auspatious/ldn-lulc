@@ -207,11 +207,20 @@ def root():
 
     /* Control panel */
     #controls {{
-      position:absolute; top:10px; left:55px; z-index:1000;
+      position:absolute; top:130px; left:10px; right:10px; z-index:1000;
       background:rgba(255,255,255,0.95); border-radius:8px;
-      padding:14px 16px; min-width:260px;
+      padding:14px 16px;
       box-shadow:0 2px 8px rgba(0,0,0,0.25);
-      font-size:13px; max-height:calc(100vh - 30px); overflow-y:auto;
+      font-size:13px; max-height:calc(100vh - 60px); overflow-y:auto;
+      transition: transform 0.3s ease;
+      max-width:300px;
+    }}
+    #controls.collapsed {{ transform:translateX(calc(-100% - 20px)); }}
+    #toggle-controls {{
+      position:absolute; top:80px; left:10px; z-index:1001;
+      background:rgba(255,255,255,0.95); border:none; border-radius:6px;
+      width:36px; height:36px; font-size:18px; cursor:pointer;
+      box-shadow:0 2px 6px rgba(0,0,0,0.25);
     }}
     #controls h3 {{ margin:0 0 10px; font-size:14px; }}
     #controls label {{ display:block; margin:4px 0; cursor:pointer; }}
@@ -256,17 +265,29 @@ def root():
       animation:spin 0.8s linear infinite;
     }}
     @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
+
+    /* Desktop */
+    @media (min-width: 801px) {{
+      #controls {{
+        top:10px; left:55px; right:auto;
+        min-width:260px;
+        max-height:calc(100vh - 30px);
+      }}
+      #controls.collapsed {{ transform:translateX(calc(-100% - 60px)); }}
+      #toggle-controls {{ display:none; }}
+    }}
   </style>
 </head>
 <body>
   <div id="map"></div>
   <div id="loading"><div class="spinner"></div><span>Loading tiles...</span></div>
+  <button id="toggle-controls">&#9776;</button>
 
   <div id="controls">
     <div style="text-align:center;margin-bottom:10px;">
       <a href="https://auspatious.com/" target="_blank" rel="noopener noreferrer">
         <img src="https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/as-logo-horz-tag-colour.svg"
-             alt="Auspatious" style="height:100px;"/>
+             alt="Auspatious" style="width:100%;"/>
       </a>
     </div>
 
@@ -339,6 +360,13 @@ def root():
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-compare@1/dist/leaflet-compare.js"></script>
   <script>
+    // Mobile toggle for controls panel
+    document.getElementById("toggle-controls").addEventListener("click", function() {{
+      var panel = document.getElementById("controls");
+      panel.classList.toggle("collapsed");
+      this.textContent = panel.classList.contains("collapsed") ? "\u2630" : "\u2715";
+    }});
+
     var YEARS_GEOMAD = {list(years_geomad)};
     var YEARS_PREDICTION = {list(years_prediction)};
     var CLASS_LABELS = {{1:"Tree cover",2:"Grassland",3:"Cropland",4:"Wetland",5:"Built-up",6:"Water",7:"Other",255:"No data"}};
