@@ -202,11 +202,6 @@ add_exception_handlers(app, DEFAULT_STATUS_CODES)
 add_exception_handlers(app, MOSAIC_STATUS_CODES)
 
 
-# Load balancers (ALB, CloudFront, ECS, etc.) need a lightweight endpoint to probe
-# whether the service is alive — without this, they'd hit / which renders the full
-# HTML page (wasteful), or a tile endpoint which requires S3 access. The health
-# check is fast, has no dependencies, and returns a 200 that any health checker can
-# validate.
 @app.get("/health", tags=["Health"])
 def health():
     """Health check endpoint for load balancers and monitoring."""

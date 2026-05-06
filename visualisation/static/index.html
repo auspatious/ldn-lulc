@@ -579,7 +579,10 @@
     }
 
     // Fetch config and initialize
-    fetch("/config.json").then(function(r) { return r.json(); }).then(function(config) {
+    fetch("/config.json").then(function(r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function(config) {
       YEARS_GEOMAD = config.years_geomad;
       YEARS_PREDICTION = config.years_prediction;
       currentYear = config.default_year;
@@ -645,6 +648,13 @@
       ["chk-rgb","chk-geomad","chk-class","chk-classuf","chk-prob"].forEach(function(id) {
         document.getElementById(id).addEventListener("change", pushState);
       });
+    }).catch(function(err) {
+      console.error("Failed to load config:", err);
+      var panel = document.getElementById("controls");
+      var msg = document.createElement("p");
+      msg.style.cssText = "color:#c00;font-size:12px;padding:10px 0;";
+      msg.textContent = "Failed to load configuration. Please refresh the page.";
+      panel.appendChild(msg);
     });
   </script>
 </body>
