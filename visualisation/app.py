@@ -375,41 +375,31 @@ def root():
 
     var map = L.map("map", {{center:[0,160], zoom:3}});
 
-    var BASEMAPS = {{
+    var BASEMAP_CONFIGS = {{
       hybrid: [
-        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}", {{
-          attribution:'&copy; Esri', maxZoom:19
-        }}),
-        L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{{z}}/{{y}}/{{x}}", {{
-          maxZoom:19, pane:"overlayPane"
-        }})
+        {{ url:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}", opts:{{ attribution:'&copy; Esri', maxZoom:19 }} }},
+        {{ url:"https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{{z}}/{{y}}/{{x}}", opts:{{ maxZoom:19, pane:"overlayPane" }} }}
       ],
       satellite: [
-        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}", {{
-          attribution:'&copy; Esri', maxZoom:19
-        }})
+        {{ url:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}", opts:{{ attribution:'&copy; Esri', maxZoom:19 }} }}
       ],
       osm: [
-        L.tileLayer("https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", {{
-          attribution:'&copy; <a href="https://openstreetmap.org">OSM</a>', maxZoom:19
-        }})
+        {{ url:"https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", opts:{{ attribution:'&copy; <a href="https://openstreetmap.org">OSM</a>', maxZoom:19 }} }}
       ],
       light: [
-        L.tileLayer("https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}@2x.png", {{
-          attribution:'&copy; <a href="https://carto.com/">CARTO</a>', maxZoom:19
-        }})
+        {{ url:"https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}@2x.png", opts:{{ attribution:'&copy; <a href="https://carto.com/">CARTO</a>', maxZoom:19 }} }}
       ],
       dark: [
-        L.tileLayer("https://{{s}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}@2x.png", {{
-          attribution:'&copy; <a href="https://carto.com/">CARTO</a>', maxZoom:19
-        }})
+        {{ url:"https://{{s}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}@2x.png", opts:{{ attribution:'&copy; <a href="https://carto.com/">CARTO</a>', maxZoom:19 }} }}
       ]
     }};
 
     var activeBasemapLayers = [];
     function setBasemap(name) {{
       activeBasemapLayers.forEach(function(l) {{ map.removeLayer(l); }});
-      activeBasemapLayers = (BASEMAPS[name] || BASEMAPS.hybrid).map(function(l) {{
+      var configs = BASEMAP_CONFIGS[name] || BASEMAP_CONFIGS.hybrid;
+      activeBasemapLayers = configs.map(function(cfg) {{
+        var l = L.tileLayer(cfg.url, cfg.opts);
         l.addTo(map); l.bringToBack(); return l;
       }});
     }}
