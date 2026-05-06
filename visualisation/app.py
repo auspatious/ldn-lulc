@@ -483,6 +483,7 @@ def root():
             var op = parseFloat(e.target.value);
             tileLayers[k].setOpacity(op);
             v.textContent = Math.round(op * 100) + "%";
+            pushState();
           }};
         }})(key, val));
         row.appendChild(lbl);
@@ -607,8 +608,105 @@ def root():
       tooltip.style.display = "none";
     }});
 
+    // --- URL hash state ---
+    function getStateFromHash() {{
+      var hash = window.location.hash.replace(/^#/, "");
+      if (!hash) return null;
+      var parts = hash.split("/");
+      var state = {{}};
+      // lat,lng,zoom
+      if (parts[0]) {{
+        var pos = parts[0].split(",");
+        if (pos.length >= 3) {{
+          state.lat = parseFloat(pos[0]);
+          state.lng = parseFloat(pos[1]);
+          state.zoom = parseInt(pos[2], 10);
+        }}
+      }}
+      if (parts[1]) state.year = parts[1];
+      if (parts[2]) state.basemap = parts[2];
+      if (parts[3]) state.layers = parts[3].split(",");
+      if (parts[4]) {{
+        var opParts = parts[4].split(",");
+        state.opacity = {{}};
+        opParts.forEach(function(p) {{
+          var kv = p.split(":");
+          if (kv.length === 2) state.opacity[kv[0]] = parseFloat(kv[1]);
+        }});
+      }}
+      if (parts[5]) {{
+        var sw = parts[5].split(",");
+        state.swipeLeft = sw[0] || "";
+        state.swipeRight = sw[1] || "";
+      }}
+      return state;
+    }}
+
+    function pushState() {{
+      var c = map.getCenter();
+      var z = map.getZoom();
+      var pos = c.lat.toFixed(4) + "," + c.lng.toFixed(4) + "," + z;
+      var year = currentYear;
+      var basemap = document.getElementById("basemap-select").value;
+      var layers = [];
+      for (var key in CHECKBOX_MAP) {{
+        if (document.getElementById(CHECKBOX_MAP[key]).checked) layers.push(key);
+      }}
+      var opParts = [];
+      for (var k in tileLayers) {{
+        opParts.push(k + ":" + tileLayers[k].options.opacity);
+      }}
+      var sl = document.getElementById("swipe-left").value || "";
+      var sr = document.getElementById("swipe-right").value || "";
+      var swipe = (sl || sr) ? sl + "," + sr : "";
+      var hash = pos + "/" + year + "/" + basemap + "/" + layers.join(",") + "/" + opParts.join(",") + "/" + swipe;
+      history.replaceState(null, "", "#" + hash);
+    }}
+
+    // Apply hash state on load
+    var initState = getStateFromHash();
+    if (initState) {{
+      if (initState.lat !== undefined) map.setView([initState.lat, initState.lng], initState.zoom);
+      if (initState.year && document.querySelector('#year-select option[value="' + initState.year + '"]')) {{
+        currentYear = initState.year;
+        document.getElementById("year-select").value = initState.year;
+      }}
+      if (initState.basemap) {{
+        document.getElementById("basemap-select").value = initState.basemap;
+        setBasemap(initState.basemap);
+      }}
+      if (initState.layers) {{
+        for (var key in CHECKBOX_MAP) {{
+          document.getElementById(CHECKBOX_MAP[key]).checked = initState.layers.indexOf(key) >= 0;
+        }}
+      }}
+    }}
+
     // Initial build
     rebuildLayers();
+
+    // Apply opacity and swipe from hash after layers are built
+    if (initState) {{
+      if (initState.opacity) {{
+        for (var k in initState.opacity) {{
+          if (tileLayers[k]) tileLayers[k].setOpacity(initState.opacity[k]);
+        }}
+        rebuildOpacitySliders();
+      }}
+      if (initState.swipeLeft) document.getElementById("swipe-left").value = initState.swipeLeft;
+      if (initState.swipeRight) document.getElementById("swipe-right").value = initState.swipeRight;
+      if (initState.swipeLeft && initState.swipeRight) updateSwipe();
+    }}
+
+    // Update hash on map move and state changes
+    map.on("moveend", pushState);
+    document.getElementById("year-select").addEventListener("change", pushState);
+    document.getElementById("basemap-select").addEventListener("change", pushState);
+    document.getElementById("swipe-left").addEventListener("change", pushState);
+    document.getElementById("swipe-right").addEventListener("change", pushState);
+    ["chk-rgb","chk-geomad","chk-class","chk-classuf","chk-prob"].forEach(function(id) {{
+      document.getElementById(id).addEventListener("change", pushState);
+    }});
   </script>
 </body>
 </html>"""
