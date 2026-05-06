@@ -9,7 +9,7 @@ spec:
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 50
+  parallelism: 1 # TODO: 50 once tested.
   podMetadata:
     labels:
       app: ls-geomad
