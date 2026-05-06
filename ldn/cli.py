@@ -206,10 +206,15 @@ def geomad(
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_index)
 
+    # TODO: Handle different bucket formats more robustly. For now we support:
+    # "data.ldn.auspatious.com" to "https://data.ldn.auspatious.com"
+    # "dep-public-staging" to "https://dep-public-staging.s3.us-west-2.amazonaws.com"
     if bucket.startswith("https://"):
         full_path_prefix = bucket
-    else:
+    elif "." in bucket:
         full_path_prefix = f"https://{bucket}"
+    else:
+        full_path_prefix = f"https://{bucket}.s3.us-west-2.amazonaws.com"  # TODO: can the region be dynamic?
 
     if decimated:
         typer.echo("Warning, using decimated (low resolution) for testing purposes.")
