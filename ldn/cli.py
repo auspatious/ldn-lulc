@@ -388,7 +388,6 @@ def geomad(
             maxiters=100,
             scale=LANDSAT_SCALE,
             offset=LANDSAT_OFFSET,
-            # nodata=0, # commented: suspect this breaks qa and radsat bands. count?
             is_float=False,
         ),
         min_timesteps=10,
