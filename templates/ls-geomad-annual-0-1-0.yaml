@@ -122,7 +122,6 @@ spec:
           - name: tile-id
           - name: year
           - name: region
-      # TODO: Don't retry when pod fails because <10 scenes are found.
       # activeDeadlineSeconds: 900 # 15 minutes. Max time for a single try. Each retry pod will be killed after this time.
       retryStrategy:
         limit: "3"
@@ -130,7 +129,8 @@ spec:
         # backoff: # Not needed for this process. Retry immediately.
         #   maxDuration: "30m" # Max backoff wait time between retries, not total runtime.
         # # Don't retry OOMKills (137) because we don't scale up resources on retries.
-        expression: "asInt(lastRetry.exitCode) != 137"
+        # When pod fails because <10 scenes are found code is 1. This would prevent retries of other errors too.
+        expression: "asInt(lastRetry.exitCode) != 137 && asInt(lastRetry.exitCode) != 1"
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
