@@ -131,6 +131,95 @@ def print_tasks(
     return
 
 
+# This command is helpful for developing.
+# It is basically a performance optimization to prevent a lot of pods spinning up to discover that their output exists and shouldn't be overwritten.
+# It duplicates a lot of code and isn't very clean. If something was changed in geomad, this would be out of sync and cause issues.
+@app.command()
+def filter_tasks(
+    tasks_json: Annotated[str, typer.Option(help="JSON string of tasks to filter.")],
+    version: Annotated[str, typer.Option(help="Version string for the data product.")],
+    bucket: Annotated[str, typer.Option()] = "data.ldn.auspatious.com",
+    product_owner: Annotated[str | None, typer.Option()] = None,
+    overwrite: Annotated[
+        bool, typer.Option(help="If true, skip filtering and pass all tasks through.")
+    ] = False,
+) -> None:
+    """Filter tasks by checking if the output STAC item already exists in S3.
+
+    Takes a JSON array of tasks (with id, year, region fields) and outputs
+    only those tasks whose output STAC items do not yet exist.
+    """
+    tasks = json.loads(tasks_json)
+
+    if overwrite:
+        logger.info(f"Overwrite enabled, passing all {len(tasks)} tasks through.")
+        typer.echo(json.dumps(tasks))
+        return
+
+    logger.info(f"Filtering {len(tasks)} tasks for existing outputs in bucket={bucket}")
+
+    client = boto3.client("s3")
+    sensor = "ls"
+    dataset_id = "geomad"
+
+    if bucket.startswith("https://"):
+        full_path_prefix = bucket
+    elif "." in bucket:
+        full_path_prefix = f"https://{bucket}"
+    else:
+        full_path_prefix = f"https://{bucket}.s3.us-west-2.amazonaws.com"
+
+    # Collect all unique prefixes we need to list
+    prefix_set: set[str] = set()
+    for task in tasks:
+        if product_owner is not None:
+            p = product_owner
+        else:
+            p = "ci" if task["region"] == "non-pacific" else "dep"
+        prefix_set.add(p)
+
+    # List all STAC items under each prefix in one paginated call
+    existing_keys: set[str] = set()
+    for p in prefix_set:
+        s3_prefix = f"{p}_{sensor}_{dataset_id}/{version}/"
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=s3_prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                if key.endswith(".stac-item.json"):
+                    existing_keys.add(key)
+
+    logger.info(f"Found {len(existing_keys)} existing STAC items in S3.")
+
+    # Check each task against the set
+    remaining = []
+    for task in tasks:
+        tile_index = tuple(map(int, task["id"].split("_")))
+        if product_owner is not None:
+            prefix = product_owner
+        else:
+            prefix = "ci" if task["region"] == "non-pacific" else "dep"
+
+        itempath = S3ItemPath(
+            prefix=prefix,
+            bucket=bucket,
+            sensor=sensor,
+            dataset_id=dataset_id,
+            version=version,
+            time=task["year"],
+            full_path_prefix=full_path_prefix,
+        )
+        stac_key = itempath.stac_path(tile_index, absolute=False)
+
+        if stac_key not in existing_keys:
+            remaining.append(task)
+
+    logger.info(
+        f"Filtered: {len(tasks) - len(remaining)} already exist, {len(remaining)} remaining."
+    )
+    typer.echo(json.dumps(remaining))
+
+
 @app.command()
 def geomad(
     tile_id: Annotated[str, typer.Option()],

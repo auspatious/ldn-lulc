@@ -39,8 +39,15 @@ grid-list-countries-non-pacific:
 print-tasks-2000-2025-all-grids:
 	ldn print-tasks --years="2000-2025" --grids="all"
 
-print-tasks-2000-2025-pacific:
-	ldn print-tasks --years="2000-2025" --grids="pacific"
+print-tasks-2025-pacific:
+	ldn print-tasks --years="2025" --grids="pacific"
+
+filter-tasks:
+	ldn filter-tasks \
+	--tasks-json "$$(cat tasks.json)" \
+	--version "0-1-0" \
+	--bucket "dep-public-staging" \
+	--no-overwrite
 
 
 # Run geomad for all test case sites for years 2000-2025.

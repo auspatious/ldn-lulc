@@ -48,8 +48,18 @@ spec:
           - name: print-tasks
             template: print-tasks
 
-          - name: process-geomad
+          - name: filter-tasks
             depends: print-tasks.Succeeded
+            template: filter-tasks
+            arguments:
+              parameters:
+                - name: tasks-json
+                  value: "{{ tasks.print-tasks.outputs.result }}"
+                - name: overwrite
+                  value: "{{ workflow.parameters.overwrite }}"
+
+          - name: process-geomad
+            depends: filter-tasks.Succeeded
             template: process-geomad
             arguments:
               parameters:
@@ -59,7 +69,7 @@ spec:
                   value: "{{item.year}}"
                 - name: region
                   value: "{{item.region}}"
-            withParam: "{{ tasks.print-tasks.outputs.result }}"
+            withParam: "{{ tasks.filter-tasks.outputs.result }}"
 
     - name: print-tasks
       container:
@@ -81,6 +91,30 @@ spec:
           - "{{ workflow.parameters.years }}"
           - --grids
           - "{{ workflow.parameters.grids }}"
+
+    - name: filter-tasks
+      inputs:
+        parameters:
+          - name: tasks-json
+          - name: overwrite
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            # Same as print-tasks resources comment.
+            memory: 18Gi
+            cpu: 10
+        command: [ldn]
+        args:
+          - filter-tasks
+          - --tasks-json
+          - "{{ inputs.parameters.tasks-json }}"
+          - --version
+          - "{{ workflow.parameters.version }}"
+          - --bucket
+          - "{{ workflow.parameters.bucket }}"
+          - "{{ inputs.parameters.overwrite }}"
 
     - name: process-geomad
       inputs:
