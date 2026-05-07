@@ -26,7 +26,7 @@ spec:
   arguments:
     parameters:
       - name: version
-        value: "0.1.0" # The version of the data product being made
+        value: "0-1-0" # The version of the data product being made
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc" # The Docker image name (in GHCR)
       - name: image-tag

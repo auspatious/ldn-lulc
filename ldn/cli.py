@@ -158,6 +158,9 @@ def filter_tasks(
 
     logger.info(f"Filtering {len(tasks)} tasks for existing outputs in bucket={bucket}")
 
+    # Normalize version the same way S3ItemPath does internally
+    version = version.replace(".", "-")
+
     client = boto3.client("s3")
     sensor = "ls"
     dataset_id = "geomad"
