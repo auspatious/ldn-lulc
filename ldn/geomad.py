@@ -72,7 +72,6 @@ def set_stac_properties(input_xr: Dataset, output_xr: Dataset) -> Dataset:
     return output_xr
 
 
-# TODO: In version 0-0-5, need to test this because it's been refactored to preserve QA bands and only apply masking to spectral bands.
 def mask_nodata(ds: Dataset, nodata_value: int = 0) -> Dataset:
     """Mask nodata and fill pixels, preserving QA bands.
 
@@ -121,38 +120,49 @@ def mask_cloud_and_shadow(
     Returns:
         Masked xarray Dataset.
     """
-    DILATED_CLOUD = 1
-    CIRRUS = 2
-    CLOUD = 3
+    # Keep - good
+    CLEAR = 6
+    # Keep - other
+    SNOW = 5
+    WATER = 7
+
+    # Mask - cloud
+    # DILATED_CLOUD = 1
+    # CIRRUS = 2
+    # CLOUD = 3
+    # Mask - optional
     CLOUD_SHADOW = 4
 
-    cloud_fields = [DILATED_CLOUD, CIRRUS, CLOUD]
+    qa_pixel = ds["qa_pixel"]
+    valid = (
+        qa_pixel != 0
+    )  # The band metadata says qa_pixel nodata is 1, but it is actually 0.
+
+    good_bits = (1 << CLEAR) | (1 << SNOW) | (1 << WATER)
+    cloud_mask = ((qa_pixel & good_bits) == 0) & valid
+
     if include_shadow:
-        cloud_fields.append(CLOUD_SHADOW)
-
-    cloud_bitmask = 0
-    for field in cloud_fields:
-        cloud_bitmask |= 1 << field
-
-    qa_pixel = ds["qa_pixel"] if "qa_pixel" in ds.data_vars else ds.qa_pixel
-    cloud_mask = (qa_pixel.astype(int) & cloud_bitmask) != 0
+        cloud_mask = cloud_mask | (((qa_pixel & (1 << CLOUD_SHADOW)) != 0) & valid)
 
     if filters is not None:
-        # Add morphological filters to cloud/shadow mask only.
         cloud_mask = mask_cleanup(cloud_mask, filters)
 
-    # Add a mask for medium confidence clouds. Don't dilate them though.
-    CLOUD_CONFIDENCE_SHIFT = 8
-    CLOUD_CONFIDENCE_MEDIUM = 2
-    # Extracts a 2-bit field (values 0-3: none, low, medium, high).
-    TWO_BIT_MASK = 3
-    cloud_confidence = (qa_pixel.astype(int) >> CLOUD_CONFIDENCE_SHIFT) & TWO_BIT_MASK
-    cloud_confidence_mask = cloud_confidence >= CLOUD_CONFIDENCE_MEDIUM
+    return ds.where(~cloud_mask, other=nodata_value)
 
-    cloud_confidence_mask = mask_cleanup(cloud_confidence_mask, [("opening", 2)])
+    # TODO: See if medium confidence clouds should be added.
 
-    # Must use other here so uint16 values don't get converted to float32 with nan.
-    return ds.where(~(cloud_mask | cloud_confidence_mask), other=nodata_value)
+    # # Add a mask for medium confidence clouds. Don't dilate them though.
+    # CLOUD_CONFIDENCE_SHIFT = 8
+    # CLOUD_CONFIDENCE_MEDIUM = 2
+    # # Extracts a 2-bit field (values 0-3: none, low, medium, high).
+    # TWO_BIT_MASK = 3
+    # cloud_confidence = (qa_pixel.astype(int) >> CLOUD_CONFIDENCE_SHIFT) & TWO_BIT_MASK
+    # cloud_confidence_mask = cloud_confidence >= CLOUD_CONFIDENCE_MEDIUM
+
+    # cloud_confidence_mask = mask_cleanup(cloud_confidence_mask, [("opening", 2)])
+
+    # # Must use other here so uint16 values don't get converted to float32 with nan.
+    # return ds.where(~(cloud_mask | cloud_confidence_mask), other=nodata_value)
 
 
 def mask_saturated(ds: Dataset, nodata_value: int = 0) -> Dataset:
