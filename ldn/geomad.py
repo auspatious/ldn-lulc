@@ -99,7 +99,7 @@ def mask_nodata(ds: Dataset, nodata_value: int = 0) -> Dataset:
         nodata_mask = nodata_mask | fill_mask
 
     for sband in spectral_bands:
-        # Must use other here so uint16 values don't get converted to float32 with nan.
+        # Must use "other=" here so uint16 values don't get converted to float32 with nan.
         ds[sband] = ds[sband].where(~nodata_mask, other=nodata_value)
 
     return ds
@@ -161,22 +161,21 @@ def mask_cloud_and_shadow(
 
     # cloud_confidence_mask = mask_cleanup(cloud_confidence_mask, [("opening", 2)])
 
-    # # Must use other here so uint16 values don't get converted to float32 with nan.
+    # # Must use "other=" here so uint16 values don't get converted to float32 with nan.
     # return ds.where(~(cloud_mask | cloud_confidence_mask), other=nodata_value)
 
 
 def mask_saturated(ds: Dataset, nodata_value: int = 0) -> Dataset:
     if "qa_radsat" in ds.data_vars:
-        # Must use other here so uint16 values don't get converted to float32 with nan.
-        ds = ds.where(ds.qa_radsat == 0, other=nodata_value)
+        # 0 is nodata for qa_radsat, and also means 0 saturated bands in pixel.
+        # So mask any non-0 values.
+        # Must use "other=" here so uint16 values don't get converted to float32 with nan.
+        ds = ds.where(ds["qa_radsat"] == 0, other=nodata_value)
 
-    for band in ["red", "green", "blue"]:
-        if band in ds.data_vars:
-            # Must use other here so uint16 values don't get converted to float32 with nan.
-            # ds = ds.where(ds[band] != 65_535, other=nodata_value)
-            # This catches overly saturated pixels (after qa_pixel and qa_radsat masking).
-            # TODO: Should these high values be masked (removed)? Later they get clipped to 1.
-            ds = ds.where(ds[band] < 43_636, other=nodata_value)
+    # # TODO: Validate this. These should get clipped later in scaling?
+    # # for band in ["red", "green", "blue"]:
+    # #     if band in ds.data_vars:
+    # #         ds = ds.where(ds[band] < 43_636, other=nodata_value)
 
     return ds
 

@@ -366,7 +366,6 @@ def geomad(
         ],  # Exclude NIR and 2 SWIR bands.
         chunks={"x": xy_chunk_size, "y": xy_chunk_size, "time": 1},
         groupby="solar_day",
-        # nodata=0, # commented: suspect this breaks qa and radsat bands.
         fail_on_error=False,  # We don't control the Landsat data so it may have issues, but we still want to load what we can.
         **load_kwargs,
     )
