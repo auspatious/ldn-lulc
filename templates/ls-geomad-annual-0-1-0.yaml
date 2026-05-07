@@ -122,14 +122,14 @@ spec:
           - name: tile-id
           - name: year
           - name: region
+      # TODO: Don't retry when pod fails because <10 scenes are found.
+      # activeDeadlineSeconds: 900 # 15 minutes. Max time for a single try. Each retry pod will be killed after this time.
       retryStrategy:
         limit: "3"
         retryPolicy: OnFailure
-        backoff:
-          duration: "5s"
-          factor: 2
-          maxDuration: "5m"
-        # Don't retry OOMKills (exit 137)
+        # backoff: # Not needed for this process. Retry immediately.
+        #   maxDuration: "30m" # Max backoff wait time between retries, not total runtime.
+        # # Don't retry OOMKills (137) because we don't scale up resources on retries.
         expression: "asInt(lastRetry.exitCode) != 137"
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
@@ -137,12 +137,12 @@ spec:
         resources:
           requests:
             # Pod memory needed = (n_workers * memory_limit) + scheduler_overhead + main_process_overhead
-            memory: 18Gi
-            # Pod CPU needed = (n_workers * threads_per_worker) + scheduler_threads
-            cpu: 10
-          limits:
             memory: 24Gi
-            cpu: 13
+            # Pod CPU needed = (n_workers * threads_per_worker) + scheduler_threads
+            cpu: 14
+          limits:
+            memory: 32Gi
+            cpu: 18
           # What DEP was using for S2 annual geomad:
           #   memory: 320Gi
           #   cpu: 42
@@ -163,11 +163,11 @@ spec:
           - --bucket
           - "{{ workflow.parameters.bucket }}"
           - --memory-limit
-          - "8GB"
+          - "12GB"
           - --n-workers
           - "2"
           - --threads-per-worker
-          - "4"
+          - "6"
           - --xy-chunk-size
           - "800"
           # What DEP was using for S2 annual geomad:
