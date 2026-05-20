@@ -110,7 +110,7 @@ TEST_TILES_PACIFIC = [
     ("052_021", "pacific", {"Vanuatu": "VUT"}),
 ]
 
-GEOMAD_VERSION = "0-1-0"
+GEOMAD_VERSION = "0-2-0"
 PREDICTION_VERSION = "0-0-3"
 
 training_data_year = "2020"
