@@ -89,9 +89,17 @@ jobs:
         run: docker run --rm ldn-lulc:test pytest ldn/tests/ -v
 
       - name: Tag and push
-        if: github.ref == 'refs/heads/main' || github.event_name == 'release'
+        if: github.ref == 'refs/heads/main'
         run: |
           docker tag ldn-lulc:test ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}
           docker tag ldn-lulc:test ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Tag and push release
+        if: github.event_name == 'release'
+        run: |
+          docker tag ldn-lulc:test ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}
+          docker tag ldn-lulc:test ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
