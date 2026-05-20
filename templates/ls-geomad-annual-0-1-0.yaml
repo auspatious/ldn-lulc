@@ -30,8 +30,8 @@ spec:
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc" # The Docker image name (in GHCR)
       - name: image-tag
-        # value: "v0.0.3"
-        value: "latest" # Use latest for testing, to pick up any changes without having to make a new image tag.
+        value: "v0.0.3"
+        # value: "latest"
       - name: bucket
         value: "dep-public-staging" # The bucket to store the data
       - name: grids
