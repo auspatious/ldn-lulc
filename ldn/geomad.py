@@ -148,15 +148,19 @@ def mask_cloud_and_shadow(
     CLOUD_SHADOW = 4
 
     qa_pixel = ds["qa_pixel"]
-    valid = (
-        qa_pixel != 0
-    )  # The band metadata says qa_pixel nodata is 1, but it is actually 0.
+    # Fill pixels have qa_pixel of 0 or 1 (bit 0 = Fill). Exclude both.
+    valid = (qa_pixel != 0) & (qa_pixel != 1)
+
+    # If Clear bit is set, keep the pixel regardless of other flags.
+    is_clear = (qa_pixel & (1 << CLEAR)) != 0
 
     good_bits = (1 << CLEAR) | (1 << SNOW) | (1 << WATER)
     cloud_mask = ((qa_pixel & good_bits) == 0) & valid
 
     if include_shadow:
-        cloud_mask = cloud_mask | (((qa_pixel & (1 << CLOUD_SHADOW)) != 0) & valid)
+        cloud_mask = cloud_mask | (
+            ((qa_pixel & (1 << CLOUD_SHADOW)) != 0) & valid & ~is_clear
+        )
 
     if filters is not None:
         cloud_mask = mask_cleanup(cloud_mask, filters)
