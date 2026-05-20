@@ -72,6 +72,20 @@ def set_stac_properties(input_xr: Dataset, output_xr: Dataset) -> Dataset:
     return output_xr
 
 
+def fuse_qa_pixel(dst, src):
+    """Fuse qa_pixel by copying src where dst is fill (0 or 1).
+
+    dst = earlier image on the same solarday
+    src = later image on the same solarday.
+    This is used to preserve qa_pixel values for pixels that are nodata in earlier images but not later images on the same solarday.
+
+    qa_pixel uses bit 0 as Fill, so fill=1 in metadata. But actual
+    nodata pixels can also be 0 (no bits set). This function treats
+    both 0 and 1 as empty and overwrites them with src.
+    """
+    np.copyto(dst, src, where=((dst == 0) | (dst == 1)))
+
+
 def mask_nodata(ds: Dataset, nodata_value: int = 0) -> Dataset:
     """Mask nodata and fill pixels, preserving QA bands.
 

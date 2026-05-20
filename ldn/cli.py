@@ -366,6 +366,9 @@ def geomad(
         ],  # Exclude NIR and 2 SWIR bands.
         chunks={"x": xy_chunk_size, "y": xy_chunk_size, "time": 1},
         groupby="solar_day",
+        fuse_func={
+            "qa_pixel": "ldn.geomad.fuse_qa_pixel",  # This makes the qa_pixel data temporally merge correctly (grouped by solar day).
+        },
         fail_on_error=False,  # We don't control the Landsat data so it may have issues, but we still want to load what we can.
         **load_kwargs,
     )
