@@ -26,11 +26,11 @@ spec:
   arguments:
     parameters:
       - name: version
-        value: "0-1-0" # The version of the data product being made
+        value: "0-2-0" # The version of the data product being made
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc" # The Docker image name (in GHCR)
       - name: image-tag
-        # value: "v0.0.2" # TODO: make new release with latest code
+        # value: "v0.0.3"
         value: "latest" # Use latest for testing, to pick up any changes without having to make a new image tag.
       - name: bucket
         value: "dep-public-staging" # The bucket to store the data
