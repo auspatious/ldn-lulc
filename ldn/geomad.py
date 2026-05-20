@@ -72,7 +72,20 @@ def set_stac_properties(input_xr: Dataset, output_xr: Dataset) -> Dataset:
     return output_xr
 
 
-# TODO: In version 0-0-5, need to test this because it's been refactored to preserve QA bands and only apply masking to spectral bands.
+def fuse_qa_pixel(dst, src):
+    """Fuse qa_pixel by copying src where dst is fill (0 or 1).
+
+    dst = earlier image on the same solarday
+    src = later image on the same solarday.
+    This is used to preserve qa_pixel values for pixels that are nodata in earlier images but not later images on the same solarday.
+
+    qa_pixel uses bit 0 as Fill, so fill=1 in metadata. But actual
+    nodata pixels can also be 0 (no bits set). This function treats
+    both 0 and 1 as empty and overwrites them with src.
+    """
+    np.copyto(dst, src, where=((dst == 0) | (dst == 1)))
+
+
 def mask_nodata(ds: Dataset, nodata_value: int = 0) -> Dataset:
     """Mask nodata and fill pixels, preserving QA bands.
 
@@ -100,7 +113,7 @@ def mask_nodata(ds: Dataset, nodata_value: int = 0) -> Dataset:
         nodata_mask = nodata_mask | fill_mask
 
     for sband in spectral_bands:
-        # Must use other here so uint16 values don't get converted to float32 with nan.
+        # Must use "other=" here so uint16 values don't get converted to float32 with nan.
         ds[sband] = ds[sband].where(~nodata_mask, other=nodata_value)
 
     return ds
@@ -121,52 +134,66 @@ def mask_cloud_and_shadow(
     Returns:
         Masked xarray Dataset.
     """
-    DILATED_CLOUD = 1
-    CIRRUS = 2
-    CLOUD = 3
+    # Keep - good
+    CLEAR = 6
+    # Keep - other
+    SNOW = 5
+    WATER = 7
+
+    # Mask - cloud
+    # DILATED_CLOUD = 1
+    # CIRRUS = 2
+    # CLOUD = 3
+    # Mask - optional
     CLOUD_SHADOW = 4
 
-    cloud_fields = [DILATED_CLOUD, CIRRUS, CLOUD]
+    qa_pixel = ds["qa_pixel"]
+    # Fill pixels have qa_pixel of 0 or 1 (bit 0 = Fill). Exclude both.
+    valid = (qa_pixel != 0) & (qa_pixel != 1)
+
+    # If Clear bit is set, keep the pixel regardless of other flags.
+    is_clear = (qa_pixel & (1 << CLEAR)) != 0
+
+    good_bits = (1 << CLEAR) | (1 << SNOW) | (1 << WATER)
+    cloud_mask = ((qa_pixel & good_bits) == 0) & valid
+
     if include_shadow:
-        cloud_fields.append(CLOUD_SHADOW)
-
-    cloud_bitmask = 0
-    for field in cloud_fields:
-        cloud_bitmask |= 1 << field
-
-    qa_pixel = ds["qa_pixel"] if "qa_pixel" in ds.data_vars else ds.qa_pixel
-    cloud_mask = (qa_pixel.astype(int) & cloud_bitmask) != 0
+        cloud_mask = cloud_mask | (
+            ((qa_pixel & (1 << CLOUD_SHADOW)) != 0) & valid & ~is_clear
+        )
 
     if filters is not None:
-        # Add morphological filters to cloud/shadow mask only.
         cloud_mask = mask_cleanup(cloud_mask, filters)
 
-    # Add a mask for medium confidence clouds. Don't dilate them though.
-    CLOUD_CONFIDENCE_SHIFT = 8
-    CLOUD_CONFIDENCE_MEDIUM = 2
-    # Extracts a 2-bit field (values 0-3: none, low, medium, high).
-    TWO_BIT_MASK = 3
-    cloud_confidence = (qa_pixel.astype(int) >> CLOUD_CONFIDENCE_SHIFT) & TWO_BIT_MASK
-    cloud_confidence_mask = cloud_confidence >= CLOUD_CONFIDENCE_MEDIUM
+    return ds.where(~cloud_mask, other=nodata_value)
 
-    cloud_confidence_mask = mask_cleanup(cloud_confidence_mask, [("opening", 2)])
+    # TODO: See if medium confidence clouds should be added.
 
-    # Must use other here so uint16 values don't get converted to float32 with nan.
-    return ds.where(~(cloud_mask | cloud_confidence_mask), other=nodata_value)
+    # # Add a mask for medium confidence clouds. Don't dilate them though.
+    # CLOUD_CONFIDENCE_SHIFT = 8
+    # CLOUD_CONFIDENCE_MEDIUM = 2
+    # # Extracts a 2-bit field (values 0-3: none, low, medium, high).
+    # TWO_BIT_MASK = 3
+    # cloud_confidence = (qa_pixel.astype(int) >> CLOUD_CONFIDENCE_SHIFT) & TWO_BIT_MASK
+    # cloud_confidence_mask = cloud_confidence >= CLOUD_CONFIDENCE_MEDIUM
+
+    # cloud_confidence_mask = mask_cleanup(cloud_confidence_mask, [("opening", 2)])
+
+    # # Must use "other=" here so uint16 values don't get converted to float32 with nan.
+    # return ds.where(~(cloud_mask | cloud_confidence_mask), other=nodata_value)
 
 
 def mask_saturated(ds: Dataset, nodata_value: int = 0) -> Dataset:
     if "qa_radsat" in ds.data_vars:
-        # Must use other here so uint16 values don't get converted to float32 with nan.
-        ds = ds.where(ds.qa_radsat == 0, other=nodata_value)
+        # 0 is nodata for qa_radsat, and also means 0 saturated bands in pixel.
+        # So mask any non-0 values.
+        # Must use "other=" here so uint16 values don't get converted to float32 with nan.
+        ds = ds.where(ds["qa_radsat"] == 0, other=nodata_value)
 
-    for band in ["red", "green", "blue"]:
-        if band in ds.data_vars:
-            # Must use other here so uint16 values don't get converted to float32 with nan.
-            # ds = ds.where(ds[band] != 65_535, other=nodata_value)
-            # This catches overly saturated pixels (after qa_pixel and qa_radsat masking).
-            # TODO: Should these high values be masked (removed)? Later they get clipped to 1.
-            ds = ds.where(ds[band] < 43_636, other=nodata_value)
+    # # TODO: Validate this. These should get clipped later in scaling?
+    # # for band in ["red", "green", "blue"]:
+    # #     if band in ds.data_vars:
+    # #         ds = ds.where(ds[band] < 43_636, other=nodata_value)
 
     return ds
 
