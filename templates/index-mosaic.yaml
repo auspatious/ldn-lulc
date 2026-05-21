@@ -1,0 +1,96 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: landsat-geomad-
+  namespace: argo
+spec:
+  entrypoint: workflow-entrypoint
+  serviceAccountName: public-bucket-writer
+  podGC:
+    strategy: OnWorkflowSuccess
+    deleteDelayDuration: 600s
+  podMetadata:
+    labels:
+      app: ls-geomad
+    annotations:
+      karpenter.sh/do-not-disrupt: "true"
+  nodeSelector:
+    karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-processing nodepool can only pick spot instances
+    dep/workload: data-processing
+  tolerations:
+    - key: dep/workload
+      operator: Equal
+      value: data-processing
+      effect: NoSchedule
+  arguments:
+    parameters:
+      - name: image-name
+        value: "ghcr.io/auspatious/ldn-lulc"
+      - name: image-tag
+        value: "latest"
+      - name: bucket
+        value: "dep-public-staging"
+      - name: prefix-geomad
+        value: "dep_ls_geomad"
+      - name: dataset
+        value: "geomad" # "all", "geomad", or "prediction"
+      - name: years
+        value: "2025" # Comma-separated list of years or year ranges (e.g. "2000,2005,2010" or "2000-2025")
+      - name: geomad-version
+        value: "0-2-0"
+      - name: prediction-version
+        value: "0-0-3"
+  templates:
+    - name: workflow-entrypoint
+      dag:
+        tasks:
+          - name: index-to-stac-geoparquet
+            template: index-to-stac-geoparquet
+
+          - name: make-mosaics
+            depends: index-to-stac-geoparquet.Succeeded
+            template: make-mosaics
+
+    - name: index-to-stac-geoparquet
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: 2Gi
+            cpu: 1
+        command: [ldn]
+        args:
+          - index-to-stac-geoparquet
+          - --prefix
+          - "{{ workflow.parameters.prefix-geomad }}"
+          - --output-filename
+          - "{{ workflow.parameters.prefix-geomad }}"
+          - --bucket
+          - "{{ workflow.parameters.bucket }}"
+          - --version
+          - "{{ workflow.parameters.geomad-version }}"
+
+    - name: make-mosaics
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: 2Gi
+            cpu: 1
+        command: [ldn]
+        args:
+          - make-mosaics
+          - --dataset
+          - "{{ workflow.parameters.dataset }}"
+          - --years
+          - "{{ workflow.parameters.years }}"
+          - --version-geomad
+          - "{{ workflow.parameters.geomad-version }}"
+          - --version-prediction
+          - "{{ workflow.parameters.prediction-version }}"
+          - --bucket-geomad
+          - "{{ workflow.parameters.bucket }}"
+          - --prefix-geomad
+          - "{{ workflow.parameters.prefix-geomad }}"
