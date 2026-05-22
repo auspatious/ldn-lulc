@@ -595,7 +595,7 @@ def make_mosaics(
     dataset: Annotated[
         Literal["all", "geomad", "prediction"],
         typer.Option(
-            help="Which dataset to build mosaics for, either 'all', 'geomad' or 'prediction'."
+            help="Which dataset to build mosaics for: 'all', 'geomad', or 'prediction'."
         ),
     ],
     version_geomad: Annotated[
@@ -610,6 +610,14 @@ def make_mosaics(
             help=f"Version string to use for the Prediction mosaic files, e.g. '{PREDICTION_VERSION}'."
         ),
     ] = PREDICTION_VERSION,
+    bucket_geomad: Annotated[
+        str,
+        typer.Option(help="S3 bucket containing GeoMAD data."),
+    ] = "data.ldn.auspatious.com",
+    prefix_geomad: Annotated[
+        str,
+        typer.Option(help="S3 prefix for GeoMAD data within the bucket."),
+    ] = "ausp_ls_geomad",
 ) -> None:
     """Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files."""
 
@@ -625,8 +633,9 @@ def make_mosaics(
 
     # MosaicBackend needs s3:// style paths.
     output_path_geomad = (
-        f"s3://data.ldn.auspatious.com/ausp_ls_geomad/{version_geomad}/mosaics/"
+        f"s3://{bucket_geomad}/{prefix_geomad}/{version_geomad}/mosaics/"
     )
+    # TODO: Replace this to also use dep-public-staging once the prediction has been run there.
     output_path_prediction = f"s3://data.ldn.auspatious.com/ausp_ls_lulc_prediction/{version_prediction}/mosaics/"
 
     datasets = []
@@ -642,7 +651,7 @@ def make_mosaics(
         datasets.append(
             (
                 "geomad",
-                f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/{version_geomad}/ausp_ls_geomad.parquet",
+                f"https://s3.us-west-2.amazonaws.com/{bucket_geomad}/{prefix_geomad}/{version_geomad}/{prefix_geomad}.parquet",
                 output_path_geomad,
             )
         )

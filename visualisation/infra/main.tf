@@ -83,7 +83,9 @@ resource "aws_iam_role_policy" "s3_read" {
       ]
       Resource = [
         "arn:aws:s3:::${var.s3_bucket}",
-        "arn:aws:s3:::${var.s3_bucket}/*"
+        "arn:aws:s3:::${var.s3_bucket}/*",
+        "arn:aws:s3:::${var.geomad_s3_bucket}",
+        "arn:aws:s3:::${var.geomad_s3_bucket}/*"
       ]
     }]
   })
@@ -116,6 +118,7 @@ resource "aws_lambda_function" "app" {
       GDAL_CACHEMAX                      = "512"
       PYTHONWARNINGS                     = "ignore"
       GEOMAD_VERSION                     = var.geomad_version
+      GEOMAD_VERSION_NEW                 = var.geomad_version_new
       PREDICTION_VERSION                 = var.prediction_version
     }
   }

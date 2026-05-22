@@ -7,20 +7,31 @@ set -euo pipefail
 AWS_REGION=${AWS_REGION:-us-west-2}
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
-eval $(python3 -c "from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION; print(f'export GEOMAD_VERSION={GEOMAD_VERSION}; export PREDICTION_VERSION={PREDICTION_VERSION}')")
+eval $(python3 -c "from ldn.utils import GEOMAD_VERSION, GEOMAD_VERSION_NEW, PREDICTION_VERSION; print(f'export GEOMAD_VERSION={GEOMAD_VERSION}; export GEOMAD_VERSION_NEW={GEOMAD_VERSION_NEW}; export PREDICTION_VERSION={PREDICTION_VERSION}')")
 
-# TODO: Run index here too? To ensure mosaics are created with the latest data.
+# echo "==> Indexing geomad v${GEOMAD_VERSION}..."
+# poetry run ldn index-to-stac-geoparquet \
+#   --prefix "ausp_ls_geomad" \
+#   --output-filename "ausp_ls_geomad" \
+#   --bucket data.ldn.auspatious.com \
+#   --version "${GEOMAD_VERSION}"
 
-echo "==> Building mosaics..."
-# Make mosaics for all years for geomad.
-# TODO: Uncomment this to create geomad mosaics. I have already done this for 0-0-4a so no need to wait to recreate.
-# poetry run ldn make-mosaics --dataset "geomad" --years "2000-2025" --version-geomad $GEOMAD_VERSION --version-prediction $PREDICTION_VERSION
-# Make mosaics for one year for prediction.
-# poetry run ldn make-mosaics --dataset "prediction" --years "2023-2025" --version-geomad $GEOMAD_VERSION --version-prediction $PREDICTION_VERSION
+# echo "==> Indexing geomad v${GEOMAD_VERSION_NEW}..."
+# poetry run ldn index-to-stac-geoparquet \
+#   --prefix "dep_ls_geomad" \
+#   --output-filename "dep_ls_geomad" \
+#   --bucket dep-public-staging \
+#   --version "${GEOMAD_VERSION_NEW}"
+
+# echo "==> Building mosaics..."
+# poetry run ldn make-mosaics --dataset "geomad" --years "2000-2025" --version-geomad "${GEOMAD_VERSION}" --version-prediction "${PREDICTION_VERSION}" --bucket-geomad "data.ldn.auspatious.com" --prefix-geomad "ausp_ls_geomad"
+# poetry run ldn make-mosaics --dataset "geomad" --years "2025" --version-geomad "${GEOMAD_VERSION_NEW}" --version-prediction "${PREDICTION_VERSION}" --bucket-geomad "dep-public-staging" --prefix-geomad "dep_ls_geomad"
+
 echo "==> Creating ECR repository..."
 terraform -chdir=visualisation/infra init
 terraform -chdir=visualisation/infra apply \
   -var="geomad_version=${GEOMAD_VERSION}" \
+  -var="geomad_version_new=${GEOMAD_VERSION_NEW}" \
   -var="prediction_version=${PREDICTION_VERSION}" \
   -target=aws_ecr_repository.app -target=aws_ecr_lifecycle_policy.app # -auto-approve
 
@@ -50,6 +61,7 @@ fi
 echo "==> Applying remaining infrastructure..."
 terraform -chdir=visualisation/infra apply \
   -var="geomad_version=${GEOMAD_VERSION}" \
+  -var="geomad_version_new=${GEOMAD_VERSION_NEW}" \
   -var="prediction_version=${PREDICTION_VERSION}" # -auto-approve
 
 terraform -chdir=visualisation/infra output api_url
