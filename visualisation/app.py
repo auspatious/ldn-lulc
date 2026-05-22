@@ -25,8 +25,19 @@ from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
 from mangum import Mangum
 
+from ldn.utils import (
+    GEOMAD_VERSION_NEW,
+    GEOMAD_NEW_PACIFIC_BUCKET,
+    GEOMAD_NEW_PACIFIC_PREFIX,
+    GEOMAD_NEW_NON_PACIFIC_BUCKET,
+    GEOMAD_NEW_NON_PACIFIC_PREFIX,
+    PREDICTION_NEW_PACIFIC_BUCKET,
+    PREDICTION_NEW_PACIFIC_PREFIX,
+    PREDICTION_NEW_NON_PACIFIC_BUCKET,
+    PREDICTION_NEW_NON_PACIFIC_PREFIX,
+)
+
 GEOMAD_VERSION = os.environ.get("GEOMAD_VERSION")
-GEOMAD_VERSION_NEW = os.environ.get("GEOMAD_VERSION_NEW", "0-2-0")
 PREDICTION_VERSION = os.environ.get("PREDICTION_VERSION")
 
 if not GEOMAD_VERSION or not PREDICTION_VERSION:
@@ -93,8 +104,11 @@ GEOMAD_OLD_DATASET_PREFIX = "ausp_ls_geomad"
 PREDICTION_DATASET_PREFIX = "ausp_ls_lulc_prediction"
 PREDICTION_S3_BUCKET = "data.ldn.auspatious.com"
 MOSAIC_PATHS_GEOMAD: dict[str, str] = {}
-MOSAIC_PATHS_GEOMAD_NEW: dict[str, str] = {}
+MOSAIC_PATHS_GEOMAD_NEW_PACIFIC: dict[str, str] = {}
+MOSAIC_PATHS_GEOMAD_NEW_NON_PACIFIC: dict[str, str] = {}
 MOSAIC_PATHS_PREDICTION: dict[str, str] = {}
+MOSAIC_PATHS_PREDICTION_NEW_PACIFIC: dict[str, str] = {}
+MOSAIC_PATHS_PREDICTION_NEW_NON_PACIFIC: dict[str, str] = {}
 
 # Scan S3 for mosaic JSONs on startup and populate paths dicts.
 # Expects filenames like geomad_2020_mosaic.json or prediction_2020_mosaic.json.
@@ -116,10 +130,28 @@ try:
             MOSAIC_PATHS_PREDICTION,
         ),
         (
-            MOSAIC_S3_BUCKET,
-            GEOMAD_DATASET_PREFIX,
+            GEOMAD_NEW_PACIFIC_BUCKET,
+            GEOMAD_NEW_PACIFIC_PREFIX,
             GEOMAD_VERSION_NEW,
-            MOSAIC_PATHS_GEOMAD_NEW,
+            MOSAIC_PATHS_GEOMAD_NEW_PACIFIC,
+        ),
+        (
+            GEOMAD_NEW_NON_PACIFIC_BUCKET,
+            GEOMAD_NEW_NON_PACIFIC_PREFIX,
+            GEOMAD_VERSION_NEW,
+            MOSAIC_PATHS_GEOMAD_NEW_NON_PACIFIC,
+        ),
+        (
+            PREDICTION_NEW_PACIFIC_BUCKET,
+            PREDICTION_NEW_PACIFIC_PREFIX,
+            PREDICTION_VERSION,
+            MOSAIC_PATHS_PREDICTION_NEW_PACIFIC,
+        ),
+        (
+            PREDICTION_NEW_NON_PACIFIC_BUCKET,
+            PREDICTION_NEW_NON_PACIFIC_PREFIX,
+            PREDICTION_VERSION,
+            MOSAIC_PATHS_PREDICTION_NEW_NON_PACIFIC,
         ),
     ]:
         s3_prefix = f"{dataset_prefix}/{version}/mosaics/"
@@ -141,14 +173,26 @@ except Exception as e:
 
 logger.info(f"GeoMAD mosaics: {sorted(MOSAIC_PATHS_GEOMAD.keys())}")
 logger.info(
-    f"GeoMAD {GEOMAD_VERSION_NEW} mosaics: {sorted(MOSAIC_PATHS_GEOMAD_NEW.keys())}"
+    f"GeoMAD new pacific mosaics: {sorted(MOSAIC_PATHS_GEOMAD_NEW_PACIFIC.keys())}"
+)
+logger.info(
+    f"GeoMAD new non-pacific mosaics: {sorted(MOSAIC_PATHS_GEOMAD_NEW_NON_PACIFIC.keys())}"
 )
 logger.info(f"Prediction mosaics: {sorted(MOSAIC_PATHS_PREDICTION.keys())}")
+logger.info(
+    f"Prediction new pacific mosaics: {sorted(MOSAIC_PATHS_PREDICTION_NEW_PACIFIC.keys())}"
+)
+logger.info(
+    f"Prediction new non-pacific mosaics: {sorted(MOSAIC_PATHS_PREDICTION_NEW_NON_PACIFIC.keys())}"
+)
 
 DATASETS: dict[str, dict[str, str]] = {
     "geomad": MOSAIC_PATHS_GEOMAD,
-    "geomad_new": MOSAIC_PATHS_GEOMAD_NEW,
+    "geomad_new_pacific": MOSAIC_PATHS_GEOMAD_NEW_PACIFIC,
+    "geomad_new_non_pacific": MOSAIC_PATHS_GEOMAD_NEW_NON_PACIFIC,
     "prediction": MOSAIC_PATHS_PREDICTION,
+    "prediction_new_pacific": MOSAIC_PATHS_PREDICTION_NEW_PACIFIC,
+    "prediction_new_non_pacific": MOSAIC_PATHS_PREDICTION_NEW_NON_PACIFIC,
 }
 
 
@@ -159,10 +203,15 @@ def mosaic_path_params(
         Query(description="Year (e.g. '2020')", pattern=r"^\d{4}$"),
     ],
     dataset: Annotated[
-        Literal["geomad", "geomad_new", "prediction"],
-        Query(
-            description="Dataset name (must be 'geomad', 'geomad_new', or 'prediction')"
-        ),
+        Literal[
+            "geomad",
+            "geomad_new_pacific",
+            "geomad_new_non_pacific",
+            "prediction",
+            "prediction_new_pacific",
+            "prediction_new_non_pacific",
+        ],
+        Query(description="Dataset name"),
     ],
 ) -> str:
     """Resolve dataset and year query parameters to a mosaic.json file path."""
@@ -236,14 +285,31 @@ def health():
 def config():
     """Return dynamic configuration for the frontend."""
     years_geomad = sorted(MOSAIC_PATHS_GEOMAD.keys())
-    years_geomad_new = sorted(MOSAIC_PATHS_GEOMAD_NEW.keys())
+    years_geomad_new_pacific = sorted(MOSAIC_PATHS_GEOMAD_NEW_PACIFIC.keys())
+    years_geomad_new_non_pacific = sorted(MOSAIC_PATHS_GEOMAD_NEW_NON_PACIFIC.keys())
     years_prediction = sorted(MOSAIC_PATHS_PREDICTION.keys())
-    all_years = sorted(set(years_geomad + years_geomad_new + years_prediction))
+    years_prediction_new_pacific = sorted(MOSAIC_PATHS_PREDICTION_NEW_PACIFIC.keys())
+    years_prediction_new_non_pacific = sorted(
+        MOSAIC_PATHS_PREDICTION_NEW_NON_PACIFIC.keys()
+    )
+    all_years = sorted(
+        set(
+            years_geomad
+            + years_geomad_new_pacific
+            + years_geomad_new_non_pacific
+            + years_prediction
+            + years_prediction_new_pacific
+            + years_prediction_new_non_pacific
+        )
+    )
     default_year = all_years[-1] if all_years else "2020"
     return {
         "years_geomad": years_geomad,
-        "years_geomad_new": years_geomad_new,
+        "years_geomad_new_pacific": years_geomad_new_pacific,
+        "years_geomad_new_non_pacific": years_geomad_new_non_pacific,
         "years_prediction": years_prediction,
+        "years_prediction_new_pacific": years_prediction_new_pacific,
+        "years_prediction_new_non_pacific": years_prediction_new_non_pacific,
         "all_years": all_years,
         "default_year": default_year,
         "geomad_version": GEOMAD_VERSION,
