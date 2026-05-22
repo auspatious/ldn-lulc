@@ -1,0 +1,187 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: landsat-lulc-classify-
+  namespace: argo
+spec:
+  entrypoint: workflow-entrypoint
+  serviceAccountName: public-bucket-writer
+  podGC:
+    strategy: OnWorkflowSuccess
+    deleteDelayDuration: 600s
+  parallelism: 50
+  podMetadata:
+    labels:
+      app: ls-lulc-classify
+    annotations:
+      karpenter.sh/do-not-disrupt: "true"
+  nodeSelector:
+    karpenter.sh/capacity-type: "spot"
+    dep/workload: data-processing
+  tolerations:
+    - key: dep/workload
+      operator: Equal
+      value: data-processing
+      effect: NoSchedule
+  arguments:
+    parameters:
+      - name: image-name
+        value: "ghcr.io/auspatious/ldn-lulc"
+      - name: image-tag
+        value: "latest"
+      - name: prediction-version
+        value: "0-0-3"
+      - name: geomad-version
+        value: "0-2-0"
+      - name: grids
+        value: "pacific"
+      - name: years
+        value: "2025"
+      - name: overwrite
+        value: "--no-overwrite"
+      # Pacific region config
+      - name: pacific-output-bucket
+        value: "dep-public-staging"
+      - name: pacific-output-prefix
+        value: "dep"
+      - name: pacific-geomad-bucket
+        value: "dep-public-staging"
+      - name: pacific-geomad-prefix
+        value: "dep_ls_geomad"
+      - name: pacific-geomad-aws-region
+        value: "us-west-2"
+      # Non-pacific region config
+      - name: non-pacific-output-bucket
+        value: "dep-public-staging"
+      - name: non-pacific-output-prefix
+        value: "dep"
+      - name: non-pacific-geomad-bucket
+        value: "dep-public-staging"
+      - name: non-pacific-geomad-prefix
+        value: "dep_ls_geomad"
+      - name: non-pacific-geomad-aws-region
+        value: "us-west-2"
+      # Model config
+      - name: model-path
+        value: "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/0-0-3/lulc_random_forest_model.joblib"
+      - name: xy-chunk-size
+        value: "1024"
+  templates:
+    - name: workflow-entrypoint
+      dag:
+        tasks:
+          - name: print-tasks
+            template: print-tasks
+
+          - name: filter-tasks
+            depends: print-tasks.Succeeded
+            template: filter-tasks
+            arguments:
+              parameters:
+                - name: tasks-json
+                  value: "{{ tasks.print-tasks.outputs.result }}"
+
+          - name: classify
+            depends: filter-tasks.Succeeded
+            template: classify
+            arguments:
+              parameters:
+                - name: tile-id
+                  value: "{{item.id}}"
+                - name: year
+                  value: "{{item.year}}"
+                - name: region
+                  value: "{{item.region}}"
+            withParam: "{{ tasks.filter-tasks.outputs.result }}"
+
+    - name: print-tasks
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: 18Gi
+            cpu: 10
+        command: [ldn]
+        args:
+          - print-tasks
+          - --years
+          - "{{ workflow.parameters.years }}"
+          - --grids
+          - "{{ workflow.parameters.grids }}"
+
+    - name: filter-tasks
+      inputs:
+        parameters:
+          - name: tasks-json
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: 18Gi
+            cpu: 10
+        command: [ldn]
+        args:
+          - filter-tasks
+          - --tasks-json
+          - "{{ inputs.parameters.tasks-json }}"
+          - --version
+          - "{{ workflow.parameters.prediction-version }}"
+          - --bucket
+          - "{{ workflow.parameters.pacific-output-bucket }}"
+          - --dataset-id
+          - "lulc_prediction"
+          - "{{ workflow.parameters.overwrite }}"
+
+    - name: classify
+      inputs:
+        parameters:
+          - name: tile-id
+          - name: year
+          - name: region
+      retryStrategy:
+        limit: "3"
+        retryPolicy: OnFailure
+        # Don't retry OOMKills (137)
+        expression: "asInt(lastRetry.exitCode) != 137"
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: 8Gi
+            cpu: 4
+          limits:
+            memory: 12Gi
+            cpu: 6
+        command: [ldn]
+        args:
+          - classify
+          - classify
+          - --tile-id
+          - "{{ inputs.parameters.tile-id }}"
+          - --year
+          - "{{ inputs.parameters.year }}"
+          - --region
+          - "{{ inputs.parameters.region }}"
+          - --version
+          - "{{ workflow.parameters.prediction-version }}"
+          - --version-geomad
+          - "{{ workflow.parameters.geomad-version }}"
+          - --output-bucket
+          - "{{= inputs.parameters.region == 'pacific' ? workflow.parameters['pacific-output-bucket'] : workflow.parameters['non-pacific-output-bucket'] }}"
+          - --output-prefix
+          - "{{= inputs.parameters.region == 'pacific' ? workflow.parameters['pacific-output-prefix'] : workflow.parameters['non-pacific-output-prefix'] }}"
+          - --geomad-bucket
+          - "{{= inputs.parameters.region == 'pacific' ? workflow.parameters['pacific-geomad-bucket'] : workflow.parameters['non-pacific-geomad-bucket'] }}"
+          - --geomad-prefix
+          - "{{= inputs.parameters.region == 'pacific' ? workflow.parameters['pacific-geomad-prefix'] : workflow.parameters['non-pacific-geomad-prefix'] }}"
+          - --geomad-aws-region
+          - "{{= inputs.parameters.region == 'pacific' ? workflow.parameters['pacific-geomad-aws-region'] : workflow.parameters['non-pacific-geomad-aws-region'] }}"
+          - --model-path
+          - "{{ workflow.parameters.model-path }}"
+          - --xy-chunk-size
+          - "{{ workflow.parameters.xy-chunk-size }}"
+          - --no-decimated
+          - "{{ workflow.parameters.overwrite }}"

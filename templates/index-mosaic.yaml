@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
-  generateName: landsat-geomad-
+  generateName: index-mosaic-
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
