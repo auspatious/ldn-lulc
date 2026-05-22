@@ -139,6 +139,9 @@ def filter_tasks(
     tasks_json: Annotated[str, typer.Option(help="JSON string of tasks to filter.")],
     version: Annotated[str, typer.Option(help="Version string for the data product.")],
     bucket: Annotated[str, typer.Option()] = "data.ldn.auspatious.com",
+    dataset_id: Annotated[
+        str, typer.Option(help="Dataset ID (e.g. 'geomad' or 'lulc_prediction').")
+    ] = "geomad",
     product_owner: Annotated[str | None, typer.Option()] = None,
     overwrite: Annotated[
         bool, typer.Option(help="If true, skip filtering and pass all tasks through.")
@@ -163,7 +166,6 @@ def filter_tasks(
 
     client = boto3.client("s3")
     sensor = "ls"
-    dataset_id = "geomad"
 
     if bucket.startswith("https://"):
         full_path_prefix = bucket

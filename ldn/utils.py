@@ -115,6 +115,16 @@ GEOMAD_VERSION_NEW = "0-2-0"  # TODO: Remove this. It is just to compare.
 PREDICTION_VERSION = "0-0-3"
 MODEL_VERSION = "0-0-3"
 
+# Mosaic source configuration per region
+GEOMAD_NEW_PACIFIC_BUCKET = "dep-public-staging"
+GEOMAD_NEW_PACIFIC_PREFIX = "dep_ls_geomad"
+GEOMAD_NEW_NON_PACIFIC_BUCKET = "dep-public-staging"
+GEOMAD_NEW_NON_PACIFIC_PREFIX = "dep_ls_geomad"
+PREDICTION_NEW_PACIFIC_BUCKET = "dep-public-staging"
+PREDICTION_NEW_PACIFIC_PREFIX = "dep_ls_lulc_prediction"
+PREDICTION_NEW_NON_PACIFIC_BUCKET = "dep-public-staging"
+PREDICTION_NEW_NON_PACIFIC_PREFIX = "dep_ls_lulc_prediction"
+
 training_data_year = "2020"
 
 class_attr = "lulc"

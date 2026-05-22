@@ -751,6 +751,10 @@ def run_classify_task(
     version_geomad: Annotated[str, typer.Option()],
     region: Literal["pacific", "non-pacific"],
     output_bucket: str,
+    output_prefix: str,
+    geomad_bucket: str,
+    geomad_prefix: str,
+    geomad_aws_region: str,
     model_path: str,
     xy_chunk_size: int,
     asset_url_prefix: str | None,
@@ -771,6 +775,10 @@ def run_classify_task(
         version_geomad: Version of the GeoMAD data to use (e.g. "0-0-1").
         region: Grid region, either "pacific" or "non-pacific".
         output_bucket: S3 bucket for output COGs and STAC metadata.
+        output_prefix: Product owner prefix for output paths (e.g. "ausp" or "dep").
+        geomad_bucket: S3 bucket where GeoMAD STAC geoparquet is stored.
+        geomad_prefix: Dataset prefix for the GeoMAD geoparquet (e.g. "ausp_ls_geomad").
+        geomad_aws_region: AWS region of the GeoMAD bucket.
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
         asset_url_prefix: Optional URL prefix for STAC asset hrefs.
@@ -788,9 +796,7 @@ def run_classify_task(
         logger.info(
             "Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
         )
-        geomad_stac_geoparquet_url = GEOMAD_STAC_GEOPARQUET_URL.replace(
-            GEOMAD_VERSION, version_geomad
-        )
+        geomad_stac_geoparquet_url = f"https://s3.{geomad_aws_region}.amazonaws.com/{geomad_bucket}/{geomad_prefix}/{version_geomad}/{geomad_prefix}.parquet"
     else:
         geomad_stac_geoparquet_url = GEOMAD_STAC_GEOPARQUET_URL
 
@@ -831,7 +837,7 @@ def run_classify_task(
         )
 
     itempath = S3ItemPath(
-        prefix="ausp",
+        prefix=output_prefix,
         bucket=output_bucket,
         sensor="ls",
         dataset_id="lulc_prediction",

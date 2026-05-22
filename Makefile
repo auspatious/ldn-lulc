@@ -118,6 +118,35 @@ predict-lulc-test-tiles-a-few-years:
 				--version-geomad $(VERSION_GEOMAD) \
 				--region $$region \
 				--output-bucket="data.ldn.auspatious.com" \
+				--output-prefix="ausp" \
+				--geomad-bucket="data.ldn.auspatious.com" \
+				--geomad-prefix="ausp_ls_geomad" \
+				--geomad-aws-region="us-west-2" \
+				--model-path="ldn/models/$(VERSION_MODEL)/lulc_random_forest_model.joblib" \
+				--xy-chunk-size 1024 \
+				$(DECIMATED) \
+				--overwrite; \
+		done; \
+	done
+
+VERSION_GEOMAD_NEW ?= 0-2-0
+
+predict-lulc-test-tiles-dep-staging:
+	for site in $(TEST_TILES); do \
+		tile_id=$${site%%:*}; \
+		region=$${site#*:}; region=$${region%%:*}; \
+		for year in $$(seq 2023 2025); do \
+			ldn classify classify \
+				--tile-id $$tile_id \
+				--year $$year \
+				--version $(VERSION_PREDICTION) \
+				--version-geomad $(VERSION_GEOMAD_NEW) \
+				--region $$region \
+				--output-bucket="dep-public-staging" \
+				--output-prefix="dep" \
+				--geomad-bucket="dep-public-staging" \
+				--geomad-prefix="dep_ls_geomad" \
+				--geomad-aws-region="us-west-2" \
 				--model-path="ldn/models/$(VERSION_MODEL)/lulc_random_forest_model.joblib" \
 				--xy-chunk-size 1024 \
 				$(DECIMATED) \

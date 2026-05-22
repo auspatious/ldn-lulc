@@ -41,6 +41,21 @@ def _classify(
     output_bucket: str = typer.Option(
         "data.ldn.auspatious.com", help="S3 bucket to write predictions to."
     ),
+    output_prefix: str = typer.Option(
+        "ausp", help="Product owner prefix for output paths (e.g. 'ausp' or 'dep')."
+    ),
+    geomad_bucket: str = typer.Option(
+        "data.ldn.auspatious.com",
+        help="S3 bucket where GeoMAD STAC geoparquet is stored.",
+    ),
+    geomad_prefix: str = typer.Option(
+        "ausp_ls_geomad",
+        help="Dataset prefix for the GeoMAD STAC geoparquet (e.g. 'ausp_ls_geomad' or 'dep_ls_geomad').",
+    ),
+    geomad_aws_region: str = typer.Option(
+        "us-west-2",
+        help="AWS region of the GeoMAD bucket.",
+    ),
     model_path: str = typer.Option(
         f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/lulc_random_forest_model.joblib",
         help="Model to use for prediction.",
@@ -76,6 +91,10 @@ def _classify(
         version_geomad=version_geomad,
         region=region,
         output_bucket=output_bucket,
+        output_prefix=output_prefix,
+        geomad_bucket=geomad_bucket,
+        geomad_prefix=geomad_prefix,
+        geomad_aws_region=geomad_aws_region,
         model_path=model_path,
         xy_chunk_size=xy_chunk_size,
         asset_url_prefix=asset_url_prefix,
