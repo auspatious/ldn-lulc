@@ -276,7 +276,7 @@
 
     function createTileLayer(key, year) {
       var layer = L.tileLayer(tileUrl(key, year), {
-        opacity: 0.75, maxZoom: 18, tileSize: 256,
+        opacity: 0.75, minZoom: 5, maxZoom: 18, tileSize: 256,
         errorTileUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
       });
       layer.on("tileloadstart", function() { tilesLoading++; updateLoadingIndicator(); });
