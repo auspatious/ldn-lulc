@@ -39,7 +39,13 @@ from odc.geo.geom import box as odc_box
 
 
 from ldn.grids import get_gadm, get_gridspec
-from ldn.utils import GEOMAD_VERSION, LdnError, get_analysis_epsg
+from ldn.utils import (
+    GEOMAD_VERSION,
+    LdnError,
+    get_analysis_epsg,
+    get_geomad_stac_geoparquet_url,
+    get_geomad_item_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,9 +133,6 @@ GEOMAD_BANDS = [
 # Copernicus DEM collection on MS PC.
 DEM_CATALOG = "https://planetarycomputer.microsoft.com/api/stac/v1/"
 DEM_COLLECTION = "cop-dem-glo-30"
-
-# TODO: Make bucket a variable
-GEOMAD_STAC_GEOPARQUET_URL = f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/{GEOMAD_VERSION}/ausp_ls_geomad.parquet"
 
 wgs84 = "EPSG:4326"
 
@@ -413,6 +416,7 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
 def search_and_load_geomad_indices_dem(
     tile_id: str,
     year: str,
+    region: Literal["pacific", "non-pacific"],
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     geopolygon: GeoDataFrame,
 ) -> xr.Dataset:
@@ -422,6 +426,7 @@ def search_and_load_geomad_indices_dem(
     Args:
         tile_id: Grid tile identifier (e.g. "058_043").
         year: Year string for the GeoMAD item search (e.g. "2020").
+        region: Grid region, either "pacific" or "non-pacific".
         analysis_crs: The expected CRS of the GeoMAD data (either "EPSG:3832" or "EPSG:6933").
         geopolygon: GeoDataFrame used to constrain the stac_load extent (the country geom).
 
@@ -429,12 +434,15 @@ def search_and_load_geomad_indices_dem(
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
+    geomad_url = get_geomad_stac_geoparquet_url(region)
+    item_id = get_geomad_item_id(region, tile_id, year)
+
     logging.info(
         f"Searching for GeoMAD item for tile {tile_id} and year {year}, using latest version {GEOMAD_VERSION}"
     )
     geomad_items = search_sync(
-        GEOMAD_STAC_GEOPARQUET_URL,
-        ids=f"ausp_ls_geomad_{tile_id}_{year}",
+        geomad_url,
+        ids=item_id,
     )
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
     geomad_items_n = len(geomad_items)
@@ -775,9 +783,9 @@ def run_classify_task(
         version_geomad: Version of the GeoMAD data to use (e.g. "0-0-1").
         region: Grid region, either "pacific" or "non-pacific".
         output_bucket: S3 bucket for output COGs and STAC metadata.
-        output_prefix: Product owner prefix for output paths (e.g. "ausp" or "dep").
+        output_prefix: Output prefix for paths (e.g. "dep" or "ci").
         geomad_bucket: S3 bucket where GeoMAD STAC geoparquet is stored.
-        geomad_prefix: Dataset prefix for the GeoMAD geoparquet (e.g. "ausp_ls_geomad").
+        geomad_prefix: Dataset prefix for the GeoMAD geoparquet (e.g. "dep_ls_geomad").
         geomad_aws_region: AWS region of the GeoMAD bucket.
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
@@ -798,7 +806,7 @@ def run_classify_task(
         )
         geomad_stac_geoparquet_url = f"https://s3.{geomad_aws_region}.amazonaws.com/{geomad_bucket}/{geomad_prefix}/{version_geomad}/{geomad_prefix}.parquet"
     else:
-        geomad_stac_geoparquet_url = GEOMAD_STAC_GEOPARQUET_URL
+        geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(region)
 
     # Split by any of [",", "-", "_"] to be robust.
     tile_id_parts = [int(i) for i in re.split(r"[,\-_]", tile_id)]
@@ -915,6 +923,7 @@ def run_classify_task(
 def get_tile_year_geomad_dem_indices(
     tile_id: str,
     year: str,
+    region: Literal["pacific", "non-pacific"],
     country_wgs84_buffered: GeoDataFrame,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
 ) -> xr.Dataset:
@@ -927,6 +936,7 @@ def get_tile_year_geomad_dem_indices(
     Args:
         tile_id: Grid tile identifier (e.g. "058_043").
         year: Temporal filter used for GeoMAD item search (e.g. "2020").
+        region: Grid region, either "pacific" or "non-pacific".
         country_wgs84_buffered: Buffered country geometry in WGS84.
         analysis_crs: Projected CRS string (e.g. "EPSG:3832").
 
@@ -937,6 +947,7 @@ def get_tile_year_geomad_dem_indices(
     merged = search_and_load_geomad_indices_dem(
         tile_id=tile_id,
         year=year,
+        region=region,
         analysis_crs=analysis_crs,
         geopolygon=country_wgs84_buffered,
     )

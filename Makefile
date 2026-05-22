@@ -37,22 +37,22 @@ grid-list-countries-pacific:
 grid-list-countries-non-pacific:
 	ldn grid list-countries --grids="non-pacific"
 
-print-tasks-2000-2025-all-grids:
-	ldn print-tasks --years="2000-2025" --grids="all"
+print-tasks-2000-2025-all:
+	ldn print-tasks --years="2000-2025" --region="all"
 
 print-tasks-2025-pacific:
-	ldn print-tasks --years="2025" --grids="pacific"
+	ldn print-tasks --years="2025" --region="pacific"
 
 filter-tasks:
 	ldn filter-tasks \
 	--tasks-json "$$(cat tasks.json)" \
 	--version "0-1-0" \
 	--bucket "dep-public-staging" \
+	--dataset "geomad" \
 	--no-overwrite
 
 
 # Run geomad for all test case sites for years 2000-2025.
-# TODO: do we want to use the product owner flag? This puts all regions in the same S3 path.
 geomad-2000-2025:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
@@ -63,7 +63,16 @@ geomad-2000-2025:
 				--region $$region \
 				--year $$year \
 				--version $(VERSION_GEOMAD) \
-				--product-owner ausp \
+				--bucket "dep-public-staging" \
+				--no-decimated \
+				--include-shadow \
+				--all-bands \
+				--memory-limit "10GB" \
+				--n-workers 2 \
+				--threads-per-worker 16 \
+				--xy-chunk-size 2048 \
+				--geomad-threads 10 \
+				--ls7-buffer-years 1 \
 				--overwrite; \
 		done; \
 	done
@@ -90,9 +99,15 @@ geomad-2000-2025:
 
 index-geomad:
 	ldn index-to-stac-geoparquet \
-	--prefix "ausp_ls_geomad" \
-	--output-filename "ausp_ls_geomad" \
-	--version $(VERSION_GEOMAD)
+	--dataset "geomad" \
+	--region "all" \
+	--version-geomad $(VERSION_GEOMAD) \
+	--version-prediction $(VERSION_PREDICTION) \
+	--bucket-pacific "dep-public-staging" \
+	--bucket-non-pacific "data.ldn.auspatious.com" \
+	--prefix-pacific-geomad "dep_ls_geomad" \
+	--prefix-non-pacific-geomad "ci_ls_geomad" \
+	--aws-region "us-west-2"
 
 
 ###### Classification/Prediction
@@ -106,7 +121,7 @@ index-geomad:
 
 # 3. Predict LULC for the test tiles and one year (2025).
 # TODO: Run for all years in future
-predict-lulc-test-tiles-a-few-years:
+predict-lulc-test-tiles:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
@@ -153,33 +168,30 @@ predict-lulc-test-tiles-dep-staging:
 				--overwrite; \
 		done; \
 	done
+# 				--model-path="https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/0-0-3/lulc_random_forest_model.joblib" \
 
 
 # 4. Update the STAC-Geoparquet index after all tiles/years have run.
 index-predictions:
 	ldn index-to-stac-geoparquet \
-	--prefix "ausp_ls_lulc_prediction" \
-	--output-filename "ausp_ls_lulc_prediction" \
-	--version $(VERSION_PREDICTION)
+	--dataset "prediction" \
+	--region "all" \
+	--version-geomad $(VERSION_GEOMAD) \
+	--version-prediction $(VERSION_PREDICTION) \
+	--bucket-pacific "dep-public-staging" \
+	--bucket-non-pacific "data.ldn.auspatious.com" \
+	--prefix-pacific-prediction "dep_ls_lulc_prediction" \
+	--prefix-non-pacific-prediction "ci_ls_lulc_prediction" \
+	--aws-region "us-west-2"
 
 
 # Visualisation
-# make-mosaics-all:
-# 	ldn make-mosaics \
-# 	--dataset all \
-# 	--years "2000-2025" \
-# 	--version-geomad $(VERSION_GEOMAD) \
-# 	--version-prediction $(VERSION_PREDICTION)
-make-mosaics-geomad-all-years:
+make-mosaics-geomad:
 	ldn make-mosaics \
 	--dataset geomad \
-	--years "2000-2025" \
-	--version-geomad $(VERSION_GEOMAD) \
-	--version-prediction $(VERSION_PREDICTION)
-# TODO: Run for all years in future
-make-mosaics-prediction-a-few-years:
+	--region "all"
+
+make-mosaics-prediction:
 	ldn make-mosaics \
 	--dataset prediction \
-	--years "2023-2025" \
-	--version-geomad $(VERSION_GEOMAD) \
-	--version-prediction $(VERSION_PREDICTION)
+	--region "all"

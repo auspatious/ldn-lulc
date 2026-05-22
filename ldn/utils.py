@@ -110,26 +110,56 @@ TEST_TILES_PACIFIC = [
     ("052_021", "pacific", {"Vanuatu": "VUT"}),
 ]
 
-GEOMAD_VERSION = "0-2-1"  # TODO: Make this 0-2-0 once we have compared.
-GEOMAD_VERSION_NEW = "0-2-0"  # TODO: Remove this. It is just to compare.
-PREDICTION_VERSION = "0-0-3"
+GEOMAD_VERSION = "0-2-1"
+PREDICTION_VERSION = "0-0-4"
 MODEL_VERSION = "0-0-3"
+TRAINING_DATA_VERSION = "0-0-3"
 
 # Mosaic source configuration per region
-GEOMAD_NEW_PACIFIC_BUCKET = "dep-public-staging"
-GEOMAD_NEW_PACIFIC_PREFIX = "dep_ls_geomad"
-GEOMAD_NEW_NON_PACIFIC_BUCKET = "dep-public-staging"
-GEOMAD_NEW_NON_PACIFIC_PREFIX = "dep_ls_geomad"
-PREDICTION_NEW_PACIFIC_BUCKET = "dep-public-staging"
-PREDICTION_NEW_PACIFIC_PREFIX = "dep_ls_lulc_prediction"
-PREDICTION_NEW_NON_PACIFIC_BUCKET = "dep-public-staging"
-PREDICTION_NEW_NON_PACIFIC_PREFIX = "dep_ls_lulc_prediction"
+PACIFIC_BUCKET = "dep-public-staging"
+PACIFIC_GEOMAD_PREFIX = "dep_ls_geomad"
+PACIFIC_PREDICTION_PREFIX = "dep_ls_lulc_prediction"
+
+NON_PACIFIC_BUCKET = "data.ldn.auspatious.com"
+NON_PACIFIC_GEOMAD_PREFIX = "ci_ls_geomad"
+NON_PACIFIC_PREDICTION_PREFIX = "ci_ls_lulc_prediction"
 
 training_data_year = "2020"
 
 class_attr = "lulc"
 
 wgs84 = "EPSG:4326"
+
+
+def get_geomad_stac_geoparquet_url(region: Literal["pacific", "non-pacific"]) -> str:
+    """Build the STAC-Geoparquet URL for GeoMAD data in a given region.
+
+    Args:
+        region: Either "pacific" or "non-pacific".
+
+    Returns:
+        HTTPS URL to the STAC-Geoparquet file.
+    """
+    bucket = PACIFIC_BUCKET if region == "pacific" else NON_PACIFIC_BUCKET
+    prefix = PACIFIC_GEOMAD_PREFIX if region == "pacific" else NON_PACIFIC_GEOMAD_PREFIX
+    return f"https://s3.us-west-2.amazonaws.com/{bucket}/{prefix}/{GEOMAD_VERSION}/{prefix}.parquet"
+
+
+def get_geomad_item_id(
+    region: Literal["pacific", "non-pacific"], tile_id: str, year: str
+) -> str:
+    """Build the STAC item ID for a GeoMAD tile.
+
+    Args:
+        region: Either "pacific" or "non-pacific".
+        tile_id: Grid tile identifier (e.g. "058_043").
+        year: Year string (e.g. "2020").
+
+    Returns:
+        The full STAC item ID string.
+    """
+    prefix = PACIFIC_GEOMAD_PREFIX if region == "pacific" else NON_PACIFIC_GEOMAD_PREFIX
+    return f"{prefix}_{tile_id}_{year}"
 
 
 def get_analysis_epsg(

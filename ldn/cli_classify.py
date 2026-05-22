@@ -38,22 +38,20 @@ def _classify(
     region: Literal["pacific", "non-pacific"] = typer.Option(
         ..., help="Region to predict LULC for. Can be 'pacific' or 'non-pacific'."
     ),
-    output_bucket: str = typer.Option(
-        "data.ldn.auspatious.com", help="S3 bucket to write predictions to."
-    ),
+    output_bucket: str = typer.Option(..., help="S3 bucket to write predictions to."),
     output_prefix: str = typer.Option(
-        "ausp", help="Product owner prefix for output paths (e.g. 'ausp' or 'dep')."
+        ..., help="Output prefix for paths (e.g. 'dep' or 'ci')."
     ),
     geomad_bucket: str = typer.Option(
-        "data.ldn.auspatious.com",
+        ...,
         help="S3 bucket where GeoMAD STAC geoparquet is stored.",
     ),
     geomad_prefix: str = typer.Option(
-        "ausp_ls_geomad",
-        help="Dataset prefix for the GeoMAD STAC geoparquet (e.g. 'ausp_ls_geomad' or 'dep_ls_geomad').",
+        ...,
+        help="Dataset prefix for the GeoMAD STAC geoparquet (e.g. 'dep_ls_geomad' or 'ci_ls_geomad').",
     ),
     geomad_aws_region: str = typer.Option(
-        "us-west-2",
+        ...,
         help="AWS region of the GeoMAD bucket.",
     ),
     model_path: str = typer.Option(

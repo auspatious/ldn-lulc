@@ -26,21 +26,22 @@ spec:
   arguments:
     parameters:
       - name: version
-        value: "0-2-0" # The version of the data product being made
+        value: "0-2-0"
       - name: image-name
-        value: "ghcr.io/auspatious/ldn-lulc" # The Docker image name (in GHCR)
+        value: "ghcr.io/auspatious/ldn-lulc"
       - name: image-tag
-        # value: "v0.0.3"
         value: "latest"
       - name: bucket
-        value: "dep-public-staging" # The bucket to store the data
-      - name: grids
-        value: "pacific" # Which grid(s) to process: "all", "pacific", "non-pacific"
+        value: "dep-public-staging"
+      - name: region
+        value: "pacific"
       - name: years
         # value: "2000-2025" # Which year(s) to process (e.g. "2000-2025" or "2000,2005,2010")
         value: "2010" # Just one year to test.
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
+      - name: decimated
+        value: "--no-decimated" # Can be "--decimated" or "--no-decimated"
   templates:
     - name: workflow-entrypoint
       dag:
@@ -89,8 +90,8 @@ spec:
           - print-tasks
           - --years
           - "{{ workflow.parameters.years }}"
-          - --grids
-          - "{{ workflow.parameters.grids }}"
+          - --region
+          - "{{ workflow.parameters.region }}"
 
     - name: filter-tasks
       inputs:
@@ -114,6 +115,8 @@ spec:
           - "{{ workflow.parameters.version }}"
           - --bucket
           - "{{ workflow.parameters.bucket }}"
+          - --dataset
+          - "geomad"
           - "{{ inputs.parameters.overwrite }}"
 
     - name: process-geomad
@@ -143,12 +146,6 @@ spec:
           limits:
             memory: 32Gi
             cpu: 18
-          # What DEP was using for S2 annual geomad:
-          #   memory: 320Gi
-          #   cpu: 42
-          # limits:
-          #   cpu: 48
-          #   memory: 360Gi
         command: [ldn]
         args:
           - geomad
@@ -170,13 +167,5 @@ spec:
           - "6"
           - --xy-chunk-size
           - "800"
-          # What DEP was using for S2 annual geomad:
-          # - --memory-limit
-          # - "128GB"
-          # - --n-workers
-          # - "4"
-          # - --threads-per-worker
-          # - "32"
-          # - --xy-chunk-size
-          # - "1600"
           - "{{ workflow.parameters.overwrite }}"
+          - "{{ workflow.parameters.decimated }}"

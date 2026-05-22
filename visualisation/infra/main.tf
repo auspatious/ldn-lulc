@@ -82,10 +82,10 @@ resource "aws_iam_role_policy" "s3_read" {
         "s3:ListBucket"
       ]
       Resource = [
-        "arn:aws:s3:::${var.s3_bucket}",
-        "arn:aws:s3:::${var.s3_bucket}/*",
-        "arn:aws:s3:::${var.geomad_s3_bucket}",
-        "arn:aws:s3:::${var.geomad_s3_bucket}/*"
+        "arn:aws:s3:::${var.s3_bucket_pacific}",
+        "arn:aws:s3:::${var.s3_bucket_pacific}/*",
+        "arn:aws:s3:::${var.s3_bucket_non_pacific}",
+        "arn:aws:s3:::${var.s3_bucket_non_pacific}/*"
       ]
     }]
   })
@@ -117,9 +117,6 @@ resource "aws_lambda_function" "app" {
       VSI_CACHE_SIZE                     = "536870912"
       GDAL_CACHEMAX                      = "512"
       PYTHONWARNINGS                     = "ignore"
-      GEOMAD_VERSION                     = var.geomad_version
-      GEOMAD_VERSION_NEW                 = var.geomad_version_new
-      PREDICTION_VERSION                 = var.prediction_version
     }
   }
 

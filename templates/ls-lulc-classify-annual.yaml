@@ -30,15 +30,13 @@ spec:
       - name: image-tag
         value: "latest"
       - name: prediction-version
-        value: "0-0-3"
+        value: "0-0-4"
       - name: geomad-version
         value: "0-2-0"
-      - name: grids
-        value: "pacific"
+      - name: region
+        value: "all" # "all", "pacific", or "non-pacific"
       - name: years
-        value: "2025"
-      - name: overwrite
-        value: "--no-overwrite"
+        value: "2025" # "2000-2025" or "2000,2005,2010"
       # Pacific region config
       - name: pacific-output-bucket
         value: "dep-public-staging"
@@ -52,13 +50,13 @@ spec:
         value: "us-west-2"
       # Non-pacific region config
       - name: non-pacific-output-bucket
-        value: "dep-public-staging"
+        value: "data.ldn.auspatious.com"
       - name: non-pacific-output-prefix
-        value: "dep"
+        value: "ci"
       - name: non-pacific-geomad-bucket
-        value: "dep-public-staging"
+        value: "data.ldn.auspatious.com"
       - name: non-pacific-geomad-prefix
-        value: "dep_ls_geomad"
+        value: "ci_ls_geomad"
       - name: non-pacific-geomad-aws-region
         value: "us-west-2"
       # Model config
@@ -66,6 +64,10 @@ spec:
         value: "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/0-0-3/lulc_random_forest_model.joblib"
       - name: xy-chunk-size
         value: "1024"
+      - name: overwrite
+        value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
+      - name: decimated
+        value: "--no-decimated" # Can be "--decimated" or "--no-decimated"
   templates:
     - name: workflow-entrypoint
       dag:
@@ -107,8 +109,8 @@ spec:
           - print-tasks
           - --years
           - "{{ workflow.parameters.years }}"
-          - --grids
-          - "{{ workflow.parameters.grids }}"
+          - --region
+          - "{{ workflow.parameters.region }}"
 
     - name: filter-tasks
       inputs:
@@ -130,8 +132,8 @@ spec:
           - "{{ workflow.parameters.prediction-version }}"
           - --bucket
           - "{{ workflow.parameters.pacific-output-bucket }}"
-          - --dataset-id
-          - "lulc_prediction"
+          - --dataset
+          - "prediction"
           - "{{ workflow.parameters.overwrite }}"
 
     - name: classify
@@ -183,5 +185,5 @@ spec:
           - "{{ workflow.parameters.model-path }}"
           - --xy-chunk-size
           - "{{ workflow.parameters.xy-chunk-size }}"
-          - --no-decimated
+          - "{{ workflow.parameters.decimated }}"
           - "{{ workflow.parameters.overwrite }}"
