@@ -48,7 +48,7 @@ def test_geomad_processor_output_has_expected_bands_nodata_and_dtype() -> None:
 
     processor = GeoMADProcessor(
         load_data_before_writing=False,
-        min_timesteps=1,
+        min_timesteps=3,
         drop_vars=["qa_pixel", "qa_radsat"],
         mask_clouds_kwargs={"filters": None, "include_shadow": False},
     )

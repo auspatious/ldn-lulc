@@ -232,7 +232,7 @@ class GeoMADProcessor(Processor):
         self,
         send_area_to_processor: bool = False,
         load_data_before_writing: bool = True,
-        min_timesteps: int = 10,
+        min_timesteps: int = 3,
         geomad_options: dict = {
             "num_threads": 4,
             "work_chunks": (1000, 1000),

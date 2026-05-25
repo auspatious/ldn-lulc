@@ -392,7 +392,7 @@ def geomad(
             offset=LANDSAT_OFFSET,
             is_float=False,
         ),
-        min_timesteps=10,
+        min_timesteps=3,
         drop_vars=["qa_pixel", "qa_radsat"],
         mask_clouds_kwargs={
             # Opening(3) removes isolated 1-3 pixel false cloud flags. These should not be dilated.
