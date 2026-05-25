@@ -125,14 +125,18 @@ def mask_cloud_and_shadow(
     include_shadow: bool = True,
     nodata_value: int = 0,
 ) -> Dataset:
-    """
-    Mask out cloud, cirrus, and optionally shadow pixels using qa_pixel bits.
+    """Mask out cloud, cirrus, and optionally shadow pixels using qa_pixel bits.
+
+    Only masks spectral bands, preserving qa_pixel and qa_radsat.
+
     Args:
         ds: Input xarray Dataset.
         filters: Morphological filter sequence applied to the cloud mask only.
         include_shadow: Whether to include cloud shadow (qa_pixel bit 4).
+        nodata_value: Value to fill masked pixels with.
+
     Returns:
-        Masked xarray Dataset.
+        Masked xarray Dataset with QA bands preserved.
     """
     # Keep - good
     CLEAR = 6
@@ -165,35 +169,34 @@ def mask_cloud_and_shadow(
     if filters is not None:
         cloud_mask = mask_cleanup(cloud_mask, filters)
 
-    return ds.where(~cloud_mask, other=nodata_value)
+    qa_bands = {"qa_pixel", "qa_radsat"}
+    spectral_bands = [b for b in ds.data_vars if b not in qa_bands]
+    for band in spectral_bands:
+        ds[band] = ds[band].where(~cloud_mask, other=nodata_value)
 
-    # TODO: See if medium confidence clouds should be added.
+    return ds
 
-    # # Add a mask for medium confidence clouds. Don't dilate them though.
-    # CLOUD_CONFIDENCE_SHIFT = 8
-    # CLOUD_CONFIDENCE_MEDIUM = 2
-    # # Extracts a 2-bit field (values 0-3: none, low, medium, high).
-    # TWO_BIT_MASK = 3
-    # cloud_confidence = (qa_pixel.astype(int) >> CLOUD_CONFIDENCE_SHIFT) & TWO_BIT_MASK
-    # cloud_confidence_mask = cloud_confidence >= CLOUD_CONFIDENCE_MEDIUM
-
-    # cloud_confidence_mask = mask_cleanup(cloud_confidence_mask, [("opening", 2)])
-
-    # # Must use "other=" here so uint16 values don't get converted to float32 with nan.
-    # return ds.where(~(cloud_mask | cloud_confidence_mask), other=nodata_value)
+    # TODO: See if medium confidence clouds should also be masked.
 
 
 def mask_saturated(ds: Dataset, nodata_value: int = 0) -> Dataset:
+    """Mask saturated pixels, preserving QA bands.
+
+    Args:
+        ds: Input dataset with qa_radsat band.
+        nodata_value: Value to fill masked pixels with.
+
+    Returns:
+        Dataset with spectral bands masked where saturated, QA bands unchanged.
+    """
     if "qa_radsat" in ds.data_vars:
         # 0 is nodata for qa_radsat, and also means 0 saturated bands in pixel.
         # So mask any non-0 values.
-        # Must use "other=" here so uint16 values don't get converted to float32 with nan.
-        ds = ds.where(ds["qa_radsat"] == 0, other=nodata_value)
-
-    # # TODO: Validate this. These should get clipped later in scaling?
-    # # for band in ["red", "green", "blue"]:
-    # #     if band in ds.data_vars:
-    # #         ds = ds.where(ds[band] < 43_636, other=nodata_value)
+        saturated_mask = ds["qa_radsat"] != 0
+        qa_bands = {"qa_pixel", "qa_radsat"}
+        spectral_bands = [b for b in ds.data_vars if b not in qa_bands]
+        for band in spectral_bands:
+            ds[band] = ds[band].where(~saturated_mask, other=nodata_value)
 
     return ds
 
