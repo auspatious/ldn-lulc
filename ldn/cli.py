@@ -233,7 +233,7 @@ def geomad(
     bucket: Annotated[str, typer.Option()] = "data.ldn.auspatious.com",
     overwrite: Annotated[bool, typer.Option()] = False,
     decimated: Annotated[bool, typer.Option()] = False,
-    include_shadow: Annotated[
+    mask_shadow: Annotated[
         bool,
         typer.Option(
             help="True to mask cloud shadows, false to not mask them (leave them in). Defaults to True."
@@ -264,7 +264,7 @@ def geomad(
     """
     logger.info(
         f"tile={tile_id} year={year} version={version} region={region} overwrite={overwrite} decimated={decimated} "
-        f"all_bands={all_bands} include_shadow={include_shadow} memory={memory_limit} workers={n_workers} threads={threads_per_worker} "
+        f"all_bands={all_bands} mask_shadow={mask_shadow} memory={memory_limit} workers={n_workers} threads={threads_per_worker} "
         f"chunk={xy_chunk_size} geomad_threads={geomad_threads}",
     )
 
@@ -398,7 +398,7 @@ def geomad(
             # Opening(3) removes isolated 1-3 pixel false cloud flags. These should not be dilated.
             # Dilation(3) grows remaining cloud masks by 3 pixels to catch haze/edges
             "filters": [("opening", 3), ("dilation", 5), ("erosion", 2)],
-            "include_shadow": include_shadow,
+            "mask_shadow": mask_shadow,
         },
     )
 

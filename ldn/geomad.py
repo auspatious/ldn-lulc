@@ -13,7 +13,7 @@ from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from odc.geo import GeoBox
 import numpy as np
 from odc.algo import mask_cleanup
-from xarray import Dataset
+from xarray import Dataset, DataArray
 from ldn.utils import LdnError
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,8 @@ LANDSAT_BANDS = [
 ]
 LANDSAT_SCALE = 0.0000275
 LANDSAT_OFFSET = -0.2
+
+qa_bands = {"qa_pixel", "qa_radsat"}
 
 
 def _to_utc_ms_string(dt: np.datetime64) -> str:
@@ -99,7 +101,6 @@ def mask_nodata(ds: Dataset, nodata_value: int = 0) -> Dataset:
     Returns:
         Dataset with spectral bands masked, QA bands unchanged.
     """
-    qa_bands = {"qa_pixel", "qa_radsat"}
     spectral_bands = [b for b in ds.data_vars if b not in qa_bands]
 
     # Combine nodata from all spectral bands into a single mask.
@@ -119,64 +120,92 @@ def mask_nodata(ds: Dataset, nodata_value: int = 0) -> Dataset:
     return ds
 
 
-def mask_cloud_and_shadow(
+# TODO: Look into sr_qa_aerosol band for masking haze.
+def mask_qa_pixel(
     ds: Dataset,
     filters: Iterable[Tuple[str, int]] | None = None,
-    include_shadow: bool = True,
+    mask_shadow: bool = True,
+    mask_snow: bool = True,
     nodata_value: int = 0,
 ) -> Dataset:
-    """Mask out cloud, cirrus, and optionally shadow pixels using qa_pixel bits.
+    """Mask out cloud, cirrus, and optionally shadow/snow pixels using qa_pixel bits.
 
     Only masks spectral bands, preserving qa_pixel and qa_radsat.
+
+    Keep logic: Clear bit set AND cloud/cirrus confidence fields are
+    low or none.
+
+    Mask logic: any of Dilated Cloud, Cirrus, Cloud bits set, or
+    pixel not in keep set. Morphological filters are applied only to
+    this cloud/cirrus mask.
+
+    Shadow and snow are added after morphological filtering so they
+    are not widened. They use both bit flags and confidence fields
+    (medium or high confidence triggers masking).
 
     Args:
         ds: Input xarray Dataset.
         filters: Morphological filter sequence applied to the cloud mask only.
-        include_shadow: Whether to include cloud shadow (qa_pixel bit 4).
+        mask_shadow: Whether to mask cloud shadow (bit 4 or confidence >= 2).
+        mask_snow: Whether to mask snow pixels (bit 5 or confidence >= 2).
         nodata_value: Value to fill masked pixels with.
 
     Returns:
         Masked xarray Dataset with QA bands preserved.
     """
-    # Keep - good
-    CLEAR = 6
-    # Keep - other
+    DILATED_CLOUD = 1
+    CIRRUS = 2
+    CLOUD = 3
+    CLOUD_SHADOW = 4
     SNOW = 5
+    CLEAR = 6
     WATER = 7
 
-    # Mask - cloud
-    # DILATED_CLOUD = 1
-    # CIRRUS = 2
-    # CLOUD = 3
-    # Mask - optional
-    CLOUD_SHADOW = 4
-
     qa_pixel = ds["qa_pixel"]
-    # Fill pixels have qa_pixel of 0 or 1 (bit 0 = Fill). Exclude both.
     valid = (qa_pixel != 0) & (qa_pixel != 1)
 
-    # If Clear bit is set, keep the pixel regardless of other flags.
+    # Confidence fields (2-bit each): 0=None, 1=Low, 2=Medium, 3=High
+    cloud_confidence = (qa_pixel >> 8) & 3
+    shadow_confidence = (qa_pixel >> 10) & 3
+    snow_confidence = (qa_pixel >> 12) & 3
+    cirrus_confidence = (qa_pixel >> 14) & 3
+
+    # Keep logic uses only cloud/cirrus confidence for the cloud mask
+    # that gets morphologically filtered. Shadow/snow confidence is
+    # applied separately after filtering so they are not widened.
     is_clear = (qa_pixel & (1 << CLEAR)) != 0
+    cloud_cirrus_conf_low = (cloud_confidence <= 1) & (cirrus_confidence <= 1)
+    is_water = (qa_pixel & (1 << WATER)) != 0
+    is_snow = (qa_pixel & (1 << SNOW)) != 0
+    if mask_snow:
+        keep = (is_clear | is_water) & cloud_cirrus_conf_low
+    else:
+        keep = (is_clear | is_water | is_snow) & cloud_cirrus_conf_low
 
-    good_bits = (1 << CLEAR) | (1 << SNOW) | (1 << WATER)
-    cloud_mask = ((qa_pixel & good_bits) == 0) & valid
+    # Explicitly mask bad bits regardless of Clear.
+    bad_bits = (1 << DILATED_CLOUD) | (1 << CIRRUS) | (1 << CLOUD)
+    has_bad_bit = (qa_pixel & bad_bits) != 0
 
-    if include_shadow:
-        cloud_mask = cloud_mask | (
-            ((qa_pixel & (1 << CLOUD_SHADOW)) != 0) & valid & ~is_clear
-        )
+    # Cloud mask for morphological filtering (only cloud/cirrus bits).
+    cloud_mask = valid & (has_bad_bit | ~keep)
 
     if filters is not None:
         cloud_mask = mask_cleanup(cloud_mask, filters)
 
-    qa_bands = {"qa_pixel", "qa_radsat"}
+    # Add shadow and snow after morphological filters so they are not widened.
+    if mask_shadow:
+        shadow_mask = ((qa_pixel & (1 << CLOUD_SHADOW)) != 0) | (shadow_confidence >= 2)
+        cloud_mask = cloud_mask | (valid & shadow_mask)
+
+    if mask_snow:
+        snow_mask = ((qa_pixel & (1 << SNOW)) != 0) | (snow_confidence >= 2)
+        cloud_mask = cloud_mask | (valid & snow_mask)
+
     spectral_bands = [b for b in ds.data_vars if b not in qa_bands]
     for band in spectral_bands:
         ds[band] = ds[band].where(~cloud_mask, other=nodata_value)
 
     return ds
-
-    # TODO: See if medium confidence clouds should also be masked.
 
 
 def mask_saturated(ds: Dataset, nodata_value: int = 0) -> Dataset:
@@ -190,10 +219,9 @@ def mask_saturated(ds: Dataset, nodata_value: int = 0) -> Dataset:
         Dataset with spectral bands masked where saturated, QA bands unchanged.
     """
     if "qa_radsat" in ds.data_vars:
-        # 0 is nodata for qa_radsat, and also means 0 saturated bands in pixel.
+        # In qa_radsat, 0 means: no bits are set, so no bands are saturated.
         # So mask any non-0 values.
         saturated_mask = ds["qa_radsat"] != 0
-        qa_bands = {"qa_pixel", "qa_radsat"}
         spectral_bands = [b for b in ds.data_vars if b not in qa_bands]
         for band in spectral_bands:
             ds[band] = ds[band].where(~saturated_mask, other=nodata_value)
@@ -201,10 +229,75 @@ def mask_saturated(ds: Dataset, nodata_value: int = 0) -> Dataset:
     return ds
 
 
+# Custom mask cloud function that uses whiteness, blueness etc.
+# This masks pixels that are clearly snow, but are not labelled as cloud in qa_pixel.
+
+# Reflectance thresholds for hard cloud detection
+_CLOUD_BLUE_MIN = 0.35  # beaches rarely exceed this
+_CLOUD_WHITENESS_MAX = 0.15  # beaches are warmer toned, not truly white/grey
+
+
+def _to_reflectance(da: DataArray) -> DataArray:
+    """Convert raw Collection 2 SR DN to reflectance, clipped to valid range."""
+    return (da * LANDSAT_SCALE + LANDSAT_OFFSET).clip(0.0, 1.0)
+
+
+def mask_blue_white_cloud(
+    ds: Dataset,
+    blue_band: str = "blue",
+    green_band: str = "green",
+    red_band: str = "red",
+    nodata_value: int = 0,
+) -> Dataset:
+    """Mask hard white cloud missed by CFMask using spectral indices.
+
+    Detects bright, spectrally flat (white/grey) pixels via blue
+    reflectance and a visible-band whiteness index. Operates in
+    reflectance space; output values remain unscaled DN.
+    QA bands are preserved unchanged.
+
+    Args:
+        ds: Dataset with unscaled Collection 2 SR bands and QA bands.
+        blue_band: Name of blue band in ds.
+        green_band: Name of green band in ds.
+        red_band: Name of red band in ds.
+        nodata_value: Fill value for masked pixels (0 = C2 SR fill convention).
+
+    Returns:
+        New dataset. Masked spectral pixels set to nodata_value. QA unchanged.
+    """
+    spectral_bands = [b for b in ds.data_vars if b not in qa_bands]
+
+    required = {blue_band, green_band, red_band}
+    if not required.issubset(ds.data_vars):
+        missing = required - {str(b) for b in ds.data_vars}
+        logger.warning(f"Hard cloud masking skipped - missing bands: {missing}")
+        return ds
+
+    blue = _to_reflectance(ds[blue_band])
+    green = _to_reflectance(ds[green_band])
+    red = _to_reflectance(ds[red_band])
+
+    mean_vis = (blue + green + red) / 3.0
+    whiteness = (
+        abs(blue - mean_vis) + abs(green - mean_vis) + abs(red - mean_vis)
+    ) / mean_vis.where(mean_vis != 0)
+
+    cloud_mask = (blue > _CLOUD_BLUE_MIN) & (whiteness < _CLOUD_WHITENESS_MAX)
+
+    if not cloud_mask.any():
+        return ds
+
+    masked = {
+        band: ds[band].where(~cloud_mask, other=nodata_value) for band in spectral_bands
+    }
+    return ds.assign(masked)
+
+
 def mask_nodata_clouds_saturated(
     ds: Dataset,
     filters: Iterable[Tuple[str, int]] | None = None,
-    include_shadow: bool = True,
+    mask_shadow: bool = True,
 ) -> Dataset:
     # Only valid for LS8 and LS9, but we can still apply
     # it to LS7 data without error, it just won't mask anything.
@@ -217,13 +310,15 @@ def mask_nodata_clouds_saturated(
     Args:
         ds: Input dataset containing qa_pixel and optionally qa_radsat.
         filters: Morphological filter sequence applied to the cloud mask only.
-        include_shadow: Whether to include cloud shadow (qa_pixel bit 4).
+        mask_shadow: Whether to include cloud shadow (qa_pixel bit 4).
     """
     ds = mask_nodata(ds)
 
-    ds = mask_cloud_and_shadow(ds, filters=filters, include_shadow=include_shadow)
+    ds = mask_qa_pixel(ds, filters=filters, mask_shadow=mask_shadow)
 
     ds = mask_saturated(ds)
+
+    ds = mask_blue_white_cloud(ds)
 
     # return erase_bad(ds, combined_mask)
     # Performance seems fine using this method (compared to erase_bad), but could be checked more closely.
@@ -245,7 +340,7 @@ class GeoMADProcessor(Processor):
         preprocessor: Processor | None = None,
         mask_clouds_kwargs: dict = {
             "filters": [("opening", 3), ("dilation", 5), ("erosion", 2)],
-            "include_shadow": True,
+            "mask_shadow": True,
         },
         **kwargs,
     ) -> None:
