@@ -68,6 +68,25 @@ geomad-2000-2025:
 		done; \
 	done
 
+# geomad-test:
+# 	for year in 2000 2010 2020; do \
+# 		ldn geomad \
+# 			--tile-id 063_020 \
+# 			--region pacific \
+# 			--year $$year \
+# 			--version $(VERSION_GEOMAD) \
+# 			--product-owner ausp \
+# 			--overwrite; \
+# 	done
+
+# geomad-test-2:
+# 	ldn geomad \
+# 		--tile-id 058_043 \
+# 		--region pacific \
+# 		--year 2010 \
+# 		--version $(VERSION_GEOMAD) \
+# 		--product-owner ausp \
+# 		--overwrite;
 
 index-geomad:
 	ldn index-to-stac-geoparquet \
