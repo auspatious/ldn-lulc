@@ -12,6 +12,7 @@
 
 VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)")
 VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)")
+VERSION_MODEL := $(shell python3 -c "from ldn.utils import MODEL_VERSION; print(MODEL_VERSION)")
 # TEST_TILES is a list of tuples: (tile_id, region, {country_name: country_code}) e.g. ("089_016", "pacific", {"Cook Islands": "COK"})
 TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
 # TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] == '312_106']))")
@@ -67,6 +68,25 @@ geomad-2000-2025:
 		done; \
 	done
 
+# geomad-test:
+# 	for year in 2000 2010 2020; do \
+# 		ldn geomad \
+# 			--tile-id 063_020 \
+# 			--region pacific \
+# 			--year $$year \
+# 			--version $(VERSION_GEOMAD) \
+# 			--product-owner ausp \
+# 			--overwrite; \
+# 	done
+
+# geomad-test-2:
+# 	ldn geomad \
+# 		--tile-id 058_043 \
+# 		--region pacific \
+# 		--year 2010 \
+# 		--version $(VERSION_GEOMAD) \
+# 		--product-owner ausp \
+# 		--overwrite;
 
 index-geomad:
 	ldn index-to-stac-geoparquet \
@@ -98,7 +118,7 @@ predict-lulc-test-tiles-a-few-years:
 				--version-geomad $(VERSION_GEOMAD) \
 				--region $$region \
 				--output-bucket="data.ldn.auspatious.com" \
-				--model-path="ldn/models/$(VERSION_PREDICTION)/lulc_random_forest_model.joblib" \
+				--model-path="ldn/models/$(VERSION_MODEL)/lulc_random_forest_model.joblib" \
 				--xy-chunk-size 1024 \
 				$(DECIMATED) \
 				--overwrite; \

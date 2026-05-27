@@ -4,7 +4,7 @@ from typing import Literal
 import typer
 
 from ldn.classify import run_classify_task
-from ldn.utils import GEOMAD_VERSION, LdnError, PREDICTION_VERSION
+from ldn.utils import GEOMAD_VERSION, MODEL_VERSION, LdnError, PREDICTION_VERSION
 
 classify_app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ def _classify(
         "data.ldn.auspatious.com", help="S3 bucket to write predictions to."
     ),
     model_path: str = typer.Option(
-        f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/{PREDICTION_VERSION}/lulc_random_forest_model.joblib",
+        f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/lulc_random_forest_model.joblib",
         help="Model to use for prediction.",
     ),
     xy_chunk_size: int = typer.Option(

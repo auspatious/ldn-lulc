@@ -110,9 +110,10 @@ TEST_TILES_PACIFIC = [
     ("052_021", "pacific", {"Vanuatu": "VUT"}),
 ]
 
-GEOMAD_VERSION = "0-0-4a"  # TODO: Make this 0-2-0 once we have compared.
+GEOMAD_VERSION = "0-2-1"  # TODO: Make this 0-2-0 once we have compared.
 GEOMAD_VERSION_NEW = "0-2-0"  # TODO: Remove this. It is just to compare.
 PREDICTION_VERSION = "0-0-3"
+MODEL_VERSION = "0-0-3"
 
 training_data_year = "2020"
 
