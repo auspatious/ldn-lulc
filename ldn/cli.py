@@ -42,14 +42,18 @@ from ldn.cli_classify import classify_app
 from ldn.grids import get_gridspec
 from ldn.utils import (
     GEOMAD_VERSION,
+    GEOMAD_DATASET_ID,
+    PREDICTION_DATASET_ID,
+    SENSOR,
     LdnError,
     PREDICTION_VERSION,
     PACIFIC_BUCKET,
     NON_PACIFIC_BUCKET,
-    PACIFIC_GEOMAD_PREFIX,
-    NON_PACIFIC_GEOMAD_PREFIX,
-    PACIFIC_PREDICTION_PREFIX,
-    NON_PACIFIC_PREDICTION_PREFIX,
+    PACIFIC_OWNER,
+    NON_PACIFIC_OWNER,
+    bucket_for_region,
+    owner_for_region,
+    dataset_prefix,
 )
 
 app = typer.Typer()
@@ -140,25 +144,33 @@ def print_tasks(
     return
 
 
-def _resolve_prefix(region: str, product_owner: str | None) -> str:
-    """Resolve the S3 key prefix for a given region. Uses product_owner override if set."""
-    if product_owner is not None:
-        return product_owner
-    return "ci" if region == "non-pacific" else "dep"
-
-
 # This command is helpful for developing.
 # It is basically a performance optimization to prevent a lot of pods spinning up to discover that their output exists and shouldn't be overwritten.
 # It duplicates a lot of code and isn't very clean. If something was changed in geomad, this would be out of sync and cause issues.
 @app.command()
 def filter_tasks(
     tasks_json: Annotated[str, typer.Option(help="JSON string of tasks to filter.")],
-    version: Annotated[str, typer.Option(help="Version string for the data product.")],
-    bucket: Annotated[str, typer.Option()] = "dep-public-staging",
+    version: Annotated[
+        str,
+        typer.Option(
+            help="Version string for the data product. Depending on dataset parameter."
+        ),
+    ],
+    bucket_pacific: Annotated[
+        str, typer.Option(help="S3 bucket for pacific data.")
+    ] = PACIFIC_BUCKET,
+    bucket_non_pacific: Annotated[
+        str, typer.Option(help="S3 bucket for non-pacific data.")
+    ] = NON_PACIFIC_BUCKET,
+    owner_pacific: Annotated[
+        str, typer.Option(help="Short owner prefix for pacific (e.g. 'dep').")
+    ] = PACIFIC_OWNER,
+    owner_non_pacific: Annotated[
+        str, typer.Option(help="Short owner prefix for non-pacific (e.g. 'ci').")
+    ] = NON_PACIFIC_OWNER,
     dataset: Annotated[
         Literal["geomad", "prediction"], typer.Option(help="Dataset name.")
     ] = "geomad",
-    product_owner: Annotated[str | None, typer.Option()] = None,
     overwrite: Annotated[
         bool, typer.Option(help="If true, skip filtering and pass all tasks through.")
     ] = False,
@@ -175,52 +187,66 @@ def filter_tasks(
         typer.echo(json.dumps(tasks))
         return
 
-    logger.info(f"Filtering {len(tasks)} tasks for existing outputs in bucket={bucket}")
+    logger.info(f"Filtering {len(tasks)} tasks for existing outputs.")
 
     # Map CLI dataset name to S3 dataset_id
-    dataset_id = "lulc_prediction" if dataset == "prediction" else dataset
+    dataset_id = PREDICTION_DATASET_ID if dataset == "prediction" else GEOMAD_DATASET_ID
 
     # Normalize version the same way S3ItemPath does internally
     version = version.replace(".", "-")
 
     client = boto3.client("s3")
-    sensor = "ls"
 
-    if bucket.startswith("https://"):
-        full_path_prefix = bucket
-    elif "." in bucket:
-        full_path_prefix = f"https://{bucket}"
-    else:
-        full_path_prefix = f"https://{bucket}.s3.us-west-2.amazonaws.com"
+    def _full_path_prefix_for_bucket(bucket: str) -> str:
+        """Return the full path prefix URL for a bucket."""
+        if bucket.startswith("https://"):
+            return bucket
+        elif "." in bucket:
+            return f"https://{bucket}"
+        else:
+            return f"https://{bucket}.s3.us-west-2.amazonaws.com"
 
-    # Collect all unique prefixes we need to list
-    prefix_set: set[str] = set()
+    # Collect unique (bucket, owner) combos to list
+    region_combos: set[tuple[str, str]] = set()
     for task in tasks:
-        prefix_set.add(_resolve_prefix(task["region"], product_owner))
+        r = task["region"]
+        region_combos.add(
+            (
+                bucket_for_region(r, bucket_pacific, bucket_non_pacific),
+                owner_for_region(r, owner_pacific, owner_non_pacific),
+            )
+        )
 
     # List all STAC items under each prefix in one paginated call
-    existing_keys: set[str] = set()
-    for p in prefix_set:
-        s3_prefix = f"{p}_{sensor}_{dataset_id}/{version}/"
+    existing_keys: dict[str, set[str]] = {}
+    for combo_bucket, combo_owner in region_combos:
+        full_prefix = dataset_prefix(combo_owner, dataset_id)
+        s3_prefix = f"{full_prefix}/{version}/"
         paginator = client.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=bucket, Prefix=s3_prefix):
+        key_set: set[str] = set()
+        for page in paginator.paginate(Bucket=combo_bucket, Prefix=s3_prefix):
             for obj in page.get("Contents", []):
                 key = obj["Key"]
                 if key.endswith(".stac-item.json"):
-                    existing_keys.add(key)
+                    key_set.add(key)
+        existing_keys[f"{combo_bucket}/{combo_owner}"] = key_set
 
-    logger.info(f"Found {len(existing_keys)} existing STAC items in S3.")
+    total_existing = sum(len(v) for v in existing_keys.values())
+    logger.info(f"Found {total_existing} existing STAC items in S3.")
 
     # Check each task against the set
     remaining = []
     for task in tasks:
         tile_index = tuple(map(int, task["id"].split("_")))
-        prefix = _resolve_prefix(task["region"], product_owner)
+        r = task["region"]
+        bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
+        owner = owner_for_region(r, owner_pacific, owner_non_pacific)
+        full_path_prefix = _full_path_prefix_for_bucket(bucket)
 
         itempath = S3ItemPath(
-            prefix=prefix,
+            prefix=owner,
             bucket=bucket,
-            sensor=sensor,
+            sensor=SENSOR,
             dataset_id=dataset_id,
             version=version,
             time=task["year"],
@@ -228,7 +254,8 @@ def filter_tasks(
         )
         stac_key = itempath.stac_path(tile_index, absolute=False)
 
-        if stac_key not in existing_keys:
+        lookup_key = f"{bucket}/{owner}"
+        if stac_key not in existing_keys.get(lookup_key, set()):
             remaining.append(task)
 
     logger.info(
@@ -243,8 +270,21 @@ def geomad(
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
-    product_owner: Annotated[str | None, typer.Option()] = None,
-    bucket: Annotated[str, typer.Option()] = "dep-public-staging",
+    bucket_pacific: Annotated[
+        str, typer.Option(help="S3 bucket for pacific data.")
+    ] = PACIFIC_BUCKET,
+    bucket_non_pacific: Annotated[
+        str, typer.Option(help="S3 bucket for non-pacific data.")
+    ] = NON_PACIFIC_BUCKET,
+    owner_pacific: Annotated[
+        str, typer.Option(help="Short owner prefix for pacific (e.g. 'dep').")
+    ] = PACIFIC_OWNER,
+    owner_non_pacific: Annotated[
+        str, typer.Option(help="Short owner prefix for non-pacific (e.g. 'ci').")
+    ] = NON_PACIFIC_OWNER,
+    product_owner: Annotated[
+        str | None, typer.Option(help="Override the region-derived owner prefix.")
+    ] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
     decimated: Annotated[bool, typer.Option()] = False,
     mask_shadow: Annotated[
@@ -302,15 +342,17 @@ def geomad(
             typer.echo("Using both T1 and T2 data for Pacific for LS7 era")
             search_kwargs = {}
 
-    # Fixed variables
-    sensor = "ls"
-    dataset_id = "geomad"
-
     # Set up variables and check
     tile_index = tuple(map(int, tile_id.split("_")))
 
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_index)
+
+    # Resolve bucket and prefix based on tile region
+    bucket = bucket_for_region(region, bucket_pacific, bucket_non_pacific)
+    owner = owner_for_region(region, owner_pacific, owner_non_pacific)
+    if product_owner is not None:
+        owner = product_owner
 
     # TODO: Handle different bucket formats more robustly. For now we support:
     # "data.ldn.auspatious.com" to "https://data.ldn.auspatious.com"
@@ -331,14 +373,12 @@ def geomad(
     # Configure for checking item existence
     client = boto3.client("s3")
 
-    prefix = _resolve_prefix(region, product_owner)
-
     # Check if we've done this tile before
     itempath = S3ItemPath(
-        prefix=prefix,
+        prefix=owner,
         bucket=bucket,
-        sensor=sensor,
-        dataset_id=dataset_id,
+        sensor=SENSOR,
+        dataset_id=GEOMAD_DATASET_ID,
         version=version,
         time=year,
         full_path_prefix=full_path_prefix,
@@ -389,7 +429,7 @@ def geomad(
 
     # Metadata creator
     stac_creator = StacCreator(
-        collection_url_root=f"{full_path_prefix}/#{prefix}_{sensor}_{dataset_id}/",
+        collection_url_root=f"{full_path_prefix}/#{owner}_{SENSOR}_{GEOMAD_DATASET_ID}/",
         itempath=itempath,
         with_raster=True,
     )
@@ -525,17 +565,11 @@ def _index_to_stac_geoparquet(
     bucket_non_pacific: str = typer.Option(
         NON_PACIFIC_BUCKET, help="S3 bucket for non-pacific data."
     ),
-    prefix_pacific_geomad: str = typer.Option(
-        PACIFIC_GEOMAD_PREFIX, help="S3 prefix for pacific GeoMAD data."
+    owner_pacific: str = typer.Option(
+        PACIFIC_OWNER, help="Short owner prefix for pacific (e.g. 'dep')."
     ),
-    prefix_non_pacific_geomad: str = typer.Option(
-        NON_PACIFIC_GEOMAD_PREFIX, help="S3 prefix for non-pacific GeoMAD data."
-    ),
-    prefix_pacific_prediction: str = typer.Option(
-        PACIFIC_PREDICTION_PREFIX, help="S3 prefix for pacific prediction data."
-    ),
-    prefix_non_pacific_prediction: str = typer.Option(
-        NON_PACIFIC_PREDICTION_PREFIX, help="S3 prefix for non-pacific prediction data."
+    owner_non_pacific: str = typer.Option(
+        NON_PACIFIC_OWNER, help="Short owner prefix for non-pacific (e.g. 'ci')."
     ),
     aws_region: str = typer.Option("us-west-2", help="AWS region of the buckets."),
 ) -> None:
@@ -546,21 +580,14 @@ def _index_to_stac_geoparquet(
     datasets = ["geomad", "prediction"] if dataset == "all" else [dataset]
 
     for r in regions:
-        bucket = bucket_pacific if r == "pacific" else bucket_non_pacific
+        bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
+        owner = owner_for_region(r, owner_pacific, owner_non_pacific)
         for d in datasets:
             if d == "geomad":
-                prefix = (
-                    prefix_pacific_geomad
-                    if r == "pacific"
-                    else prefix_non_pacific_geomad
-                )
+                prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
                 version = version_geomad
             else:
-                prefix = (
-                    prefix_pacific_prediction
-                    if r == "pacific"
-                    else prefix_non_pacific_prediction
-                )
+                prefix = dataset_prefix(owner, PREDICTION_DATASET_ID)
                 version = version_prediction
             targets.append((bucket, prefix, version))
 
@@ -717,22 +744,14 @@ def make_mosaics(
         str,
         typer.Option(help="S3 bucket for non-pacific data."),
     ] = NON_PACIFIC_BUCKET,
-    prefix_pacific_geomad: Annotated[
+    owner_pacific: Annotated[
         str,
-        typer.Option(help="S3 prefix for pacific GeoMAD data."),
-    ] = PACIFIC_GEOMAD_PREFIX,
-    prefix_non_pacific_geomad: Annotated[
+        typer.Option(help="Short owner prefix for pacific (e.g. 'dep')."),
+    ] = PACIFIC_OWNER,
+    owner_non_pacific: Annotated[
         str,
-        typer.Option(help="S3 prefix for non-pacific GeoMAD data."),
-    ] = NON_PACIFIC_GEOMAD_PREFIX,
-    prefix_pacific_prediction: Annotated[
-        str,
-        typer.Option(help="S3 prefix for pacific prediction data."),
-    ] = PACIFIC_PREDICTION_PREFIX,
-    prefix_non_pacific_prediction: Annotated[
-        str,
-        typer.Option(help="S3 prefix for non-pacific prediction data."),
-    ] = NON_PACIFIC_PREDICTION_PREFIX,
+        typer.Option(help="Short owner prefix for non-pacific (e.g. 'ci')."),
+    ] = NON_PACIFIC_OWNER,
 ) -> None:
     """Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files.
 
@@ -745,25 +764,18 @@ def make_mosaics(
 
     mosaic_targets: list[tuple[str, str, str, str]] = []
     for r in regions:
-        bucket = bucket_pacific if r == "pacific" else bucket_non_pacific
+        bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
+        owner = owner_for_region(r, owner_pacific, owner_non_pacific)
         if "." in bucket:
             base_url = f"https://{bucket}"
         else:
             base_url = f"https://s3.us-west-2.amazonaws.com/{bucket}"
         for d in datasets_list:
             if d == "geomad":
-                prefix = (
-                    prefix_pacific_geomad
-                    if r == "pacific"
-                    else prefix_non_pacific_geomad
-                )
+                prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
                 ver = version_geomad
             else:
-                prefix = (
-                    prefix_pacific_prediction
-                    if r == "pacific"
-                    else prefix_non_pacific_prediction
-                )
+                prefix = dataset_prefix(owner, PREDICTION_DATASET_ID)
                 ver = version_prediction
             output_path = f"s3://{bucket}/{prefix}/{ver}/mosaics/"
             parquet_url = f"{base_url}/{prefix}/{ver}/{prefix}.parquet"

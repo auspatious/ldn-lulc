@@ -17,6 +17,7 @@ spec:
       karpenter.sh/do-not-disrupt: "true"
   nodeSelector:
     karpenter.sh/capacity-type: "spot"
+    # TODO: Need to disactivate all dep-specific tags to run non-Pacific processes in another Argo instance.
     dep/workload: data-processing
   tolerations:
     - key: dep/workload
@@ -32,38 +33,12 @@ spec:
       - name: prediction-version
         value: "0-0-4"
       - name: geomad-version
-        value: "0-2-0"
+        value: "0-2-1"
       - name: region
-        value: "all" # "all", "pacific", or "non-pacific"
+        # Just run Pacific in DEP Argo instance.
+        value: "pacific" # "all", "pacific", or "non-pacific"
       - name: years
         value: "2025" # "2000-2025" or "2000,2005,2010"
-      # Pacific region config
-      - name: pacific-output-bucket
-        value: "dep-public-staging"
-      - name: pacific-output-prefix
-        value: "dep"
-      - name: pacific-geomad-bucket
-        value: "dep-public-staging"
-      - name: pacific-geomad-prefix
-        value: "dep_ls_geomad"
-      - name: pacific-geomad-aws-region
-        value: "us-west-2"
-      # Non-pacific region config
-      - name: non-pacific-output-bucket
-        value: "data.ldn.auspatious.com"
-      - name: non-pacific-output-prefix
-        value: "ci"
-      - name: non-pacific-geomad-bucket
-        value: "data.ldn.auspatious.com"
-      - name: non-pacific-geomad-prefix
-        value: "ci_ls_geomad"
-      - name: non-pacific-geomad-aws-region
-        value: "us-west-2"
-      # Model config
-      - name: model-path
-        value: "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/0-0-3/lulc_random_forest_model.joblib"
-      - name: xy-chunk-size
-        value: "1024"
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated
@@ -130,8 +105,6 @@ spec:
           - "{{ inputs.parameters.tasks-json }}"
           - --version
           - "{{ workflow.parameters.prediction-version }}"
-          - --bucket
-          - "{{ workflow.parameters.pacific-output-bucket }}"
           - --dataset
           - "prediction"
           - "{{ workflow.parameters.overwrite }}"
@@ -171,19 +144,5 @@ spec:
           - "{{ workflow.parameters.prediction-version }}"
           - --version-geomad
           - "{{ workflow.parameters.geomad-version }}"
-          - --output-bucket
-          - "{{= inputs.parameters.region == 'pacific' ? workflow.parameters['pacific-output-bucket'] : workflow.parameters['non-pacific-output-bucket'] }}"
-          - --output-prefix
-          - "{{= inputs.parameters.region == 'pacific' ? workflow.parameters['pacific-output-prefix'] : workflow.parameters['non-pacific-output-prefix'] }}"
-          - --geomad-bucket
-          - "{{= inputs.parameters.region == 'pacific' ? workflow.parameters['pacific-geomad-bucket'] : workflow.parameters['non-pacific-geomad-bucket'] }}"
-          - --geomad-prefix
-          - "{{= inputs.parameters.region == 'pacific' ? workflow.parameters['pacific-geomad-prefix'] : workflow.parameters['non-pacific-geomad-prefix'] }}"
-          - --geomad-aws-region
-          - "{{= inputs.parameters.region == 'pacific' ? workflow.parameters['pacific-geomad-aws-region'] : workflow.parameters['non-pacific-geomad-aws-region'] }}"
-          - --model-path
-          - "{{ workflow.parameters.model-path }}"
-          - --xy-chunk-size
-          - "{{ workflow.parameters.xy-chunk-size }}"
           - "{{ workflow.parameters.decimated }}"
           - "{{ workflow.parameters.overwrite }}"

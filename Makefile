@@ -1,5 +1,6 @@
 # Here we will store commands for working with the grid, GeoMAD, training data, and ML models.
 
+# Workflow for 2 regions writing to different buckets/paths.
 # Workflow:
 # 1. Run GeoMAD for all tiles/years
 # 2. Run index GeoMAD (STAC-Geoparquet)
@@ -13,15 +14,14 @@
 VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)")
 VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)")
 VERSION_MODEL := $(shell python3 -c "from ldn.utils import MODEL_VERSION; print(MODEL_VERSION)")
+
 # TEST_TILES is a list of tuples: (tile_id, region, {country_name: country_code}) e.g. ("089_016", "pacific", {"Cook Islands": "COK"})
 TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
 # TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] == '312_106']))")
 # TEST_TILES_PACIFIC := $(shell python3 -c "from ldn.utils import TEST_TILES_PACIFIC; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES_PACIFIC]))")
 # TEST_TILES = $(TEST_TILES_PACIFIC)
 
-
 DECIMATED ?= --no-decimated
-
 
 # Get grid tiles - all
 grid-get-tiles-all:
@@ -43,13 +43,30 @@ print-tasks-2000-2025-all:
 print-tasks-2025-pacific:
 	ldn print-tasks --years="2025" --region="pacific"
 
-filter-tasks:
+filter-tasks-geomad:
 	ldn filter-tasks \
 	--tasks-json "$$(cat tasks.json)" \
-	--version "0-1-0" \
-	--bucket "dep-public-staging" \
+	--version $(VERSION_GEOMAD) \
 	--dataset "geomad" \
 	--no-overwrite
+
+
+TEST_TILES_2_REGIONS := 076_024:pacific 144_127:non-pacific
+
+# TODO: Run these non-decimated. Just testing bucket stuff here.
+# TODO: Get write access for Will to dep-public-staging.
+geomad-2-regions-decimated:
+	for site in $(TEST_TILES_2_REGIONS); do \
+		tile_id=$${site%%:*}; \
+		region=$${site#*:}; region=$${region%%:*}; \
+		ldn geomad \
+			--tile-id $$tile_id \
+			--region $$region \
+			--year 2010 \
+			--version $(VERSION_GEOMAD) \
+			--decimated \
+			--overwrite; \
+	done
 
 
 # Run geomad for all test case sites for years 2000-2025.
@@ -63,51 +80,17 @@ geomad-2000-2025:
 				--region $$region \
 				--year $$year \
 				--version $(VERSION_GEOMAD) \
-				--bucket "dep-public-staging" \
-				--no-decimated \
-				--include-shadow \
-				--all-bands \
-				--memory-limit "10GB" \
-				--n-workers 2 \
-				--threads-per-worker 16 \
-				--xy-chunk-size 2048 \
-				--geomad-threads 10 \
-				--ls7-buffer-years 1 \
 				--overwrite; \
 		done; \
 	done
 
-# geomad-test:
-# 	for year in 2000 2010 2020; do \
-# 		ldn geomad \
-# 			--tile-id 063_020 \
-# 			--region pacific \
-# 			--year $$year \
-# 			--version $(VERSION_GEOMAD) \
-# 			--product-owner ausp \
-# 			--overwrite; \
-# 	done
-
-# geomad-test-2:
-# 	ldn geomad \
-# 		--tile-id 058_043 \
-# 		--region pacific \
-# 		--year 2010 \
-# 		--version $(VERSION_GEOMAD) \
-# 		--product-owner ausp \
-# 		--overwrite;
 
 index-geomad:
 	ldn index-to-stac-geoparquet \
 	--dataset "geomad" \
 	--region "all" \
 	--version-geomad $(VERSION_GEOMAD) \
-	--version-prediction $(VERSION_PREDICTION) \
-	--bucket-pacific "dep-public-staging" \
-	--bucket-non-pacific "data.ldn.auspatious.com" \
-	--prefix-pacific-geomad "dep_ls_geomad" \
-	--prefix-non-pacific-geomad "ci_ls_geomad" \
-	--aws-region "us-west-2"
+	--version-prediction $(VERSION_PREDICTION)
 
 
 ###### Classification/Prediction
@@ -120,6 +103,18 @@ index-geomad:
 
 
 # 3. Predict LULC for the test tiles and one year (2025).
+
+# 3a. print-tasks
+
+# 3b.
+filter-tasks-prediction:
+	ldn filter-tasks \
+	--tasks-json "$$(cat tasks.json)" \
+	--version $(VERSION_PREDICTION) \
+	--dataset "prediction" \
+	--no-overwrite
+
+# 3c.
 # TODO: Run for all years in future
 predict-lulc-test-tiles:
 	for site in $(TEST_TILES); do \
@@ -132,43 +127,26 @@ predict-lulc-test-tiles:
 				--version $(VERSION_PREDICTION) \
 				--version-geomad $(VERSION_GEOMAD) \
 				--region $$region \
-				--output-bucket="data.ldn.auspatious.com" \
-				--output-prefix="ausp" \
-				--geomad-bucket="data.ldn.auspatious.com" \
-				--geomad-prefix="ausp_ls_geomad" \
-				--geomad-aws-region="us-west-2" \
-				--model-path="ldn/models/$(VERSION_MODEL)/lulc_random_forest_model.joblib" \
-				--xy-chunk-size 1024 \
 				$(DECIMATED) \
 				--overwrite; \
 		done; \
 	done
 
-VERSION_GEOMAD_NEW ?= 0-2-0
-
-predict-lulc-test-tiles-dep-staging:
-	for site in $(TEST_TILES); do \
+# TODO: Get write access for Will to dep-public-staging.
+prediction-2-regions-decimated:
+	for site in $(TEST_TILES_2_REGIONS); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
-		for year in $$(seq 2023 2025); do \
-			ldn classify classify \
-				--tile-id $$tile_id \
-				--year $$year \
-				--version $(VERSION_PREDICTION) \
-				--version-geomad $(VERSION_GEOMAD_NEW) \
-				--region $$region \
-				--output-bucket="dep-public-staging" \
-				--output-prefix="dep" \
-				--geomad-bucket="dep-public-staging" \
-				--geomad-prefix="dep_ls_geomad" \
-				--geomad-aws-region="us-west-2" \
-				--model-path="ldn/models/$(VERSION_MODEL)/lulc_random_forest_model.joblib" \
-				--xy-chunk-size 1024 \
-				$(DECIMATED) \
-				--overwrite; \
-		done; \
+		ldn classify classify \
+			--tile-id $$tile_id \
+			--year 2010 \
+			--version $(VERSION_PREDICTION) \
+			--version-geomad $(VERSION_GEOMAD) \
+			--region $$region \
+			--decimated \
+			--overwrite; \
 	done
-# 				--model-path="https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/0-0-3/lulc_random_forest_model.joblib" \
+
 
 
 # 4. Update the STAC-Geoparquet index after all tiles/years have run.
@@ -177,12 +155,7 @@ index-predictions:
 	--dataset "prediction" \
 	--region "all" \
 	--version-geomad $(VERSION_GEOMAD) \
-	--version-prediction $(VERSION_PREDICTION) \
-	--bucket-pacific "dep-public-staging" \
-	--bucket-non-pacific "data.ldn.auspatious.com" \
-	--prefix-pacific-prediction "dep_ls_lulc_prediction" \
-	--prefix-non-pacific-prediction "ci_ls_lulc_prediction" \
-	--aws-region "us-west-2"
+	--version-prediction $(VERSION_PREDICTION)
 
 
 # Visualisation

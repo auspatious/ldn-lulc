@@ -4,7 +4,20 @@ from typing import Literal
 import typer
 
 from ldn.classify import run_classify_task
-from ldn.utils import GEOMAD_VERSION, MODEL_VERSION, LdnError, PREDICTION_VERSION
+from ldn.utils import (
+    GEOMAD_DATASET_ID,
+    GEOMAD_VERSION,
+    MODEL_VERSION,
+    LdnError,
+    NON_PACIFIC_BUCKET,
+    NON_PACIFIC_OWNER,
+    PACIFIC_BUCKET,
+    PACIFIC_OWNER,
+    PREDICTION_VERSION,
+    bucket_for_region,
+    dataset_prefix,
+    owner_for_region,
+)
 
 classify_app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -38,21 +51,20 @@ def _classify(
     region: Literal["pacific", "non-pacific"] = typer.Option(
         ..., help="Region to predict LULC for. Can be 'pacific' or 'non-pacific'."
     ),
-    output_bucket: str = typer.Option(..., help="S3 bucket to write predictions to."),
-    output_prefix: str = typer.Option(
-        ..., help="Output prefix for paths (e.g. 'dep' or 'ci')."
+    bucket_pacific: str = typer.Option(
+        PACIFIC_BUCKET, help="S3 bucket for pacific data."
     ),
-    geomad_bucket: str = typer.Option(
-        ...,
-        help="S3 bucket where GeoMAD STAC geoparquet is stored.",
+    bucket_non_pacific: str = typer.Option(
+        NON_PACIFIC_BUCKET, help="S3 bucket for non-pacific data."
     ),
-    geomad_prefix: str = typer.Option(
-        ...,
-        help="Dataset prefix for the GeoMAD STAC geoparquet (e.g. 'dep_ls_geomad' or 'ci_ls_geomad').",
+    owner_pacific: str = typer.Option(
+        PACIFIC_OWNER, help="S3 owner prefix for pacific data."
     ),
-    geomad_aws_region: str = typer.Option(
-        ...,
-        help="AWS region of the GeoMAD bucket.",
+    owner_non_pacific: str = typer.Option(
+        NON_PACIFIC_OWNER, help="S3 owner prefix for non-pacific data."
+    ),
+    product_owner: str | None = typer.Option(
+        None, help="Override the region-derived owner prefix."
     ),
     model_path: str = typer.Option(
         f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/lulc_random_forest_model.joblib",
@@ -82,6 +94,15 @@ def _classify(
     if int(year) < 2000 or int(year) > 2025:
         raise LdnError("Year must be between 2000 and 2025.")
 
+    # Resolve bucket and prefix based on region
+    output_bucket = bucket_for_region(region, bucket_pacific, bucket_non_pacific)
+    owner = owner_for_region(region, owner_pacific, owner_non_pacific)
+    if product_owner is not None:
+        owner = product_owner
+    output_prefix = owner
+    geomad_bucket = output_bucket
+    geomad_prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
+
     run_classify_task(
         tile_id,
         datetime=year,
@@ -92,7 +113,6 @@ def _classify(
         output_prefix=output_prefix,
         geomad_bucket=geomad_bucket,
         geomad_prefix=geomad_prefix,
-        geomad_aws_region=geomad_aws_region,
         model_path=model_path,
         xy_chunk_size=xy_chunk_size,
         asset_url_prefix=asset_url_prefix,

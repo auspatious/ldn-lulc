@@ -41,6 +41,8 @@ from odc.geo.geom import box as odc_box
 from ldn.grids import get_gadm, get_gridspec
 from ldn.utils import (
     GEOMAD_VERSION,
+    PREDICTION_DATASET_ID,
+    SENSOR,
     LdnError,
     get_analysis_epsg,
     get_geomad_stac_geoparquet_url,
@@ -762,7 +764,6 @@ def run_classify_task(
     output_prefix: str,
     geomad_bucket: str,
     geomad_prefix: str,
-    geomad_aws_region: str,
     model_path: str,
     xy_chunk_size: int,
     asset_url_prefix: str | None,
@@ -786,7 +787,6 @@ def run_classify_task(
         output_prefix: Output prefix for paths (e.g. "dep" or "ci").
         geomad_bucket: S3 bucket where GeoMAD STAC geoparquet is stored.
         geomad_prefix: Dataset prefix for the GeoMAD geoparquet (e.g. "dep_ls_geomad").
-        geomad_aws_region: AWS region of the GeoMAD bucket.
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
         asset_url_prefix: Optional URL prefix for STAC asset hrefs.
@@ -804,7 +804,7 @@ def run_classify_task(
         logger.info(
             "Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
         )
-        geomad_stac_geoparquet_url = f"https://s3.{geomad_aws_region}.amazonaws.com/{geomad_bucket}/{geomad_prefix}/{version_geomad}/{geomad_prefix}.parquet"
+        geomad_stac_geoparquet_url = f"https://s3.us-west-2.amazonaws.com/{geomad_bucket}/{geomad_prefix}/{version_geomad}/{geomad_prefix}.parquet"
     else:
         geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(region)
 
@@ -847,8 +847,8 @@ def run_classify_task(
     itempath = S3ItemPath(
         prefix=output_prefix,
         bucket=output_bucket,
-        sensor="ls",
-        dataset_id="lulc_prediction",
+        sensor=SENSOR,
+        dataset_id=PREDICTION_DATASET_ID,
         version=version,
         time=datetime,
         full_path_prefix=asset_url_prefix,

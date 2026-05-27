@@ -117,18 +117,51 @@ TRAINING_DATA_VERSION = "0-0-3"
 
 # Mosaic source configuration per region
 PACIFIC_BUCKET = "dep-public-staging"
-PACIFIC_GEOMAD_PREFIX = "dep_ls_geomad"
-PACIFIC_PREDICTION_PREFIX = "dep_ls_lulc_prediction"
+PACIFIC_OWNER = "dep"
 
 NON_PACIFIC_BUCKET = "data.ldn.auspatious.com"
-NON_PACIFIC_GEOMAD_PREFIX = "ci_ls_geomad"
-NON_PACIFIC_PREDICTION_PREFIX = "ci_ls_lulc_prediction"
+NON_PACIFIC_OWNER = "ci"
+
+SENSOR = "ls"
+GEOMAD_DATASET_ID = "geomad"
+PREDICTION_DATASET_ID = "lulc_prediction"
 
 training_data_year = "2020"
 
 class_attr = "lulc"
 
 wgs84 = "EPSG:4326"
+
+
+def bucket_for_region(
+    region: str,
+    bucket_pacific: str = PACIFIC_BUCKET,
+    bucket_non_pacific: str = NON_PACIFIC_BUCKET,
+) -> str:
+    """Return the S3 bucket for a given region."""
+    return bucket_pacific if region == "pacific" else bucket_non_pacific
+
+
+def owner_for_region(
+    region: str,
+    owner_pacific: str = PACIFIC_OWNER,
+    owner_non_pacific: str = NON_PACIFIC_OWNER,
+) -> str:
+    """Return the short owner prefix for a given region (e.g. 'dep' or 'ci')."""
+    return owner_pacific if region == "pacific" else owner_non_pacific
+
+
+def dataset_prefix(owner: str, dataset_id: str) -> str:
+    """Build the full dataset prefix from owner and dataset_id.
+
+    Args:
+        owner: Short owner prefix (e.g. "dep" or "ci").
+        dataset_id: Dataset identifier (e.g. "geomad" or "lulc_prediction").
+
+    Returns:
+        Full prefix like "dep_ls_geomad" or "ci_ls_lulc_prediction".
+    """
+    return f"{owner}_{SENSOR}_{dataset_id}"
 
 
 def get_geomad_stac_geoparquet_url(region: Literal["pacific", "non-pacific"]) -> str:
@@ -140,8 +173,9 @@ def get_geomad_stac_geoparquet_url(region: Literal["pacific", "non-pacific"]) ->
     Returns:
         HTTPS URL to the STAC-Geoparquet file.
     """
-    bucket = PACIFIC_BUCKET if region == "pacific" else NON_PACIFIC_BUCKET
-    prefix = PACIFIC_GEOMAD_PREFIX if region == "pacific" else NON_PACIFIC_GEOMAD_PREFIX
+    bucket = bucket_for_region(region)
+    owner = owner_for_region(region)
+    prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
     return f"https://s3.us-west-2.amazonaws.com/{bucket}/{prefix}/{GEOMAD_VERSION}/{prefix}.parquet"
 
 
@@ -158,7 +192,8 @@ def get_geomad_item_id(
     Returns:
         The full STAC item ID string.
     """
-    prefix = PACIFIC_GEOMAD_PREFIX if region == "pacific" else NON_PACIFIC_GEOMAD_PREFIX
+    owner = owner_for_region(region)
+    prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
     return f"{prefix}_{tile_id}_{year}"
 
 
