@@ -38,7 +38,7 @@
     .opacity-row span { min-width:32px; text-align:right; font-size:11px; color:#666; }
 
     /* Legend */
-    #legend-class, #legend-prob {
+    #legend-class, #legend-prob, #legend-count {
       position:absolute; bottom:30px; right:10px; z-index:1000;
       background:rgba(255,255,255,0.95); border-radius:8px;
       padding:12px 14px; box-shadow:0 2px 8px rgba(0,0,0,0.25);
@@ -87,7 +87,6 @@
 <body>
   <div id="map"></div>
   <div id="loading"><div class="spinner"></div><span>Loading tiles...</span></div>
-  <div id="zoom-message" style="display:none;position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);color:#fff;padding:8px 16px;border-radius:6px;font-size:13px;z-index:1000;pointer-events:none;">Zoom in to see data layers (min zoom: 5)</div>
   <button id="toggle-controls">&#9776;</button>
 
   <div id="controls">
@@ -116,11 +115,12 @@
 
     <div class="section">
       <h3>Layers</h3>
-      <label><input type="checkbox" id="chk-class" checked/> Classification</label>
+      <label><input type="checkbox" id="chk-class" checked/> <span id="lbl-class">Classification</span></label>
+      <label><input type="checkbox" id="chk-classuf"/> <span id="lbl-classuf">Classification (unfiltered)</span></label>
+      <label><input type="checkbox" id="chk-prob"/> <span id="lbl-prob">Probability</span></label>
       <label><input type="checkbox" id="chk-rgb" checked/> <span id="lbl-rgb">GeoMedian (RGB)</span></label>
       <label><input type="checkbox" id="chk-geomad"/> <span id="lbl-geomad">GeoMAD (S, E, BC)</span></label>
-      <label><input type="checkbox" id="chk-classuf"/> Classification (unfiltered)</label>
-      <label><input type="checkbox" id="chk-prob"/> Probability</label>
+      <label><input type="checkbox" id="chk-count"/> <span id="lbl-count">Observation count</span></label>
     </div>
 
     <div class="section">
@@ -164,6 +164,16 @@
       <div style="width:18px;height:120px;background:linear-gradient(to bottom,#1a9641,#a6d96a,#ffffbf,#fdae61,#d7191c);border:1px solid #ccc;border-radius:3px;"></div>
       <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:11px;">
         <span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="legend-count" style="display:none;">
+    <div class="legend-title">Observation count</div>
+    <div style="display:flex;align-items:stretch;gap:6px;">
+      <div style="width:18px;height:120px;background:linear-gradient(to bottom,#fde725,#5ec962,#21918c,#3b528b,#440154);border:1px solid #ccc;border-radius:3px;"></div>
+      <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:11px;">
+        <span>65</span><span>48</span><span>32</span><span>16</span><span>0</span>
       </div>
     </div>
   </div>
@@ -226,7 +236,7 @@
     var BASE = window.location.origin + "/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}.png?";
 
     // Layer definitions (order determines z-order on map: first = bottom)
-    var LAYER_ORDER = ["prob-pacific", "prob-non-pacific", "classuf-pacific", "classuf-non-pacific", "geomad-pacific", "geomad-non-pacific", "rgb-pacific", "rgb-non-pacific", "class-pacific", "class-non-pacific"];
+    var LAYER_ORDER = ["count-pacific", "count-non-pacific", "geomad-pacific", "geomad-non-pacific", "rgb-pacific", "rgb-non-pacific", "prob-pacific", "prob-non-pacific", "classuf-pacific", "classuf-non-pacific", "class-pacific", "class-non-pacific"];
     var LAYERS = {
       "class-pacific":    { label:"Classification Pacific", ds:"prediction_pacific", dsYears:YEARS_PREDICTION_PACIFIC, region:"pacific",
                      qs:"assets=classification&colormap_name=lulc" },
@@ -247,7 +257,11 @@
       "prob-pacific":     { label:"Probability Pacific", ds:"prediction_pacific", dsYears:YEARS_PREDICTION_PACIFIC, region:"pacific",
                      qs:"assets=classification_probability&colormap_name=rdylgn&rescale=0,100" },
       "prob-non-pacific":     { label:"Probability Non-Pacific", ds:"prediction_non_pacific", dsYears:YEARS_PREDICTION_NON_PACIFIC, region:"non-pacific",
-                     qs:"assets=classification_probability&colormap_name=rdylgn&rescale=0,100" }
+                     qs:"assets=classification_probability&colormap_name=rdylgn&rescale=0,100" },
+      "count-pacific":    { label:"Obs count Pacific", ds:"geomad_pacific", dsYears:YEARS_GEOMAD_PACIFIC, region:"pacific",
+                     qs:"assets=count&colormap_name=viridis&rescale=0,65" },
+      "count-non-pacific":    { label:"Obs count Non-Pacific", ds:"geomad_non_pacific", dsYears:YEARS_GEOMAD_NON_PACIFIC, region:"non-pacific",
+                     qs:"assets=count&colormap_name=viridis&rescale=0,65" }
     };
 
     var tileLayers = {};
@@ -259,7 +273,7 @@
       return BASE + "dataset=" + layer.ds + "&year=" + year + "&" + layer.qs;
     }
 
-    var CHECKBOX_MAP = {"class-pacific":"chk-class", "class-non-pacific":"chk-class", "rgb-pacific":"chk-rgb", "rgb-non-pacific":"chk-rgb", "geomad-pacific":"chk-geomad", "geomad-non-pacific":"chk-geomad", "classuf-pacific":"chk-classuf", "classuf-non-pacific":"chk-classuf", "prob-pacific":"chk-prob", "prob-non-pacific":"chk-prob"};
+    var CHECKBOX_MAP = {"class-pacific":"chk-class", "class-non-pacific":"chk-class", "rgb-pacific":"chk-rgb", "rgb-non-pacific":"chk-rgb", "geomad-pacific":"chk-geomad", "geomad-non-pacific":"chk-geomad", "classuf-pacific":"chk-classuf", "classuf-non-pacific":"chk-classuf", "prob-pacific":"chk-prob", "prob-non-pacific":"chk-prob", "count-pacific":"chk-count", "count-non-pacific":"chk-count"};
 
     function updateCheckboxAvailability() {
       // Track availability per checkbox (multiple layer keys may map to same checkbox)
@@ -294,8 +308,9 @@
     }
 
     function createTileLayer(key, year) {
+      var zIndex = LAYER_ORDER.indexOf(key) + 1;
       var layer = L.tileLayer(tileUrl(key, year), {
-        opacity: 0.75, minZoom: 5, maxZoom: 18, tileSize: 256,
+        opacity: 0.75, minZoom: 0, maxZoom: 18, tileSize: 256, zIndex: zIndex,
         errorTileUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
       });
       layer.on("tileloadstart", function() { tilesLoading++; updateLoadingIndicator(); });
@@ -384,15 +399,19 @@
     }
 
     function updateLegends() {
-      var hasClass = tileLayers["class"] || tileLayers["classuf"];
-      var hasProb = tileLayers["prob"];
+      var hasClass = tileLayers["class-pacific"] || tileLayers["class-non-pacific"] || tileLayers["classuf-pacific"] || tileLayers["classuf-non-pacific"];
+      var hasProb = tileLayers["prob-pacific"] || tileLayers["prob-non-pacific"];
+      var hasCount = tileLayers["count-pacific"] || tileLayers["count-non-pacific"];
       document.getElementById("legend-class").style.display = hasClass ? "block" : "none";
       var probEl = document.getElementById("legend-prob");
       probEl.style.display = hasProb ? "block" : "none";
-      // Stack probability legend above classification legend if both visible
       probEl.style.bottom = hasClass ? "210px" : "30px";
-
-
+      var countEl = document.getElementById("legend-count");
+      countEl.style.display = hasCount ? "block" : "none";
+      var countBottom = 30;
+      if (hasClass) countBottom += 180;
+      if (hasProb) countBottom += 170;
+      countEl.style.bottom = countBottom + "px";
     }
 
     function rebuildOpacitySliders() {
@@ -491,7 +510,7 @@
       rebuildLayers();
     });
 
-    ["chk-rgb","chk-geomad","chk-class","chk-classuf","chk-prob"].forEach(function(id) {
+    ["chk-rgb","chk-geomad","chk-class","chk-classuf","chk-prob","chk-count"].forEach(function(id) {
       document.getElementById(id).addEventListener("change", syncLayers);
     });
 
@@ -671,15 +690,30 @@
       LAYERS["rgb-non-pacific"].dsYears = YEARS_GEOMAD_NON_PACIFIC;
       LAYERS["geomad-pacific"].dsYears = YEARS_GEOMAD_PACIFIC;
       LAYERS["geomad-non-pacific"].dsYears = YEARS_GEOMAD_NON_PACIFIC;
+      LAYERS["count-pacific"].dsYears = YEARS_GEOMAD_PACIFIC;
+      LAYERS["count-non-pacific"].dsYears = YEARS_GEOMAD_NON_PACIFIC;
 
       // Set labels with version numbers from config
       var gv = config.geomad_version;
+      var pv = config.prediction_version;
+      LAYERS["class-pacific"].label = "Classification v" + pv + " Pacific";
+      LAYERS["class-non-pacific"].label = "Classification v" + pv + " Non-Pacific";
+      LAYERS["classuf-pacific"].label = "Classification v" + pv + " (unfiltered) Pacific";
+      LAYERS["classuf-non-pacific"].label = "Classification v" + pv + " (unfiltered) Non-Pacific";
+      LAYERS["prob-pacific"].label = "Probability v" + pv + " Pacific";
+      LAYERS["prob-non-pacific"].label = "Probability v" + pv + " Non-Pacific";
       LAYERS["rgb-pacific"].label = "GeoMedian v" + gv + " Pacific (RGB)";
       LAYERS["rgb-non-pacific"].label = "GeoMedian v" + gv + " Non-Pacific (RGB)";
       LAYERS["geomad-pacific"].label = "GeoMAD v" + gv + " Pacific (S, E, BC)";
       LAYERS["geomad-non-pacific"].label = "GeoMAD v" + gv + " Non-Pacific (S, E, BC)";
+      LAYERS["count-pacific"].label = "Obs count v" + gv + " Pacific";
+      LAYERS["count-non-pacific"].label = "Obs count v" + gv + " Non-Pacific";
+      document.getElementById("lbl-class").textContent = "Classification v" + pv;
+      document.getElementById("lbl-classuf").textContent = "Classification v" + pv + " (unfiltered)";
+      document.getElementById("lbl-prob").textContent = "Probability v" + pv;
       document.getElementById("lbl-rgb").textContent = "GeoMedian v" + gv + " (RGB)";
       document.getElementById("lbl-geomad").textContent = "GeoMAD v" + gv + " (S, E, BC)";
+      document.getElementById("lbl-count").textContent = "Observation count v" + gv;
 
       // Populate year select
       var yearSelect = document.getElementById("year-select");
@@ -728,10 +762,7 @@
 
       // Update hash on map move and basemap/swipe changes
       map.on("moveend", pushState);
-      map.on("zoomend", function() {
-        var msg = document.getElementById("zoom-message");
-        msg.style.display = map.getZoom() < 5 ? "block" : "none";
-      });
+
       document.getElementById("basemap-select").addEventListener("change", pushState);
       document.getElementById("swipe-left").addEventListener("change", pushState);
       document.getElementById("swipe-right").addEventListener("change", pushState);
