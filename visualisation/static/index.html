@@ -38,11 +38,23 @@
     .opacity-row span { min-width:32px; text-align:right; font-size:11px; color:#666; }
 
     /* Legend */
-    #legend-class, #legend-prob, #legend-count {
+    #legend-container {
       position:absolute; bottom:30px; right:10px; z-index:1000;
+      display:flex; flex-direction:column; gap:12px;
       background:rgba(255,255,255,0.95); border-radius:8px;
       padding:12px 14px; box-shadow:0 2px 8px rgba(0,0,0,0.25);
       font-size:12px;
+    }
+    #legend-container:empty { display:none; }
+    #legend-class, #legend-prob, #legend-count {
+      border-top:1px solid #e0e0e0; padding-top:10px;
+    }
+    #legend-container > .legend-hidden { display:none; }
+    #legend-container > div:not(.legend-hidden) ~ div:not(.legend-hidden) {
+      border-top:1px solid #e0e0e0; padding-top:10px;
+    }
+    #legend-container > div:not(.legend-hidden) {
+      border-top:none; padding-top:0;
     }
     .legend-title { font-weight:bold; margin-bottom:8px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
     .legend-item { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
@@ -147,33 +159,35 @@
     </div>
   </div>
 
-  <div id="legend-class" style="display:none;">
-    <div class="legend-title">Land Cover <span id="legend-version-info" style="font-weight:normal;text-transform:none;letter-spacing:normal;"></span></div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(0,100,0);"></span>Tree cover</div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(255,255,76);"></span>Grassland</div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(240,150,255);"></span>Cropland</div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(0,150,160);"></span>Wetland</div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(250,0,0);"></span>Built-up</div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(0,100,200);"></span>Water</div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(180,180,180);"></span>Other</div>
-  </div>
+  <div id="legend-container">
+    <div id="legend-class" class="legend-hidden">
+      <div class="legend-title">Land Cover <span id="legend-version-info" style="font-weight:normal;text-transform:none;letter-spacing:normal;"></span></div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(0,100,0);"></span>Tree cover</div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(255,255,76);"></span>Grassland</div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(240,150,255);"></span>Cropland</div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(0,150,160);"></span>Wetland</div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(250,0,0);"></span>Built-up</div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(0,100,200);"></span>Water</div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(180,180,180);"></span>Other</div>
+    </div>
 
-  <div id="legend-prob" style="display:none;">
-    <div class="legend-title">Probability</div>
-    <div style="display:flex;align-items:stretch;gap:6px;">
-      <div style="width:18px;height:120px;background:linear-gradient(to bottom,#1a9641,#a6d96a,#ffffbf,#fdae61,#d7191c);border:1px solid #ccc;border-radius:3px;"></div>
-      <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:11px;">
-        <span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span>
+    <div id="legend-prob" class="legend-hidden">
+      <div class="legend-title">Probability</div>
+      <div style="display:flex;align-items:stretch;gap:6px;">
+        <div style="width:18px;height:120px;background:linear-gradient(to bottom,#1a9641,#a6d96a,#ffffbf,#fdae61,#d7191c);border:1px solid #ccc;border-radius:3px;"></div>
+        <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:11px;">
+          <span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div id="legend-count" style="display:none;">
-    <div class="legend-title">Observation count</div>
-    <div style="display:flex;align-items:stretch;gap:6px;">
-      <div style="width:18px;height:120px;background:linear-gradient(to bottom,#fde725,#5ec962,#21918c,#3b528b,#440154);border:1px solid #ccc;border-radius:3px;"></div>
-      <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:11px;">
-        <span>65</span><span>48</span><span>32</span><span>16</span><span>0</span>
+    <div id="legend-count" class="legend-hidden">
+      <div class="legend-title">Observation count</div>
+      <div style="display:flex;align-items:stretch;gap:6px;">
+        <div style="width:18px;height:120px;background:linear-gradient(to bottom,#fde725,#5ec962,#21918c,#3b528b,#440154);border:1px solid #ccc;border-radius:3px;"></div>
+        <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:11px;">
+          <span>65</span><span>48</span><span>32</span><span>16</span><span>0</span>
+        </div>
       </div>
     </div>
   </div>
@@ -402,16 +416,10 @@
       var hasClass = tileLayers["class-pacific"] || tileLayers["class-non-pacific"] || tileLayers["classuf-pacific"] || tileLayers["classuf-non-pacific"];
       var hasProb = tileLayers["prob-pacific"] || tileLayers["prob-non-pacific"];
       var hasCount = tileLayers["count-pacific"] || tileLayers["count-non-pacific"];
-      document.getElementById("legend-class").style.display = hasClass ? "block" : "none";
-      var probEl = document.getElementById("legend-prob");
-      probEl.style.display = hasProb ? "block" : "none";
-      probEl.style.bottom = hasClass ? "210px" : "30px";
-      var countEl = document.getElementById("legend-count");
-      countEl.style.display = hasCount ? "block" : "none";
-      var countBottom = 30;
-      if (hasClass) countBottom += 180;
-      if (hasProb) countBottom += 170;
-      countEl.style.bottom = countBottom + "px";
+      document.getElementById("legend-class").classList.toggle("legend-hidden", !hasClass);
+      document.getElementById("legend-prob").classList.toggle("legend-hidden", !hasProb);
+      document.getElementById("legend-count").classList.toggle("legend-hidden", !hasCount);
+      document.getElementById("legend-container").style.display = (hasClass || hasProb || hasCount) ? "flex" : "none";
     }
 
     function rebuildOpacitySliders() {
