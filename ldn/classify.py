@@ -421,6 +421,7 @@ def search_and_load_geomad_indices_dem(
     region: Literal["pacific", "non-pacific"],
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     geopolygon: GeoDataFrame,
+    product_owner: str | None,
 ) -> xr.Dataset:
     """Search, load, scale, and merge GeoMAD bands, spectral indices, and DEM terrain for a tile.
         Supports antimeridian-crossing tiles.
@@ -431,13 +432,14 @@ def search_and_load_geomad_indices_dem(
         region: Grid region, either "pacific" or "non-pacific".
         analysis_crs: The expected CRS of the GeoMAD data (either "EPSG:3832" or "EPSG:6933").
         geopolygon: GeoDataFrame used to constrain the stac_load extent (the country geom).
+        product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
 
     Returns:
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
-    geomad_url = get_geomad_stac_geoparquet_url(region)
-    item_id = get_geomad_item_id(region, tile_id, year)
+    geomad_url = get_geomad_stac_geoparquet_url(region, product_owner=product_owner)
+    item_id = get_geomad_item_id(region, tile_id, year, product_owner=product_owner)
 
     logging.info(
         f"Searching for GeoMAD item for tile {tile_id} and year {year}, using latest version {GEOMAD_VERSION}"
@@ -762,7 +764,6 @@ def run_classify_task(
     region: Literal["pacific", "non-pacific"],
     output_bucket: str,
     output_prefix: str,
-    geomad_bucket: str,
     geomad_prefix: str,
     model_path: str,
     xy_chunk_size: int,
@@ -783,9 +784,8 @@ def run_classify_task(
         version: Output version string (e.g. "0-0-1").
         version_geomad: Version of the GeoMAD data to use (e.g. "0-0-1").
         region: Grid region, either "pacific" or "non-pacific".
-        output_bucket: S3 bucket for output COGs and STAC metadata.
+        output_bucket: S3 bucket for output COGs, STAC metadata, and GeoMAD source data.
         output_prefix: Output prefix for paths (e.g. "dep" or "ci").
-        geomad_bucket: S3 bucket where GeoMAD STAC geoparquet is stored.
         geomad_prefix: Dataset prefix for the GeoMAD geoparquet (e.g. "dep_ls_geomad").
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
@@ -804,7 +804,7 @@ def run_classify_task(
         logger.info(
             "Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
         )
-        geomad_stac_geoparquet_url = f"https://s3.us-west-2.amazonaws.com/{geomad_bucket}/{geomad_prefix}/{version_geomad}/{geomad_prefix}.parquet"
+        geomad_stac_geoparquet_url = f"https://s3.us-west-2.amazonaws.com/{output_bucket}/{geomad_prefix}/{version_geomad}/{geomad_prefix}.parquet"
     else:
         geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(region)
 
@@ -853,14 +853,14 @@ def run_classify_task(
         time=datetime,
         full_path_prefix=asset_url_prefix,
     )
-    stac_url = itempath.stac_path(tile_id)
+    stac_url = itempath.stac_path(tile_id_tuple)
 
     if not overwrite and object_exists(output_bucket, stac_url, client=s3_client):
         logger.info(
-            f"Item already exists at {itempath.stac_path(tile_id, absolute=True)}"
+            f"Item already exists at {itempath.stac_path(tile_id_tuple, absolute=True)}"
         )
         raise LdnError(
-            f"Item already exists at {itempath.stac_path(tile_id, absolute=True)}"
+            f"Item already exists at {itempath.stac_path(tile_id_tuple, absolute=True)}"
         )
 
     logger.info(
@@ -895,7 +895,7 @@ def run_classify_task(
         logger.info("Started dask client")
         paths = Task(
             itempath=itempath,
-            id=tile_id,  # TODO: Check this type
+            id=tile_id_tuple,
             area=geobox,
             searcher=searcher,
             loader=loader,
@@ -914,7 +914,7 @@ def run_classify_task(
 
     logger.info(
         f"Completed processing. Wrote {len(paths)} items to"
-        f" {itempath.stac_path(tile_id, absolute=True)}"
+        f" {itempath.stac_path(tile_id_tuple, absolute=True)}"
     )
 
 
@@ -926,6 +926,7 @@ def get_tile_year_geomad_dem_indices(
     region: Literal["pacific", "non-pacific"],
     country_wgs84_buffered: GeoDataFrame,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
+    product_owner: str | None,
 ) -> xr.Dataset:
     """Load GeoMAD + DEM features for a tile, clipped to buffered country.
 
@@ -939,6 +940,7 @@ def get_tile_year_geomad_dem_indices(
         region: Grid region, either "pacific" or "non-pacific".
         country_wgs84_buffered: Buffered country geometry in WGS84.
         analysis_crs: Projected CRS string (e.g. "EPSG:3832").
+        product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
 
     Returns:
         Dataset with GeoMAD bands, spectral indices, elevation, slope,
@@ -950,6 +952,7 @@ def get_tile_year_geomad_dem_indices(
         region=region,
         analysis_crs=analysis_crs,
         geopolygon=country_wgs84_buffered,
+        product_owner=product_owner,
     )
 
     # Clip to intersection of tile extent and buffered country

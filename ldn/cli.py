@@ -168,6 +168,9 @@ def filter_tasks(
     owner_non_pacific: Annotated[
         str, typer.Option(help="Short owner prefix for non-pacific (e.g. 'ci').")
     ] = NON_PACIFIC_OWNER,
+    product_owner: Annotated[
+        str | None, typer.Option(help="Override the region-derived owner prefix.")
+    ] = None,
     dataset: Annotated[
         Literal["geomad", "prediction"], typer.Option(help="Dataset name.")
     ] = "geomad",
@@ -213,7 +216,7 @@ def filter_tasks(
         region_combos.add(
             (
                 bucket_for_region(r, bucket_pacific, bucket_non_pacific),
-                owner_for_region(r, owner_pacific, owner_non_pacific),
+                owner_for_region(r, owner_pacific, owner_non_pacific, product_owner),
             )
         )
 
@@ -240,7 +243,7 @@ def filter_tasks(
         tile_index = tuple(map(int, task["id"].split("_")))
         r = task["region"]
         bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
-        owner = owner_for_region(r, owner_pacific, owner_non_pacific)
+        owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
         full_path_prefix = _full_path_prefix_for_bucket(bucket)
 
         itempath = S3ItemPath(
@@ -350,9 +353,7 @@ def geomad(
 
     # Resolve bucket and prefix based on tile region
     bucket = bucket_for_region(region, bucket_pacific, bucket_non_pacific)
-    owner = owner_for_region(region, owner_pacific, owner_non_pacific)
-    if product_owner is not None:
-        owner = product_owner
+    owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
 
     # TODO: Handle different bucket formats more robustly. For now we support:
     # "data.ldn.auspatious.com" to "https://data.ldn.auspatious.com"
@@ -485,7 +486,6 @@ def geomad(
 def _find_stac_items_s3(
     bucket: str,
     prefix: str,
-    aws_region: str,
     suffix: str = ".stac-item.json",
     chunk_size: int = 200,
 ) -> list[str]:
@@ -494,14 +494,13 @@ def _find_stac_items_s3(
     Args:
         bucket: S3 bucket name.
         prefix: Key prefix to search under.
-        aws_region: AWS region of the bucket.
         suffix: File suffix to match.
         chunk_size: Number of objects per listing page.
 
     Returns:
         List of S3 keys (without the s3://bucket/ prefix) that match.
     """
-    store = obstore.store.S3Store(bucket=bucket, region=aws_region)
+    store = obstore.store.S3Store(bucket=bucket, region="us-west-2")
     matches: list[str] = []
     stream = obstore.list(store, prefix=prefix.lstrip("/"), chunk_size=chunk_size)
 
@@ -518,19 +517,17 @@ def _find_stac_items_s3(
 def _load_stac_docs(
     bucket: str,
     keys: list[str],
-    aws_region: str,
 ) -> list[dict]:
     """Load STAC item JSON documents from S3 into memory.
 
     Args:
         bucket: S3 bucket name.
         keys: S3 object keys to load.
-        aws_region: AWS region of the bucket.
 
     Returns:
         List of parsed STAC item dictionaries.
     """
-    store = obstore.store.S3Store(bucket=bucket, region=aws_region)
+    store = obstore.store.S3Store(bucket=bucket, region="us-west-2")
     docs: list[dict] = []
 
     for key in keys:
@@ -571,7 +568,9 @@ def _index_to_stac_geoparquet(
     owner_non_pacific: str = typer.Option(
         NON_PACIFIC_OWNER, help="Short owner prefix for non-pacific (e.g. 'ci')."
     ),
-    aws_region: str = typer.Option("us-west-2", help="AWS region of the buckets."),
+    product_owner: str | None = typer.Option(
+        None, help="Override the region-derived owner prefix."
+    ),
 ) -> None:
     """Build STAC-Geoparquet indexes from STAC items for given dataset(s) and region(s)."""
     targets: list[tuple[str, str, str]] = []
@@ -581,7 +580,7 @@ def _index_to_stac_geoparquet(
 
     for r in regions:
         bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
-        owner = owner_for_region(r, owner_pacific, owner_non_pacific)
+        owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
         for d in datasets:
             if d == "geomad":
                 prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
@@ -592,20 +591,16 @@ def _index_to_stac_geoparquet(
             targets.append((bucket, prefix, version))
 
     for target_bucket, target_prefix, target_version in targets:
-        _run_index(
-            target_bucket, target_prefix, target_prefix, target_version, aws_region
-        )
+        _run_index(target_bucket, target_prefix, target_version)
 
 
-def _run_index(
-    bucket: str, prefix: str, output_filename: str, version: str, aws_region: str
-) -> None:
+def _run_index(bucket: str, prefix: str, version: str) -> None:
     """Run the STAC-Geoparquet indexing for a single bucket/prefix."""
     full_prefix = f"{prefix}/{version}"
-    parquet_key = f"{full_prefix}/{output_filename}.parquet"
+    parquet_key = f"{full_prefix}/{prefix}.parquet"
 
     logger.info(f"Listing STAC items under s3://{bucket}/{full_prefix}")
-    keys = _find_stac_items_s3(bucket, full_prefix, aws_region)
+    keys = _find_stac_items_s3(bucket, full_prefix)
     logger.info(f"Found {len(keys)} STAC items")
 
     if len(keys) == 0:
@@ -615,11 +610,11 @@ def _run_index(
         return
 
     logger.info("Loading STAC item documents into memory")
-    docs = _load_stac_docs(bucket, keys, aws_region)
+    docs = _load_stac_docs(bucket, keys)
     logger.info(f"Loaded {len(docs)} STAC documents")
 
     logger.info(f"Writing STAC-Geoparquet to s3://{bucket}/{parquet_key}")
-    store = obstore.store.S3Store(bucket=bucket, region=aws_region)
+    store = obstore.store.S3Store(bucket=bucket, region="us-west-2")
     write_sync(parquet_key, docs, store=store)
 
     logger.info(f"Wrote index with {len(docs)} items to s3://{bucket}/{parquet_key}")
@@ -752,6 +747,10 @@ def make_mosaics(
         str,
         typer.Option(help="Short owner prefix for non-pacific (e.g. 'ci')."),
     ] = NON_PACIFIC_OWNER,
+    product_owner: Annotated[
+        str | None,
+        typer.Option(help="Override the region-derived owner prefix."),
+    ] = None,
 ) -> None:
     """Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files.
 
@@ -765,7 +764,7 @@ def make_mosaics(
     mosaic_targets: list[tuple[str, str, str, str]] = []
     for r in regions:
         bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
-        owner = owner_for_region(r, owner_pacific, owner_non_pacific)
+        owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
         if "." in bucket:
             base_url = f"https://{bucket}"
         else:

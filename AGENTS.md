@@ -18,7 +18,7 @@
 
 ## Functions
 - Always add docstrings to functions, even if simple.
-- Never give function parameters default values.
+- Don't unnecesarily give function parameters default values. Defaulting to None is good for optional params.
 
 ## Quality
 - Give advice on improving code quality.

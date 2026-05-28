@@ -117,6 +117,15 @@ resource "aws_lambda_function" "app" {
       VSI_CACHE_SIZE                     = "536870912"
       GDAL_CACHEMAX                      = "512"
       PYTHONWARNINGS                     = "ignore"
+      PACIFIC_BUCKET                     = var.s3_bucket_pacific
+      NON_PACIFIC_BUCKET                 = var.s3_bucket_non_pacific
+      PACIFIC_OWNER                      = var.owner_pacific
+      NON_PACIFIC_OWNER                  = var.owner_non_pacific
+      GEOMAD_VERSION                     = var.geomad_version
+      PREDICTION_VERSION                 = var.prediction_version
+      SENSOR                             = "ls"
+      GEOMAD_DATASET_ID                  = "geomad"
+      PREDICTION_DATASET_ID              = "lulc_prediction"
     }
   }
 

@@ -22,6 +22,30 @@ variable "s3_bucket_non_pacific" {
   default     = "data.ldn.auspatious.com"
 }
 
+variable "owner_pacific" {
+  description = "Short owner prefix for Pacific datasets (e.g. dep)"
+  type        = string
+  default     = "dep"
+}
+
+variable "owner_non_pacific" {
+  description = "Short owner prefix for Non-Pacific datasets (e.g. ci)"
+  type        = string
+  default     = "ci"
+}
+
+variable "geomad_version" {
+  description = "Version string for GeoMAD data (e.g. 0-2-1)"
+  type        = string
+  default     = "0-2-1"
+}
+
+variable "prediction_version" {
+  description = "Version string for LULC prediction data (e.g. 0-0-4)"
+  type        = string
+  default     = "0-0-4"
+}
+
 variable "memory_size" {
   description = "Lambda memory in MB — GDAL/rasterio needs headroom"
   type        = number

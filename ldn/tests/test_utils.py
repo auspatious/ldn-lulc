@@ -1,0 +1,96 @@
+from ldn.utils import (
+    GEOMAD_VERSION,
+    NON_PACIFIC_BUCKET,
+    NON_PACIFIC_OWNER,
+    PACIFIC_BUCKET,
+    PACIFIC_OWNER,
+    bucket_for_region,
+    dataset_prefix,
+    get_geomad_item_id,
+    get_geomad_stac_geoparquet_url,
+    owner_for_region,
+)
+
+
+class TestBucketForRegion:
+    def test_pacific_default(self):
+        assert bucket_for_region("pacific") == PACIFIC_BUCKET
+
+    def test_non_pacific_default(self):
+        assert bucket_for_region("non-pacific") == NON_PACIFIC_BUCKET
+
+    def test_pacific_custom(self):
+        assert bucket_for_region("pacific", "my-bucket", "other-bucket") == "my-bucket"
+
+    def test_non_pacific_custom(self):
+        assert (
+            bucket_for_region("non-pacific", "my-bucket", "other-bucket")
+            == "other-bucket"
+        )
+
+
+class TestOwnerForRegion:
+    def test_pacific_default(self):
+        assert owner_for_region("pacific") == PACIFIC_OWNER
+
+    def test_non_pacific_default(self):
+        assert owner_for_region("non-pacific") == NON_PACIFIC_OWNER
+
+    def test_pacific_custom(self):
+        assert owner_for_region("pacific", "x", "y") == "x"
+
+    def test_non_pacific_custom(self):
+        assert owner_for_region("non-pacific", "x", "y") == "y"
+
+    def test_product_owner_overrides_pacific(self):
+        assert (
+            owner_for_region("pacific", "dep", "ci", product_owner="custom") == "custom"
+        )
+
+    def test_product_owner_overrides_non_pacific(self):
+        assert (
+            owner_for_region("non-pacific", "dep", "ci", product_owner="custom")
+            == "custom"
+        )
+
+    def test_product_owner_none_uses_region(self):
+        assert owner_for_region("pacific", "dep", "ci", product_owner=None) == "dep"
+
+
+class TestDatasetPrefix:
+    def test_geomad(self):
+        assert dataset_prefix("dep", "geomad") == "dep_ls_geomad"
+
+    def test_prediction(self):
+        assert dataset_prefix("ci", "lulc_prediction") == "ci_ls_lulc_prediction"
+
+
+class TestGetGeomadStacGeoparquetUrl:
+    def test_pacific(self):
+        url = get_geomad_stac_geoparquet_url("pacific")
+        expected = f"https://s3.us-west-2.amazonaws.com/{PACIFIC_BUCKET}/dep_ls_geomad/{GEOMAD_VERSION}/dep_ls_geomad.parquet"
+        assert url == expected
+
+    def test_non_pacific(self):
+        url = get_geomad_stac_geoparquet_url("non-pacific")
+        expected = f"https://s3.us-west-2.amazonaws.com/{NON_PACIFIC_BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
+        assert url == expected
+
+    def test_product_owner_override(self):
+        url = get_geomad_stac_geoparquet_url("pacific", product_owner="ci")
+        expected = f"https://s3.us-west-2.amazonaws.com/{PACIFIC_BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
+        assert url == expected
+
+
+class TestGetGeomadItemId:
+    def test_pacific(self):
+        item_id = get_geomad_item_id("pacific", "058_043", "2020")
+        assert item_id == "dep_ls_geomad_058_043_2020"
+
+    def test_non_pacific(self):
+        item_id = get_geomad_item_id("non-pacific", "119_126", "2023")
+        assert item_id == "ci_ls_geomad_119_126_2023"
+
+    def test_product_owner_override(self):
+        item_id = get_geomad_item_id("pacific", "058_043", "2020", product_owner="ci")
+        assert item_id == "ci_ls_geomad_058_043_2020"

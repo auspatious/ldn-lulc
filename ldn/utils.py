@@ -146,8 +146,14 @@ def owner_for_region(
     region: str,
     owner_pacific: str = PACIFIC_OWNER,
     owner_non_pacific: str = NON_PACIFIC_OWNER,
+    product_owner: str | None = None,
 ) -> str:
-    """Return the short owner prefix for a given region (e.g. 'dep' or 'ci')."""
+    """Return the short owner prefix for a given region (e.g. 'dep' or 'ci').
+
+    If product_owner is set, it overrides the region-based lookup.
+    """
+    if product_owner is not None:
+        return product_owner
     return owner_pacific if region == "pacific" else owner_non_pacific
 
 
@@ -164,23 +170,30 @@ def dataset_prefix(owner: str, dataset_id: str) -> str:
     return f"{owner}_{SENSOR}_{dataset_id}"
 
 
-def get_geomad_stac_geoparquet_url(region: Literal["pacific", "non-pacific"]) -> str:
+def get_geomad_stac_geoparquet_url(
+    region: Literal["pacific", "non-pacific"],
+    product_owner: str | None = None,
+) -> str:
     """Build the STAC-Geoparquet URL for GeoMAD data in a given region.
 
     Args:
         region: Either "pacific" or "non-pacific".
+        product_owner: Optional override for the region-derived owner prefix.
 
     Returns:
         HTTPS URL to the STAC-Geoparquet file.
     """
     bucket = bucket_for_region(region)
-    owner = owner_for_region(region)
+    owner = owner_for_region(region, product_owner=product_owner)
     prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
     return f"https://s3.us-west-2.amazonaws.com/{bucket}/{prefix}/{GEOMAD_VERSION}/{prefix}.parquet"
 
 
 def get_geomad_item_id(
-    region: Literal["pacific", "non-pacific"], tile_id: str, year: str
+    region: Literal["pacific", "non-pacific"],
+    tile_id: str,
+    year: str,
+    product_owner: str | None = None,
 ) -> str:
     """Build the STAC item ID for a GeoMAD tile.
 
@@ -188,11 +201,12 @@ def get_geomad_item_id(
         region: Either "pacific" or "non-pacific".
         tile_id: Grid tile identifier (e.g. "058_043").
         year: Year string (e.g. "2020").
+        product_owner: Optional override for the region-derived owner prefix.
 
     Returns:
         The full STAC item ID string.
     """
-    owner = owner_for_region(region)
+    owner = owner_for_region(region, product_owner=product_owner)
     prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
     return f"{prefix}_{tile_id}_{year}"
 

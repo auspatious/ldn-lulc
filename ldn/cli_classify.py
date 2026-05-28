@@ -96,11 +96,8 @@ def _classify(
 
     # Resolve bucket and prefix based on region
     output_bucket = bucket_for_region(region, bucket_pacific, bucket_non_pacific)
-    owner = owner_for_region(region, owner_pacific, owner_non_pacific)
-    if product_owner is not None:
-        owner = product_owner
+    owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
     output_prefix = owner
-    geomad_bucket = output_bucket
     geomad_prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
 
     run_classify_task(
@@ -111,7 +108,6 @@ def _classify(
         region=region,
         output_bucket=output_bucket,
         output_prefix=output_prefix,
-        geomad_bucket=geomad_bucket,
         geomad_prefix=geomad_prefix,
         model_path=model_path,
         xy_chunk_size=xy_chunk_size,

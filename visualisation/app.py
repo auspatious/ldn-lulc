@@ -25,16 +25,29 @@ from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
 from mangum import Mangum
 
-from ldn.utils import (
-    GEOMAD_VERSION,
-    PREDICTION_VERSION,
-    PACIFIC_BUCKET,
-    PACIFIC_GEOMAD_PREFIX,
-    PACIFIC_PREDICTION_PREFIX,
-    NON_PACIFIC_BUCKET,
-    NON_PACIFIC_GEOMAD_PREFIX,
-    NON_PACIFIC_PREDICTION_PREFIX,
-)
+# Configuration from environment variables (set by Terraform/deploy).
+# Buckets
+PACIFIC_BUCKET = os.environ["PACIFIC_BUCKET"]
+NON_PACIFIC_BUCKET = os.environ["NON_PACIFIC_BUCKET"]
+
+# Owners (short prefixes used in S3 path construction)
+PACIFIC_OWNER = os.environ["PACIFIC_OWNER"]
+NON_PACIFIC_OWNER = os.environ["NON_PACIFIC_OWNER"]
+
+# Versions
+GEOMAD_VERSION = os.environ["GEOMAD_VERSION"]
+PREDICTION_VERSION = os.environ["PREDICTION_VERSION"]
+
+# Sensor and dataset IDs
+SENSOR = os.environ["SENSOR"]
+GEOMAD_DATASET_ID = os.environ["GEOMAD_DATASET_ID"]
+PREDICTION_DATASET_ID = os.environ["PREDICTION_DATASET_ID"]
+
+# Derived dataset prefixes: {owner}_{sensor}_{dataset_id}
+PACIFIC_GEOMAD_PREFIX = f"{PACIFIC_OWNER}_{SENSOR}_{GEOMAD_DATASET_ID}"
+PACIFIC_PREDICTION_PREFIX = f"{PACIFIC_OWNER}_{SENSOR}_{PREDICTION_DATASET_ID}"
+NON_PACIFIC_GEOMAD_PREFIX = f"{NON_PACIFIC_OWNER}_{SENSOR}_{GEOMAD_DATASET_ID}"
+NON_PACIFIC_PREDICTION_PREFIX = f"{NON_PACIFIC_OWNER}_{SENSOR}_{PREDICTION_DATASET_ID}"
 
 logger = logging.getLogger(__name__)
 

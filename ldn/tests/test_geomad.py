@@ -70,13 +70,11 @@ def test_set_stac_properties_datetime_same_year() -> None:
     result = set_stac_properties(input_xr, output_xr)
     props = result.attrs["stac_properties"]
 
-    expected_start = np.datetime_as_string(
-        np.datetime64("2020", "Y"), unit="ms", timezone="UTC"
-    )
-    expected_midpoint = "2020-06-30T00:00:00.000Z"
-
-    assert props["start_datetime"] == expected_start
-    assert props["datetime"] == expected_midpoint
+    assert props["start_datetime"] == "2020-01-01T00:00:00Z"
+    assert props["datetime"] == "2020-06-30T00:00:00Z"
+    assert props["end_datetime"] == "2020-12-31T23:59:59Z"
+    assert "ldn:observation_start" not in props
+    assert "ldn:observation_end" not in props
 
 
 def test_set_stac_properties_datetime_midpoint_when_years_differ() -> None:
@@ -88,9 +86,11 @@ def test_set_stac_properties_datetime_midpoint_when_years_differ() -> None:
     result = set_stac_properties(input_xr, output_xr)
     props = result.attrs["stac_properties"]
 
-    expected_midpoint = "2020-06-30T00:00:00.000Z"
-
-    assert props["datetime"] == expected_midpoint
+    assert props["datetime"] == "2020-06-30T00:00:00Z"
+    assert props["start_datetime"] == "2020-01-01T00:00:00Z"
+    assert props["end_datetime"] == "2020-12-31T23:59:59Z"
+    assert props["ldn:observation_start"] == "2020-01-01T00:00:00Z"
+    assert props["ldn:observation_end"] == "2021-12-31T23:59:59Z"
 
 
 def test_set_stac_properties_datetime_three_year_span() -> None:
@@ -102,16 +102,8 @@ def test_set_stac_properties_datetime_three_year_span() -> None:
     result = set_stac_properties(input_xr, output_xr)
     props = result.attrs["stac_properties"]
 
-    expected_midpoint = "2000-06-30T00:00:00.000Z"
-    expected_start = np.datetime_as_string(
-        np.datetime64("1999", "Y"), unit="ms", timezone="UTC"
-    )
-    expected_end = np.datetime_as_string(
-        np.datetime64("2002", "Y") - np.timedelta64(1, "s"),
-        unit="ms",
-        timezone="UTC",
-    )
-
-    assert props["start_datetime"] == expected_start
-    assert props["datetime"] == expected_midpoint
-    assert props["end_datetime"] == expected_end
+    assert props["datetime"] == "2000-06-30T00:00:00Z"
+    assert props["start_datetime"] == "2000-01-01T00:00:00Z"
+    assert props["end_datetime"] == "2000-12-31T23:59:59Z"
+    assert props["ldn:observation_start"] == "1999-01-01T00:00:00Z"
+    assert props["ldn:observation_end"] == "2001-12-31T23:59:59Z"
