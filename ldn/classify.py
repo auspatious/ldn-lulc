@@ -613,10 +613,11 @@ def do_prediction(
 
     if valid.any():
         valid_df = obs.loc[valid]
-        full_predictions.loc[valid] = model.predict(valid_df).astype(np.float32)
-        full_probabilities.loc[valid] = (
-            model.predict_proba(valid_df).max(axis=1) * 100
-        ).astype(np.float32)
+        proba = model.predict_proba(valid_df)
+        full_predictions.loc[valid] = model.classes_[proba.argmax(axis=1)].astype(
+            np.float32
+        )
+        full_probabilities.loc[valid] = (proba.max(axis=1) * 100).astype(np.float32)
 
     # Reshape back to 2D; nodata_mask stamps nodata_value over masked pixels.
     nodata_mask_2d = nodata_mask.unstack("dims")

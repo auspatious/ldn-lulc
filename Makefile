@@ -168,3 +168,83 @@ make-mosaics-prediction:
 	ldn make-mosaics \
 	--dataset prediction \
 	--region "all"
+
+
+
+
+
+
+# Non-Pacific workflow testing
+
+# poetry run ldn geomad \
+#         --tile-id 145_127 \
+#         --region non-pacific \
+#         --year 2000 \
+#         --version "0-2-1" \
+#         --decimated \
+#         --overwrite;
+# poetry run ldn geomad \
+#         --tile-id 145_127 \
+#         --region non-pacific \
+#         --year 2010 \
+#         --version "0-2-1" \
+#         --decimated \
+#         --overwrite;
+# poetry run ldn geomad \
+#         --tile-id 145_127 \
+#         --region non-pacific \
+#         --year 2025 \
+#         --version "0-2-1" \
+#         --decimated \
+#         --overwrite;
+
+
+# poetry run ldn index-to-stac-geoparquet \
+# 	--dataset "geomad" \
+# 	--region "non-pacific" \
+# 	--version-geomad "0-2-1" \
+# 	--version-prediction "0-0-4"
+
+# poetry run ldn make-mosaics \
+# 	--dataset "geomad" \
+# 	--region "non-pacific"
+
+
+# poetry run ldn classify classify \
+# 	--tile-id 145_127 \
+# 	--year 2000 \
+# 	--version "0-0-4" \
+# 	--version-geomad "0-2-1" \
+# 	--region non-pacific \
+# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-3/lulc_random_forest_model.joblib" \
+#         --decimated \
+# 	--overwrite;
+# poetry run ldn classify classify \
+# 	--tile-id 145_127 \
+# 	--year 2010 \
+# 	--version "0-0-4" \
+# 	--version-geomad "0-2-1" \
+# 	--region non-pacific \
+# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-3/lulc_random_forest_model.joblib" \
+#         --decimated \
+# 	--overwrite;
+# poetry run ldn classify classify \
+# 	--tile-id 145_127 \
+# 	--year 2025 \
+# 	--version "0-0-4" \
+# 	--version-geomad "0-2-1" \
+# 	--region non-pacific \
+# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-3/lulc_random_forest_model.joblib" \
+#         --decimated \
+# 	--overwrite;
+
+
+# poetry run ldn index-to-stac-geoparquet \
+# 	--dataset "prediction" \
+# 	--region "non-pacific" \
+# 	--version-geomad "0-2-1" \
+# 	--version-prediction "0-0-4"
+
+# poetry run ldn make-mosaics \
+# 	--dataset "prediction" \
+# 	--region "non-pacific"

@@ -765,10 +765,8 @@ def make_mosaics(
     for r in regions:
         bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
-        if "." in bucket:
-            base_url = f"https://{bucket}"
-        else:
-            base_url = f"https://s3.us-west-2.amazonaws.com/{bucket}"
+        # Always use S3 path-style URL to bypass CDN caching
+        base_url = f"https://s3.us-west-2.amazonaws.com/{bucket}"
         for d in datasets_list:
             if d == "geomad":
                 prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
@@ -790,7 +788,7 @@ def make_mosaics(
 
         years_list = _extract_years(features)
         logger.info(
-            f"Found {len(features)} features across {len(years_list)} years: {years_list[0]}-{years_list[-1]}"
+            f"Found {len(features)} features across {len(years_list)} years: {years_list}"
         )
 
         for _year in years_list:
