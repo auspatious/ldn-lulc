@@ -135,7 +135,7 @@ wgs84 = "EPSG:4326"
 
 
 def bucket_for_region(
-    region: str,
+    region: Literal["pacific", "non-pacific"],
     bucket_pacific: str = PACIFIC_BUCKET,
     bucket_non_pacific: str = NON_PACIFIC_BUCKET,
 ) -> str:
@@ -144,7 +144,7 @@ def bucket_for_region(
 
 
 def owner_for_region(
-    region: str,
+    region: Literal["pacific", "non-pacific"],
     owner_pacific: str = PACIFIC_OWNER,
     owner_non_pacific: str = NON_PACIFIC_OWNER,
     product_owner: str | None = None,
