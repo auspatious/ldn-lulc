@@ -727,6 +727,12 @@ def make_mosaics(
             help="Region to build mosaics for. 'all' builds both pacific and non-pacific."
         ),
     ] = "all",
+    years: Annotated[
+        str | None,
+        typer.Option(
+            help="Comma-separated years or range (e.g. '2020,2021' or '2010-2023'). Defaults to all years in the index."
+        ),
+    ] = None,
     version_geomad: Annotated[
         str,
         typer.Option(help="Version string for GeoMAD dataset."),
@@ -758,9 +764,18 @@ def make_mosaics(
 ) -> None:
     """Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files.
 
-    Years are auto-detected from the STAC-Geoparquet index.
+    Years are auto-detected from the STAC-Geoparquet index unless --years is provided.
     """
     logger.info(f"Making mosaics for dataset '{dataset}', region '{region}'")
+
+    # Parse --years if provided
+    requested_years: list[str] | None = None
+    if years is not None:
+        if "-" in years and "," not in years:
+            start, end = map(int, years.split("-"))
+            requested_years = [str(y) for y in range(start, end + 1)]
+        else:
+            requested_years = [y.strip() for y in years.split(",")]
 
     regions = ["pacific", "non-pacific"] if region == "all" else [region]
     datasets_list = ["geomad", "prediction"] if dataset == "all" else [dataset]
@@ -790,10 +805,25 @@ def make_mosaics(
             logger.warning(f"No features found for '{display_name}', skipping.")
             continue
 
-        years_list = _extract_years(features)
+        available_years = _extract_years(features)
         logger.info(
-            f"Found {len(features)} features across {len(years_list)} years: {years_list}"
+            f"Found {len(features)} features across {len(available_years)} years: {available_years}"
         )
+
+        if requested_years is not None:
+            missing = [y for y in requested_years if y not in available_years]
+            if missing:
+                logger.warning(
+                    f"Requested years not in index for '{display_name}': {missing}"
+                )
+            years_list = [y for y in requested_years if y in available_years]
+            if not years_list:
+                logger.warning(
+                    f"No requested years match available data for '{display_name}', skipping."
+                )
+                continue
+        else:
+            years_list = available_years
 
         for _year in years_list:
             mosaic = _build_mosaic_for_year(_year, features)
