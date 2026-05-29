@@ -659,10 +659,14 @@ def _build_mosaic_for_year(year: str, features: list[dict]) -> MosaicJSON:
     if not year_features:
         raise LdnError(f"No STAC items found for year {year}")
 
-    for feat in year_features:
+    def _ensure_polygon(feat: dict) -> dict:
+        """Return feat with geometry as Polygon (convex hull if MultiPolygon)."""
         geom = shape(feat["geometry"])
-        if geom.geom_type != "Polygon":
-            feat["geometry"] = mapping(geom.convex_hull)
+        if geom.geom_type == "Polygon":
+            return feat
+        return {**feat, "geometry": mapping(geom.convex_hull)}
+
+    year_features = [_ensure_polygon(f) for f in year_features]
 
     logger.info(f"  {year}: {len(year_features)} features")
 
