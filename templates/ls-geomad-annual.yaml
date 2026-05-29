@@ -46,21 +46,21 @@ spec:
     - name: workflow-entrypoint
       dag:
         tasks:
-          - name: print-tasks
-            template: print-tasks
+          # - name: print-tasks
+          #   template: print-tasks
 
-          - name: filter-tasks
-            depends: print-tasks.Succeeded
-            template: filter-tasks
-            arguments:
-              parameters:
-                - name: tasks-json
-                  value: "{{ tasks.print-tasks.outputs.result }}"
-                - name: overwrite
-                  value: "{{ workflow.parameters.overwrite }}"
+          # - name: filter-tasks
+          #   depends: print-tasks.Succeeded
+          #   template: filter-tasks
+          #   arguments:
+          #     parameters:
+          #       - name: tasks-json
+          #         value: "{{ tasks.print-tasks.outputs.result }}"
+          #       - name: overwrite
+          #         value: "{{ workflow.parameters.overwrite }}"
 
           - name: process-geomad
-            depends: filter-tasks.Succeeded
+            # depends: filter-tasks.Succeeded # TODO: Reenable after testing.
             template: process-geomad
             arguments:
               parameters:
@@ -71,52 +71,56 @@ spec:
                 - name: region
                   value: "{{item.region}}"
             # withParam: "{{ tasks.filter-tasks.outputs.result }}" # TODO: Reenable this after testing.
-            withParam: '[{"id": "76_24","year": "2010","region": "pacific"}]' # Just one task to test.
+            # TESTING:
+            # withParam: '[{"id": "063_020","year": "2000","region": "pacific"}, {"id": "063_020","year": "2010","region": "pacific"}, {"id": "063_020","year": "2025","region": "pacific"},{"id": "76_24","year": "2000","region": "pacific"}, {"id": "76_24","year": "2010","region": "pacific"}, {"id": "76_24","year": "2025","region": "pacific"},{"id": "089_016","year": "2000","region": "pacific"}, {"id": "089_016","year": "2010","region": "pacific"}, {"id": "089_016","year": "2025","region": "pacific"},{"id": "028_030","year": "2000","region": "pacific"}, {"id": "028_030","year": "2010","region": "pacific"}, {"id": "028_030","year": "2025","region": "pacific"},{"id": "058_043","year": "2000","region": "pacific"}, {"id": "058_043","year": "2010","region": "pacific"}, {"id": "058_043","year": "2025","region": "pacific"}]'
+            # 2020 needed for training data.
+            withParam: '[{"id": "063_020","year": "2020","region": "pacific"},{"id": "76_24","year": "2020","region": "pacific"},{"id": "089_016","year": "2020","region": "pacific"},{"id": "028_030","year": "2020","region": "pacific"},{"id": "058_043","year": "2020","region": "pacific"}]'
 
-    - name: print-tasks
-      container:
-        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
-        imagePullPolicy: IfNotPresent
-        resources:
-          requests:
-            # Requesting a lot of resources for this simple task
-            # This is a scheduling trick, if print-tasks requests small, karpenter would
-            # provision a small node first (c6.xlarge/large), then process geomad can't fit
-            #and has to wait for another node to come up. Not critical, just saves a few minutes
-            # of waiting between tasks.
-            memory: 18Gi
-            cpu: 10
-        command: [ldn]
-        args:
-          - print-tasks
-          - --years
-          - "{{ workflow.parameters.years }}"
-          - --region
-          - "{{ workflow.parameters.region }}"
 
-    - name: filter-tasks
-      inputs:
-        parameters:
-          - name: tasks-json
-          - name: overwrite
-      container:
-        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
-        imagePullPolicy: IfNotPresent
-        resources:
-          requests:
-            # Same as print-tasks resources comment.
-            memory: 18Gi
-            cpu: 10
-        command: [ldn]
-        args:
-          - filter-tasks
-          - --tasks-json
-          - "{{ inputs.parameters.tasks-json }}"
-          - --version
-          - "{{ workflow.parameters.version }}"
-          - --dataset
-          - "geomad"
-          - "{{ inputs.parameters.overwrite }}"
+    # - name: print-tasks
+    #   container:
+    #     image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+    #     imagePullPolicy: IfNotPresent
+    #     resources:
+    #       requests:
+    #         # Requesting a lot of resources for this simple task
+    #         # This is a scheduling trick, if print-tasks requests small, karpenter would
+    #         # provision a small node first (c6.xlarge/large), then process geomad can't fit
+    #         #and has to wait for another node to come up. Not critical, just saves a few minutes
+    #         # of waiting between tasks.
+    #         memory: 18Gi
+    #         cpu: 10
+    #     command: [ldn]
+    #     args:
+    #       - print-tasks
+    #       - --years
+    #       - "{{ workflow.parameters.years }}"
+    #       - --region
+    #       - "{{ workflow.parameters.region }}"
+
+    # - name: filter-tasks
+    #   inputs:
+    #     parameters:
+    #       - name: tasks-json
+    #       - name: overwrite
+    #   container:
+    #     image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+    #     imagePullPolicy: IfNotPresent
+    #     resources:
+    #       requests:
+    #         # Same as print-tasks resources comment.
+    #         memory: 18Gi
+    #         cpu: 10
+    #     command: [ldn]
+    #     args:
+    #       - filter-tasks
+    #       - --tasks-json
+    #       - "{{ inputs.parameters.tasks-json }}"
+    #       - --version
+    #       - "{{ workflow.parameters.version }}"
+    #       - --dataset
+    #       - "geomad"
+    #       - "{{ inputs.parameters.overwrite }}"
 
     - name: process-geomad
       inputs:
@@ -137,6 +141,7 @@ spec:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
         resources:
+          # TODO: increase? This task was slow because of large graph taking up too much memory. id:028_030,region:pacific,year:2010
           requests:
             # Pod memory needed = (n_workers * memory_limit) + scheduler_overhead + main_process_overhead
             memory: 24Gi
