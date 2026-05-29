@@ -658,6 +658,11 @@ def _build_mosaic_for_year(year: str, features: list[dict]) -> MosaicJSON:
     if not year_features:
         raise LdnError(f"No STAC items found for year {year}")
 
+    for feat in year_features:
+        geom = shape(feat["geometry"])
+        if geom.geom_type != "Polygon":
+            feat["geometry"] = mapping(geom.convex_hull)
+
     logger.info(f"  {year}: {len(year_features)} features")
 
     mosaic = MosaicJSON.from_features(
@@ -682,12 +687,6 @@ def _load_all_features(stac_geoparquet_url: str) -> list[dict]:
     item_collection = search_sync(stac_geoparquet_url)
     items = ItemCollection(item_collection)
     features = [f.to_dict() for f in items]
-
-    for feat in features:
-        geom = shape(feat["geometry"])
-        if geom.geom_type != "Polygon":
-            geom = geom.convex_hull
-        feat["geometry"] = mapping(geom)
 
     return features
 
