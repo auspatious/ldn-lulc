@@ -41,6 +41,7 @@ from ldn.cli_grid import cli_grid_app
 from ldn.cli_classify import classify_app
 from ldn.grids import get_gridspec
 from ldn.utils import (
+    AWS_REGION,
     GEOMAD_VERSION,
     GEOMAD_DATASET_ID,
     PREDICTION_DATASET_ID,
@@ -207,7 +208,7 @@ def filter_tasks(
         elif "." in bucket:
             return f"https://{bucket}"
         else:
-            return f"https://{bucket}.s3.us-west-2.amazonaws.com"
+            return f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
 
     # Collect unique (bucket, owner) combos to list
     region_combos: set[tuple[str, str]] = set()
@@ -363,7 +364,7 @@ def geomad(
     elif "." in bucket:
         full_path_prefix = f"https://{bucket}"
     else:
-        full_path_prefix = f"https://{bucket}.s3.us-west-2.amazonaws.com"  # TODO: can the region be dynamic?
+        full_path_prefix = f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
 
     if decimated:
         typer.echo("Warning, using decimated (low resolution) for testing purposes.")
@@ -500,7 +501,7 @@ def _find_stac_items_s3(
     Returns:
         List of S3 keys (without the s3://bucket/ prefix) that match.
     """
-    store = obstore.store.S3Store(bucket=bucket, region="us-west-2")
+    store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION)
     matches: list[str] = []
     stream = obstore.list(store, prefix=prefix.lstrip("/"), chunk_size=chunk_size)
 
@@ -527,7 +528,7 @@ def _load_stac_docs(
     Returns:
         List of parsed STAC item dictionaries.
     """
-    store = obstore.store.S3Store(bucket=bucket, region="us-west-2")
+    store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION)
     docs: list[dict] = []
 
     for key in keys:
@@ -614,7 +615,7 @@ def _run_index(bucket: str, prefix: str, version: str) -> None:
     logger.info(f"Loaded {len(docs)} STAC documents")
 
     logger.info(f"Writing STAC-Geoparquet to s3://{bucket}/{parquet_key}")
-    store = obstore.store.S3Store(bucket=bucket, region="us-west-2")
+    store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION)
     write_sync(parquet_key, docs, store=store)
 
     logger.info(f"Wrote index with {len(docs)} items to s3://{bucket}/{parquet_key}")
@@ -765,7 +766,7 @@ def make_mosaics(
         bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
         # Always use S3 path-style URL to bypass CDN caching
-        base_url = f"https://s3.us-west-2.amazonaws.com/{bucket}"
+        base_url = f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
         for d in datasets_list:
             if d == "geomad":
                 prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)

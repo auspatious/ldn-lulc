@@ -1,4 +1,5 @@
 from ldn.utils import (
+    AWS_REGION,
     GEOMAD_VERSION,
     NON_PACIFIC_BUCKET,
     NON_PACIFIC_OWNER,
@@ -68,17 +69,17 @@ class TestDatasetPrefix:
 class TestGetGeomadStacGeoparquetUrl:
     def test_pacific(self):
         url = get_geomad_stac_geoparquet_url("pacific")
-        expected = f"https://s3.us-west-2.amazonaws.com/{PACIFIC_BUCKET}/dep_ls_geomad/{GEOMAD_VERSION}/dep_ls_geomad.parquet"
+        expected = f"https://s3.{AWS_REGION}.amazonaws.com/{PACIFIC_BUCKET}/dep_ls_geomad/{GEOMAD_VERSION}/dep_ls_geomad.parquet"
         assert url == expected
 
     def test_non_pacific(self):
         url = get_geomad_stac_geoparquet_url("non-pacific")
-        expected = f"https://s3.us-west-2.amazonaws.com/{NON_PACIFIC_BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
+        expected = f"https://s3.{AWS_REGION}.amazonaws.com/{NON_PACIFIC_BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
         assert url == expected
 
     def test_product_owner_override(self):
         url = get_geomad_stac_geoparquet_url("pacific", product_owner="ci")
-        expected = f"https://s3.us-west-2.amazonaws.com/{PACIFIC_BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
+        expected = f"https://s3.{AWS_REGION}.amazonaws.com/{PACIFIC_BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
         assert url == expected
 
 

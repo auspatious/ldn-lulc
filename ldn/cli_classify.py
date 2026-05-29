@@ -5,6 +5,7 @@ import typer
 
 from ldn.classify import run_classify_task
 from ldn.utils import (
+    AWS_REGION,
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     MODEL_VERSION,
@@ -67,7 +68,7 @@ def _classify(
         None, help="Override the region-derived owner prefix."
     ),
     model_path: str = typer.Option(
-        f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/lulc_random_forest_model.joblib",
+        f"https://s3.{AWS_REGION}.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/lulc_random_forest_model.joblib",
         help="Model to use for prediction.",
     ),
     xy_chunk_size: int = typer.Option(

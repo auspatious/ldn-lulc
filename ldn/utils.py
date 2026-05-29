@@ -125,6 +125,7 @@ NON_PACIFIC_OWNER = "ci"
 SENSOR = "ls"
 GEOMAD_DATASET_ID = "geomad"
 PREDICTION_DATASET_ID = "lulc_prediction"
+AWS_REGION = "us-west-2"
 
 training_data_year = "2020"
 
@@ -186,7 +187,7 @@ def get_geomad_stac_geoparquet_url(
     bucket = bucket_for_region(region)
     owner = owner_for_region(region, product_owner=product_owner)
     prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
-    return f"https://s3.us-west-2.amazonaws.com/{bucket}/{prefix}/{GEOMAD_VERSION}/{prefix}.parquet"
+    return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/{prefix}/{GEOMAD_VERSION}/{prefix}.parquet"
 
 
 def get_geomad_item_id(

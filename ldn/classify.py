@@ -40,6 +40,7 @@ from odc.geo.geom import box as odc_box
 
 from ldn.grids import get_gadm, get_gridspec
 from ldn.utils import (
+    AWS_REGION,
     GEOMAD_VERSION,
     PREDICTION_DATASET_ID,
     SENSOR,
@@ -805,7 +806,7 @@ def run_classify_task(
         logger.info(
             "Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
         )
-        geomad_stac_geoparquet_url = f"https://s3.us-west-2.amazonaws.com/{output_bucket}/{geomad_prefix}/{version_geomad}/{geomad_prefix}.parquet"
+        geomad_stac_geoparquet_url = f"https://s3.{AWS_REGION}.amazonaws.com/{output_bucket}/{geomad_prefix}/{version_geomad}/{geomad_prefix}.parquet"
     else:
         geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(region)
 
