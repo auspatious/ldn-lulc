@@ -25,14 +25,29 @@ from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
 from mangum import Mangum
 
-GEOMAD_VERSION = os.environ.get("GEOMAD_VERSION")
-GEOMAD_VERSION_NEW = os.environ.get("GEOMAD_VERSION_NEW", "0-2-0")
-PREDICTION_VERSION = os.environ.get("PREDICTION_VERSION")
+# Configuration from environment variables (set by Terraform/deploy).
+# Buckets
+PACIFIC_BUCKET = os.environ["PACIFIC_BUCKET"]
+NON_PACIFIC_BUCKET = os.environ["NON_PACIFIC_BUCKET"]
 
-if not GEOMAD_VERSION or not PREDICTION_VERSION:
-    raise ValueError(
-        "GEOMAD_VERSION and PREDICTION_VERSION environment variables must be set (e.g. to '0-1-0' and '0-0-3')."
-    )
+# Owners (short prefixes used in S3 path construction)
+PACIFIC_OWNER = os.environ["PACIFIC_OWNER"]
+NON_PACIFIC_OWNER = os.environ["NON_PACIFIC_OWNER"]
+
+# Versions
+GEOMAD_VERSION = os.environ["GEOMAD_VERSION"]
+PREDICTION_VERSION = os.environ["PREDICTION_VERSION"]
+
+# Sensor and dataset IDs
+SENSOR = os.environ["SENSOR"]
+GEOMAD_DATASET_ID = os.environ["GEOMAD_DATASET_ID"]
+PREDICTION_DATASET_ID = os.environ["PREDICTION_DATASET_ID"]
+
+# Derived dataset prefixes: {owner}_{sensor}_{dataset_id}
+PACIFIC_GEOMAD_PREFIX = f"{PACIFIC_OWNER}_{SENSOR}_{GEOMAD_DATASET_ID}"
+PACIFIC_PREDICTION_PREFIX = f"{PACIFIC_OWNER}_{SENSOR}_{PREDICTION_DATASET_ID}"
+NON_PACIFIC_GEOMAD_PREFIX = f"{NON_PACIFIC_OWNER}_{SENSOR}_{GEOMAD_DATASET_ID}"
+NON_PACIFIC_PREDICTION_PREFIX = f"{NON_PACIFIC_OWNER}_{SENSOR}_{PREDICTION_DATASET_ID}"
 
 logger = logging.getLogger(__name__)
 
@@ -84,17 +99,10 @@ os.environ.update(
     }
 )
 
-MOSAIC_S3_BUCKET = "dep-public-staging"
-GEOMAD_DATASET_PREFIX = (
-    "dep_ls_geomad"  # TODO: Need to add a prefix for non-pacific data too.
-)
-GEOMAD_OLD_S3_BUCKET = "data.ldn.auspatious.com"
-GEOMAD_OLD_DATASET_PREFIX = "ausp_ls_geomad"
-PREDICTION_DATASET_PREFIX = "ausp_ls_lulc_prediction"
-PREDICTION_S3_BUCKET = "data.ldn.auspatious.com"
-MOSAIC_PATHS_GEOMAD: dict[str, str] = {}
-MOSAIC_PATHS_GEOMAD_NEW: dict[str, str] = {}
-MOSAIC_PATHS_PREDICTION: dict[str, str] = {}
+MOSAIC_PATHS_GEOMAD_PACIFIC: dict[str, str] = {}
+MOSAIC_PATHS_GEOMAD_NON_PACIFIC: dict[str, str] = {}
+MOSAIC_PATHS_PREDICTION_PACIFIC: dict[str, str] = {}
+MOSAIC_PATHS_PREDICTION_NON_PACIFIC: dict[str, str] = {}
 
 # Scan S3 for mosaic JSONs on startup and populate paths dicts.
 # Expects filenames like geomad_2020_mosaic.json or prediction_2020_mosaic.json.
@@ -104,26 +112,31 @@ try:
     s3 = boto3.client("s3")
     for bucket, dataset_prefix, version, paths_dict in [
         (
-            GEOMAD_OLD_S3_BUCKET,
-            GEOMAD_OLD_DATASET_PREFIX,
+            PACIFIC_BUCKET,
+            PACIFIC_GEOMAD_PREFIX,
             GEOMAD_VERSION,
-            MOSAIC_PATHS_GEOMAD,
+            MOSAIC_PATHS_GEOMAD_PACIFIC,
         ),
         (
-            PREDICTION_S3_BUCKET,
-            PREDICTION_DATASET_PREFIX,
+            NON_PACIFIC_BUCKET,
+            NON_PACIFIC_GEOMAD_PREFIX,
+            GEOMAD_VERSION,
+            MOSAIC_PATHS_GEOMAD_NON_PACIFIC,
+        ),
+        (
+            PACIFIC_BUCKET,
+            PACIFIC_PREDICTION_PREFIX,
             PREDICTION_VERSION,
-            MOSAIC_PATHS_PREDICTION,
+            MOSAIC_PATHS_PREDICTION_PACIFIC,
         ),
         (
-            MOSAIC_S3_BUCKET,
-            GEOMAD_DATASET_PREFIX,
-            GEOMAD_VERSION_NEW,
-            MOSAIC_PATHS_GEOMAD_NEW,
+            NON_PACIFIC_BUCKET,
+            NON_PACIFIC_PREDICTION_PREFIX,
+            PREDICTION_VERSION,
+            MOSAIC_PATHS_PREDICTION_NON_PACIFIC,
         ),
     ]:
         s3_prefix = f"{dataset_prefix}/{version}/mosaics/"
-        # Capped at 1000 items (no pagination). Fine because there is one mosaic per year.
         response = s3.list_objects_v2(Bucket=bucket, Prefix=s3_prefix)
         for obj in response.get("Contents", []):
             key = obj["Key"]
@@ -133,22 +146,28 @@ try:
                 paths_dict[year] = f"s3://{bucket}/{key}"
 except Exception as e:
     logger.error(f"Failed to scan S3 for mosaics: {e}")
-    if not MOSAIC_PATHS_GEOMAD and not MOSAIC_PATHS_PREDICTION:
+    if not MOSAIC_PATHS_GEOMAD_PACIFIC and not MOSAIC_PATHS_GEOMAD_NON_PACIFIC:
         raise RuntimeError(
-            f"Cannot start: failed to discover any mosaics from s3://{MOSAIC_S3_BUCKET}. "
+            f"Cannot start: failed to discover any mosaics. "
             f"Check AWS credentials and network connectivity. Error: {e}"
         ) from e
 
-logger.info(f"GeoMAD mosaics: {sorted(MOSAIC_PATHS_GEOMAD.keys())}")
+logger.info(f"GeoMAD pacific mosaics: {sorted(MOSAIC_PATHS_GEOMAD_PACIFIC.keys())}")
 logger.info(
-    f"GeoMAD {GEOMAD_VERSION_NEW} mosaics: {sorted(MOSAIC_PATHS_GEOMAD_NEW.keys())}"
+    f"GeoMAD non-pacific mosaics: {sorted(MOSAIC_PATHS_GEOMAD_NON_PACIFIC.keys())}"
 )
-logger.info(f"Prediction mosaics: {sorted(MOSAIC_PATHS_PREDICTION.keys())}")
+logger.info(
+    f"Prediction pacific mosaics: {sorted(MOSAIC_PATHS_PREDICTION_PACIFIC.keys())}"
+)
+logger.info(
+    f"Prediction non-pacific mosaics: {sorted(MOSAIC_PATHS_PREDICTION_NON_PACIFIC.keys())}"
+)
 
 DATASETS: dict[str, dict[str, str]] = {
-    "geomad": MOSAIC_PATHS_GEOMAD,
-    "geomad_new": MOSAIC_PATHS_GEOMAD_NEW,
-    "prediction": MOSAIC_PATHS_PREDICTION,
+    "geomad_pacific": MOSAIC_PATHS_GEOMAD_PACIFIC,
+    "geomad_non_pacific": MOSAIC_PATHS_GEOMAD_NON_PACIFIC,
+    "prediction_pacific": MOSAIC_PATHS_PREDICTION_PACIFIC,
+    "prediction_non_pacific": MOSAIC_PATHS_PREDICTION_NON_PACIFIC,
 }
 
 
@@ -159,10 +178,13 @@ def mosaic_path_params(
         Query(description="Year (e.g. '2020')", pattern=r"^\d{4}$"),
     ],
     dataset: Annotated[
-        Literal["geomad", "geomad_new", "prediction"],
-        Query(
-            description="Dataset name (must be 'geomad', 'geomad_new', or 'prediction')"
-        ),
+        Literal[
+            "geomad_pacific",
+            "geomad_non_pacific",
+            "prediction_pacific",
+            "prediction_non_pacific",
+        ],
+        Query(description="Dataset name"),
     ],
 ) -> str:
     """Resolve dataset and year query parameters to a mosaic.json file path."""
@@ -235,19 +257,27 @@ def health():
 @app.get("/config.json", tags=["Viewer"])
 def config():
     """Return dynamic configuration for the frontend."""
-    years_geomad = sorted(MOSAIC_PATHS_GEOMAD.keys())
-    years_geomad_new = sorted(MOSAIC_PATHS_GEOMAD_NEW.keys())
-    years_prediction = sorted(MOSAIC_PATHS_PREDICTION.keys())
-    all_years = sorted(set(years_geomad + years_geomad_new + years_prediction))
+    years_geomad_pacific = sorted(MOSAIC_PATHS_GEOMAD_PACIFIC.keys())
+    years_geomad_non_pacific = sorted(MOSAIC_PATHS_GEOMAD_NON_PACIFIC.keys())
+    years_prediction_pacific = sorted(MOSAIC_PATHS_PREDICTION_PACIFIC.keys())
+    years_prediction_non_pacific = sorted(MOSAIC_PATHS_PREDICTION_NON_PACIFIC.keys())
+    all_years = sorted(
+        set(
+            years_geomad_pacific
+            + years_geomad_non_pacific
+            + years_prediction_pacific
+            + years_prediction_non_pacific
+        )
+    )
     default_year = all_years[-1] if all_years else "2020"
     return {
-        "years_geomad": years_geomad,
-        "years_geomad_new": years_geomad_new,
-        "years_prediction": years_prediction,
+        "years_geomad_pacific": years_geomad_pacific,
+        "years_geomad_non_pacific": years_geomad_non_pacific,
+        "years_prediction_pacific": years_prediction_pacific,
+        "years_prediction_non_pacific": years_prediction_non_pacific,
         "all_years": all_years,
         "default_year": default_year,
         "geomad_version": GEOMAD_VERSION,
-        "geomad_new_version": GEOMAD_VERSION_NEW,
         "prediction_version": PREDICTION_VERSION,
     }
 

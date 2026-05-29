@@ -40,7 +40,22 @@ from ldn import get_version
 from ldn.cli_grid import cli_grid_app
 from ldn.cli_classify import classify_app
 from ldn.grids import get_gridspec
-from ldn.utils import GEOMAD_VERSION, LdnError, PREDICTION_VERSION
+from ldn.utils import (
+    AWS_REGION,
+    GEOMAD_VERSION,
+    GEOMAD_DATASET_ID,
+    PREDICTION_DATASET_ID,
+    SENSOR,
+    LdnError,
+    PREDICTION_VERSION,
+    PACIFIC_BUCKET,
+    NON_PACIFIC_BUCKET,
+    PACIFIC_OWNER,
+    NON_PACIFIC_OWNER,
+    bucket_for_region,
+    owner_for_region,
+    dataset_prefix,
+)
 
 app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -83,10 +98,10 @@ if __name__ == "__main__":
 @app.command()
 def print_tasks(
     years: Annotated[str, typer.Option()],
-    grids: Annotated[Literal["all", "pacific", "non-pacific"], typer.Option()] = "all",
+    region: Annotated[Literal["all", "pacific", "non-pacific"], typer.Option()] = "all",
 ) -> None:
     """Print all tasks for given years for either all grids, or just the Pacific or non-Pacific grid."""
-    logger.info(f"Generating tasks for years: {years} and grids: {grids}")
+    logger.info(f"Generating tasks for years: {years} and region: {region}")
 
     years_list = []
     if "," in years:
@@ -102,7 +117,7 @@ def print_tasks(
     if not all(y.isdigit() for y in years_list):
         raise LdnError("Years must be integers")
 
-    tiles = get_grid_tiles(format="list", grids=grids, overwrite=False)
+    tiles = get_grid_tiles(format="list", grids=region, overwrite=False)
 
     logger.info(
         f"Number of tasks: {len(years_list) * len(tiles)} (years: {len(years_list)}, tiles: {len(tiles)})"
@@ -110,7 +125,6 @@ def print_tasks(
 
     tasks = []
     for year in years_list:
-        # get_grid_tiles handles all (Pacific and non-Pacific grids) or just one.
         for tile in tiles:
             tasks.append(
                 {
@@ -126,7 +140,7 @@ def print_tasks(
 
     typer.echo(tasks_json_str)
     logger.info(
-        f"{len(tasks)} tasks written to tasks.json for years: {years} and grids: {grids}."
+        f"{len(tasks)} tasks written to tasks.json for years: {years} and region: {region}."
     )
     return
 
@@ -137,9 +151,30 @@ def print_tasks(
 @app.command()
 def filter_tasks(
     tasks_json: Annotated[str, typer.Option(help="JSON string of tasks to filter.")],
-    version: Annotated[str, typer.Option(help="Version string for the data product.")],
-    bucket: Annotated[str, typer.Option()] = "data.ldn.auspatious.com",
-    product_owner: Annotated[str | None, typer.Option()] = None,
+    version: Annotated[
+        str,
+        typer.Option(
+            help="Version string for the data product. Depending on dataset parameter."
+        ),
+    ],
+    bucket_pacific: Annotated[
+        str, typer.Option(help="S3 bucket for pacific data.")
+    ] = PACIFIC_BUCKET,
+    bucket_non_pacific: Annotated[
+        str, typer.Option(help="S3 bucket for non-pacific data.")
+    ] = NON_PACIFIC_BUCKET,
+    owner_pacific: Annotated[
+        str, typer.Option(help="Short owner prefix for pacific (e.g. 'dep').")
+    ] = PACIFIC_OWNER,
+    owner_non_pacific: Annotated[
+        str, typer.Option(help="Short owner prefix for non-pacific (e.g. 'ci').")
+    ] = NON_PACIFIC_OWNER,
+    product_owner: Annotated[
+        str | None, typer.Option(help="Override the region-derived owner prefix.")
+    ] = None,
+    dataset: Annotated[
+        Literal["geomad", "prediction"], typer.Option(help="Dataset name.")
+    ] = "geomad",
     overwrite: Annotated[
         bool, typer.Option(help="If true, skip filtering and pass all tasks through.")
     ] = False,
@@ -156,57 +191,66 @@ def filter_tasks(
         typer.echo(json.dumps(tasks))
         return
 
-    logger.info(f"Filtering {len(tasks)} tasks for existing outputs in bucket={bucket}")
+    logger.info(f"Filtering {len(tasks)} tasks for existing outputs.")
+
+    # Map CLI dataset name to S3 dataset_id
+    dataset_id = PREDICTION_DATASET_ID if dataset == "prediction" else GEOMAD_DATASET_ID
 
     # Normalize version the same way S3ItemPath does internally
     version = version.replace(".", "-")
 
     client = boto3.client("s3")
-    sensor = "ls"
-    dataset_id = "geomad"
 
-    if bucket.startswith("https://"):
-        full_path_prefix = bucket
-    elif "." in bucket:
-        full_path_prefix = f"https://{bucket}"
-    else:
-        full_path_prefix = f"https://{bucket}.s3.us-west-2.amazonaws.com"
-
-    # Collect all unique prefixes we need to list
-    prefix_set: set[str] = set()
-    for task in tasks:
-        if product_owner is not None:
-            p = product_owner
+    def _full_path_prefix_for_bucket(bucket: str) -> str:
+        """Return the full path prefix URL for a bucket."""
+        if bucket.startswith("https://"):
+            return bucket
+        elif "." in bucket:
+            return f"https://{bucket}"
         else:
-            p = "ci" if task["region"] == "non-pacific" else "dep"
-        prefix_set.add(p)
+            return f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
+
+    # Collect unique (bucket, owner) combos to list
+    region_combos: set[tuple[str, str]] = set()
+    for task in tasks:
+        r = task["region"]
+        region_combos.add(
+            (
+                bucket_for_region(r, bucket_pacific, bucket_non_pacific),
+                owner_for_region(r, owner_pacific, owner_non_pacific, product_owner),
+            )
+        )
 
     # List all STAC items under each prefix in one paginated call
-    existing_keys: set[str] = set()
-    for p in prefix_set:
-        s3_prefix = f"{p}_{sensor}_{dataset_id}/{version}/"
+    existing_keys: dict[str, set[str]] = {}
+    for combo_bucket, combo_owner in region_combos:
+        full_prefix = dataset_prefix(combo_owner, dataset_id)
+        s3_prefix = f"{full_prefix}/{version}/"
         paginator = client.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=bucket, Prefix=s3_prefix):
+        key_set: set[str] = set()
+        for page in paginator.paginate(Bucket=combo_bucket, Prefix=s3_prefix):
             for obj in page.get("Contents", []):
                 key = obj["Key"]
                 if key.endswith(".stac-item.json"):
-                    existing_keys.add(key)
+                    key_set.add(key)
+        existing_keys[f"{combo_bucket}/{combo_owner}"] = key_set
 
-    logger.info(f"Found {len(existing_keys)} existing STAC items in S3.")
+    total_existing = sum(len(v) for v in existing_keys.values())
+    logger.info(f"Found {total_existing} existing STAC items in S3.")
 
     # Check each task against the set
     remaining = []
     for task in tasks:
         tile_index = tuple(map(int, task["id"].split("_")))
-        if product_owner is not None:
-            prefix = product_owner
-        else:
-            prefix = "ci" if task["region"] == "non-pacific" else "dep"
+        r = task["region"]
+        bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
+        owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
+        full_path_prefix = _full_path_prefix_for_bucket(bucket)
 
         itempath = S3ItemPath(
-            prefix=prefix,
+            prefix=owner,
             bucket=bucket,
-            sensor=sensor,
+            sensor=SENSOR,
             dataset_id=dataset_id,
             version=version,
             time=task["year"],
@@ -214,7 +258,8 @@ def filter_tasks(
         )
         stac_key = itempath.stac_path(tile_index, absolute=False)
 
-        if stac_key not in existing_keys:
+        lookup_key = f"{bucket}/{owner}"
+        if stac_key not in existing_keys.get(lookup_key, set()):
             remaining.append(task)
 
     logger.info(
@@ -229,8 +274,21 @@ def geomad(
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
-    product_owner: Annotated[str | None, typer.Option()] = None,
-    bucket: Annotated[str, typer.Option()] = "data.ldn.auspatious.com",
+    bucket_pacific: Annotated[
+        str, typer.Option(help="S3 bucket for pacific data.")
+    ] = PACIFIC_BUCKET,
+    bucket_non_pacific: Annotated[
+        str, typer.Option(help="S3 bucket for non-pacific data.")
+    ] = NON_PACIFIC_BUCKET,
+    owner_pacific: Annotated[
+        str, typer.Option(help="Short owner prefix for pacific (e.g. 'dep').")
+    ] = PACIFIC_OWNER,
+    owner_non_pacific: Annotated[
+        str, typer.Option(help="Short owner prefix for non-pacific (e.g. 'ci').")
+    ] = NON_PACIFIC_OWNER,
+    product_owner: Annotated[
+        str | None, typer.Option(help="Override the region-derived owner prefix.")
+    ] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
     decimated: Annotated[bool, typer.Option()] = False,
     mask_shadow: Annotated[
@@ -288,15 +346,15 @@ def geomad(
             typer.echo("Using both T1 and T2 data for Pacific for LS7 era")
             search_kwargs = {}
 
-    # Fixed variables
-    sensor = "ls"
-    dataset_id = "geomad"
-
     # Set up variables and check
     tile_index = tuple(map(int, tile_id.split("_")))
 
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_index)
+
+    # Resolve bucket and prefix based on tile region
+    bucket = bucket_for_region(region, bucket_pacific, bucket_non_pacific)
+    owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
 
     # TODO: Handle different bucket formats more robustly. For now we support:
     # "data.ldn.auspatious.com" to "https://data.ldn.auspatious.com"
@@ -306,7 +364,7 @@ def geomad(
     elif "." in bucket:
         full_path_prefix = f"https://{bucket}"
     else:
-        full_path_prefix = f"https://{bucket}.s3.us-west-2.amazonaws.com"  # TODO: can the region be dynamic?
+        full_path_prefix = f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
 
     if decimated:
         typer.echo("Warning, using decimated (low resolution) for testing purposes.")
@@ -317,17 +375,12 @@ def geomad(
     # Configure for checking item existence
     client = boto3.client("s3")
 
-    if product_owner is not None:
-        prefix = product_owner
-    else:
-        prefix = "ci" if region == "non-pacific" else "dep"
-
     # Check if we've done this tile before
     itempath = S3ItemPath(
-        prefix=prefix,
+        prefix=owner,
         bucket=bucket,
-        sensor=sensor,
-        dataset_id=dataset_id,
+        sensor=SENSOR,
+        dataset_id=GEOMAD_DATASET_ID,
         version=version,
         time=year,
         full_path_prefix=full_path_prefix,
@@ -378,7 +431,7 @@ def geomad(
 
     # Metadata creator
     stac_creator = StacCreator(
-        collection_url_root=f"{full_path_prefix}/#{prefix}_{sensor}_{dataset_id}/",
+        collection_url_root=f"{full_path_prefix}/#{owner}_{SENSOR}_{GEOMAD_DATASET_ID}/",
         itempath=itempath,
         with_raster=True,
     )
@@ -434,7 +487,6 @@ def geomad(
 def _find_stac_items_s3(
     bucket: str,
     prefix: str,
-    aws_region: str,
     suffix: str = ".stac-item.json",
     chunk_size: int = 200,
 ) -> list[str]:
@@ -443,14 +495,13 @@ def _find_stac_items_s3(
     Args:
         bucket: S3 bucket name.
         prefix: Key prefix to search under.
-        aws_region: AWS region of the bucket.
         suffix: File suffix to match.
         chunk_size: Number of objects per listing page.
 
     Returns:
         List of S3 keys (without the s3://bucket/ prefix) that match.
     """
-    store = obstore.store.S3Store(bucket=bucket, region=aws_region)
+    store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION)
     matches: list[str] = []
     stream = obstore.list(store, prefix=prefix.lstrip("/"), chunk_size=chunk_size)
 
@@ -467,19 +518,17 @@ def _find_stac_items_s3(
 def _load_stac_docs(
     bucket: str,
     keys: list[str],
-    aws_region: str,
 ) -> list[dict]:
     """Load STAC item JSON documents from S3 into memory.
 
     Args:
         bucket: S3 bucket name.
         keys: S3 object keys to load.
-        aws_region: AWS region of the bucket.
 
     Returns:
         List of parsed STAC item dictionaries.
     """
-    store = obstore.store.S3Store(bucket=bucket, region=aws_region)
+    store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION)
     docs: list[dict] = []
 
     for key in keys:
@@ -496,37 +545,77 @@ def _load_stac_docs(
 
 @app.command("index-to-stac-geoparquet")
 def _index_to_stac_geoparquet(
-    prefix: str = typer.Option(
-        ...,
-        help="S3 path prefix to search for STAC items to index (e.g. for a given dataset).",
+    dataset: Literal["all", "geomad", "prediction"] = typer.Option(
+        ..., help="Dataset type to index: 'all', 'geomad', or 'prediction'."
     ),
-    output_filename: str = typer.Option(
-        ..., help="Output filename for the STAC-Geoparquet index."
+    region: Literal["all", "pacific", "non-pacific"] = typer.Option(
+        ..., help="Region to index: 'all', 'pacific', or 'non-pacific'."
     ),
-    version: str = typer.Option(..., help="Dataset version string e.g. '0-0-1'."),
-    bucket: str = typer.Option(
-        "data.ldn.auspatious.com", help="S3 bucket containing STAC items."
+    version_geomad: str = typer.Option(
+        GEOMAD_VERSION, help="Version string for GeoMAD dataset."
     ),
-    aws_region: str = typer.Option("us-west-2", help="AWS region of the bucket."),
+    version_prediction: str = typer.Option(
+        PREDICTION_VERSION, help="Version string for prediction dataset."
+    ),
+    bucket_pacific: str = typer.Option(
+        PACIFIC_BUCKET, help="S3 bucket for pacific data."
+    ),
+    bucket_non_pacific: str = typer.Option(
+        NON_PACIFIC_BUCKET, help="S3 bucket for non-pacific data."
+    ),
+    owner_pacific: str = typer.Option(
+        PACIFIC_OWNER, help="Short owner prefix for pacific (e.g. 'dep')."
+    ),
+    owner_non_pacific: str = typer.Option(
+        NON_PACIFIC_OWNER, help="Short owner prefix for non-pacific (e.g. 'ci')."
+    ),
+    product_owner: str | None = typer.Option(
+        None, help="Override the region-derived owner prefix."
+    ),
 ) -> None:
-    """Build a STAC-Geoparquet index from all STAC items under a given S3 prefix and version."""
-    prefix = f"{prefix}/{version}"
-    parquet_key = f"{prefix}/{output_filename}.parquet"
+    """Build STAC-Geoparquet indexes from STAC items for given dataset(s) and region(s)."""
+    targets: list[tuple[str, str, str]] = []
 
-    logger.info(f"Listing STAC items under s3://{bucket}/{prefix}")
-    keys = _find_stac_items_s3(bucket, prefix, aws_region)
+    regions = ["pacific", "non-pacific"] if region == "all" else [region]
+    datasets = ["geomad", "prediction"] if dataset == "all" else [dataset]
+
+    for r in regions:
+        bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
+        owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
+        for d in datasets:
+            if d == "geomad":
+                prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
+                version = version_geomad
+            else:
+                prefix = dataset_prefix(owner, PREDICTION_DATASET_ID)
+                version = version_prediction
+            targets.append((bucket, prefix, version))
+
+    for target_bucket, target_prefix, target_version in targets:
+        _run_index(target_bucket, target_prefix, target_version)
+
+
+def _run_index(bucket: str, prefix: str, version: str) -> None:
+    """Run the STAC-Geoparquet indexing for a single bucket/prefix."""
+    full_prefix = f"{prefix}/{version}"
+    parquet_key = f"{full_prefix}/{prefix}.parquet"
+
+    logger.info(f"Listing STAC items under s3://{bucket}/{full_prefix}")
+    keys = _find_stac_items_s3(bucket, full_prefix)
     logger.info(f"Found {len(keys)} STAC items")
 
     if len(keys) == 0:
-        logger.warning("No STAC items found, nothing to index.")
-        raise LdnError("No STAC items found, nothing to index.")
+        logger.warning(
+            f"No STAC items found under s3://{bucket}/{full_prefix}, skipping."
+        )
+        return
 
     logger.info("Loading STAC item documents into memory")
-    docs = _load_stac_docs(bucket, keys, aws_region)
+    docs = _load_stac_docs(bucket, keys)
     logger.info(f"Loaded {len(docs)} STAC documents")
 
     logger.info(f"Writing STAC-Geoparquet to s3://{bucket}/{parquet_key}")
-    store = obstore.store.S3Store(bucket=bucket, region=aws_region)
+    store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION)
     write_sync(parquet_key, docs, store=store)
 
     logger.info(f"Wrote index with {len(docs)} items to s3://{bucket}/{parquet_key}")
@@ -543,38 +632,46 @@ def _stac_self_link(feature: dict) -> str:
     return self_link
 
 
-def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
-    """Read STAC-Geoparquet, filter by year, build mosaic.json."""
+def _build_mosaic_for_year(year: str, features: list[dict]) -> MosaicJSON:
+    """Filter features by year and build a MosaicJSON.
 
-    logger.info(f"Building mosaic for year {year}")
-    search_year = year
+    Args:
+        year: Year string to filter for.
+        features: All STAC item feature dicts from the index.
+
+    Returns:
+        MosaicJSON for the matching features.
+    """
     int_year = int(year)
-    # If we're in the LS7 era, use a buffered window of data
-    if int_year <= 2012:
-        logging.info(
-            "GeoMAD used a year of data on either side to create the annual product so we need to search for +- 1 year."
-        )
-        search_year = f"{int_year - 1}/{int_year + 1}"
 
-    item_collection = search_sync(stac_geoparquet_url, datetime=search_year)
+    def _matches_year(feat: dict) -> bool:
+        """Check if a feature's datetime falls within the target year."""
+        dt_str = feat.get("properties", {}).get("datetime", "")
+        if not dt_str:
+            return False
+        feat_year = int(dt_str[:4])
+        if int_year <= 2012:
+            return abs(feat_year - int_year) <= 1
+        return feat_year == int_year
 
-    items = ItemCollection(item_collection)
-    features = [f.to_dict() for f in items]
+    year_features = [f for f in features if _matches_year(f)]
 
-    if not features:
+    if not year_features:
         raise LdnError(f"No STAC items found for year {year}")
 
-    logger.info(f"  {len(features)} features found")
-
-    # cogeo-mosaic requires Polygon geometries
-    for feat in features:
+    def _ensure_polygon(feat: dict) -> dict:
+        """Return feat with geometry as Polygon (convex hull if MultiPolygon)."""
         geom = shape(feat["geometry"])
-        if geom.geom_type != "Polygon":
-            geom = geom.convex_hull
-        feat["geometry"] = mapping(geom)
+        if geom.geom_type == "Polygon":
+            return feat
+        return {**feat, "geometry": mapping(geom.convex_hull)}
+
+    year_features = [_ensure_polygon(f) for f in year_features]
+
+    logger.info(f"  {year}: {len(year_features)} features")
 
     mosaic = MosaicJSON.from_features(
-        features,
+        year_features,
         minzoom=5,
         maxzoom=14,
         accessor=_stac_self_link,
@@ -583,86 +680,154 @@ def _build_mosaic_for_year(year: str, stac_geoparquet_url: str) -> MosaicJSON:
     return mosaic
 
 
-# TODO: Make bucket and prefix variables.
+def _load_all_features(stac_geoparquet_url: str) -> list[dict]:
+    """Load all STAC items from a geoparquet and prepare geometries for mosaic building.
+
+    Args:
+        stac_geoparquet_url: URL to the STAC-Geoparquet file.
+
+    Returns:
+        List of feature dicts with Polygon geometries.
+    """
+    item_collection = search_sync(stac_geoparquet_url)
+    items = ItemCollection(item_collection)
+    features = [f.to_dict() for f in items]
+
+    return features
+
+
+def _extract_years(features: list[dict]) -> list[str]:
+    """Extract sorted unique years from STAC feature datetimes.
+
+    Args:
+        features: List of STAC item feature dicts.
+
+    Returns:
+        Sorted list of year strings.
+    """
+    years: set[str] = set()
+    for feat in features:
+        dt_str = feat.get("properties", {}).get("datetime", "")
+        if dt_str:
+            years.add(dt_str[:4])
+    return sorted(years)
+
+
 @app.command()
 def make_mosaics(
-    years: Annotated[
-        str,
-        typer.Option(
-            help="Either a comma-separated list of years (e.g. '2020,2021') or a range of years (e.g. '2020-2025') to build mosaics for."
-        ),
-    ],
     dataset: Annotated[
         Literal["all", "geomad", "prediction"],
         typer.Option(
             help="Which dataset to build mosaics for: 'all', 'geomad', or 'prediction'."
         ),
     ],
+    region: Annotated[
+        Literal["all", "pacific", "non-pacific"],
+        typer.Option(
+            help="Region to build mosaics for. 'all' builds both pacific and non-pacific."
+        ),
+    ] = "all",
+    years: Annotated[
+        str | None,
+        typer.Option(
+            help="Comma-separated years or range (e.g. '2020,2021' or '2010-2023'). Defaults to all years in the index."
+        ),
+    ] = None,
     version_geomad: Annotated[
         str,
-        typer.Option(
-            help=f"Version string to use for the GeoMAD mosaic files, e.g. '{GEOMAD_VERSION}'."
-        ),
+        typer.Option(help="Version string for GeoMAD dataset."),
     ] = GEOMAD_VERSION,
     version_prediction: Annotated[
         str,
-        typer.Option(
-            help=f"Version string to use for the Prediction mosaic files, e.g. '{PREDICTION_VERSION}'."
-        ),
+        typer.Option(help="Version string for prediction dataset."),
     ] = PREDICTION_VERSION,
-    bucket_geomad: Annotated[
+    bucket_pacific: Annotated[
         str,
-        typer.Option(help="S3 bucket containing GeoMAD data."),
-    ] = "data.ldn.auspatious.com",
-    prefix_geomad: Annotated[
+        typer.Option(help="S3 bucket for pacific data."),
+    ] = PACIFIC_BUCKET,
+    bucket_non_pacific: Annotated[
         str,
-        typer.Option(help="S3 prefix for GeoMAD data within the bucket."),
-    ] = "ausp_ls_geomad",
+        typer.Option(help="S3 bucket for non-pacific data."),
+    ] = NON_PACIFIC_BUCKET,
+    owner_pacific: Annotated[
+        str,
+        typer.Option(help="Short owner prefix for pacific (e.g. 'dep')."),
+    ] = PACIFIC_OWNER,
+    owner_non_pacific: Annotated[
+        str,
+        typer.Option(help="Short owner prefix for non-pacific (e.g. 'ci')."),
+    ] = NON_PACIFIC_OWNER,
+    product_owner: Annotated[
+        str | None,
+        typer.Option(help="Override the region-derived owner prefix."),
+    ] = None,
 ) -> None:
-    """Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files."""
+    """Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files.
 
-    logger.info(f"Making mosaics for dataset '{dataset}' and years: {years}")
-    if "-" in years:
-        start_year, end_year = map(int, years.split("-"))
-        years_list = [str(y) for y in range(start_year, end_year + 1)]
-    else:
-        years_list = [y.strip() for y in years.split(",")]
+    Years are auto-detected from the STAC-Geoparquet index unless --years is provided.
+    """
+    logger.info(f"Making mosaics for dataset '{dataset}', region '{region}'")
 
-    if any(int(y) < 2000 for y in years_list) or any(int(y) > 2025 for y in years_list):
-        raise LdnError("Years must be between 2000 and 2025 inclusive.")
+    # Parse --years if provided
+    requested_years: list[str] | None = None
+    if years is not None:
+        if "-" in years and "," not in years:
+            start, end = map(int, years.split("-"))
+            requested_years = [str(y) for y in range(start, end + 1)]
+        else:
+            requested_years = [y.strip() for y in years.split(",")]
 
-    # MosaicBackend needs s3:// style paths.
-    output_path_geomad = (
-        f"s3://{bucket_geomad}/{prefix_geomad}/{version_geomad}/mosaics/"
-    )
-    # TODO: Replace this to also use dep-public-staging once the prediction has been run there.
-    output_path_prediction = f"s3://data.ldn.auspatious.com/ausp_ls_lulc_prediction/{version_prediction}/mosaics/"
+    regions = ["pacific", "non-pacific"] if region == "all" else [region]
+    datasets_list = ["geomad", "prediction"] if dataset == "all" else [dataset]
 
-    datasets = []
-    if dataset in ["prediction", "all"]:
-        datasets.append(
-            (
-                "prediction",
-                f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_lulc_prediction/{version_prediction}/ausp_ls_lulc_prediction.parquet",
-                output_path_prediction,
-            )
+    mosaic_targets: list[tuple[str, str, str, str]] = []
+    for r in regions:
+        bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
+        owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
+        # Always use S3 path-style URL to bypass CDN caching
+        base_url = f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
+        for d in datasets_list:
+            if d == "geomad":
+                prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
+                ver = version_geomad
+            else:
+                prefix = dataset_prefix(owner, PREDICTION_DATASET_ID)
+                ver = version_prediction
+            output_path = f"s3://{bucket}/{prefix}/{ver}/mosaics/"
+            parquet_url = f"{base_url}/{prefix}/{ver}/{prefix}.parquet"
+            mosaic_targets.append((f"{d} ({r})", d, parquet_url, output_path))
+
+    for display_name, dataset_name, stac_geoparquet_url, output_path in mosaic_targets:
+        logger.info(f"Loading index for '{display_name}' from {stac_geoparquet_url}")
+        features = _load_all_features(stac_geoparquet_url)
+
+        if not features:
+            logger.warning(f"No features found for '{display_name}', skipping.")
+            continue
+
+        available_years = _extract_years(features)
+        logger.info(
+            f"Found {len(features)} features across {len(available_years)} years: {available_years}"
         )
-    if dataset in ["geomad", "all"]:
-        datasets.append(
-            (
-                "geomad",
-                f"https://s3.us-west-2.amazonaws.com/{bucket_geomad}/{prefix_geomad}/{version_geomad}/{prefix_geomad}.parquet",
-                output_path_geomad,
-            )
-        )
 
-    # Build mosaics for all years in the dataset
-    for dataset_name, stac_geoparquet_url, output_path in datasets:
-        logger.info(f"Building mosaics for '{dataset_name}' dataset.")
+        if requested_years is not None:
+            missing = [y for y in requested_years if y not in available_years]
+            if missing:
+                logger.warning(
+                    f"Requested years not in index for '{display_name}': {missing}"
+                )
+            years_list = [y for y in requested_years if y in available_years]
+            if not years_list:
+                logger.warning(
+                    f"No requested years match available data for '{display_name}', skipping."
+                )
+                continue
+        else:
+            years_list = available_years
+
         for _year in years_list:
-            mosaic = _build_mosaic_for_year(_year, stac_geoparquet_url)
+            mosaic = _build_mosaic_for_year(_year, features)
             logger.info(f"  {_year} built successfully.")
-            # Write to S3.
             out_path = f"{output_path}{dataset_name}_{_year}_mosaic.json"
 
             with MosaicBackend(out_path, mosaic_def=mosaic) as m:

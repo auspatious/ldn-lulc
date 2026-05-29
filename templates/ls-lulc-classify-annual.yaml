@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
-  generateName: landsat-geomad-
+  generateName: landsat-lulc-classify-
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
@@ -12,11 +12,11 @@ spec:
   parallelism: 50
   podMetadata:
     labels:
-      app: ls-geomad
+      app: ls-lulc-classify
     annotations:
       karpenter.sh/do-not-disrupt: "true"
   nodeSelector:
-    karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-processing nodepool can only pick spot instances
+    karpenter.sh/capacity-type: "spot"
     # TODO: Need to disactivate all dep-specific tags to run non-Pacific processes in another Argo instance.
     dep/workload: data-processing
   tolerations:
@@ -26,18 +26,19 @@ spec:
       effect: NoSchedule
   arguments:
     parameters:
-      - name: version
-        value: "0-2-1"
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc"
       - name: image-tag
         value: "latest"
+      - name: prediction-version
+        value: "0-0-4"
+      - name: geomad-version
+        value: "0-2-1"
       - name: region
         # Just run Pacific in DEP Argo instance.
         value: "pacific" # "all", "pacific", or "non-pacific"
       - name: years
-        # value: "2000-2025" # Which year(s) to process (e.g. "2000-2025" or "2000,2005,2010")
-        value: "2025" # Just one year to test.
+        value: "2025" # "2000-2025" or "2000,2005,2010"
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated
@@ -56,12 +57,10 @@ spec:
               parameters:
                 - name: tasks-json
                   value: "{{ tasks.print-tasks.outputs.result }}"
-                - name: overwrite
-                  value: "{{ workflow.parameters.overwrite }}"
 
-          - name: process-geomad
+          - name: classify
             depends: filter-tasks.Succeeded
-            template: process-geomad
+            template: classify
             arguments:
               parameters:
                 - name: tile-id
@@ -70,8 +69,7 @@ spec:
                   value: "{{item.year}}"
                 - name: region
                   value: "{{item.region}}"
-            # withParam: "{{ tasks.filter-tasks.outputs.result }}" # TODO: Reenable this after testing.
-            withParam: '[{"id": "76_24","year": "2010","region": "pacific"}]' # Just one task to test.
+            withParam: "{{ tasks.filter-tasks.outputs.result }}"
 
     - name: print-tasks
       container:
@@ -79,11 +77,6 @@ spec:
         imagePullPolicy: IfNotPresent
         resources:
           requests:
-            # Requesting a lot of resources for this simple task
-            # This is a scheduling trick, if print-tasks requests small, karpenter would
-            # provision a small node first (c6.xlarge/large), then process geomad can't fit
-            #and has to wait for another node to come up. Not critical, just saves a few minutes
-            # of waiting between tasks.
             memory: 18Gi
             cpu: 10
         command: [ldn]
@@ -98,13 +91,11 @@ spec:
       inputs:
         parameters:
           - name: tasks-json
-          - name: overwrite
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
         resources:
           requests:
-            # Same as print-tasks resources comment.
             memory: 18Gi
             cpu: 10
         command: [ldn]
@@ -113,41 +104,36 @@ spec:
           - --tasks-json
           - "{{ inputs.parameters.tasks-json }}"
           - --version
-          - "{{ workflow.parameters.version }}"
+          - "{{ workflow.parameters.prediction-version }}"
           - --dataset
-          - "geomad"
-          - "{{ inputs.parameters.overwrite }}"
+          - "prediction"
+          - "{{ workflow.parameters.overwrite }}"
 
-    - name: process-geomad
+    - name: classify
       inputs:
         parameters:
           - name: tile-id
           - name: year
           - name: region
-      # activeDeadlineSeconds: 900 # 15 minutes. Max time for a single try. Each retry pod will be killed after this time.
       retryStrategy:
         limit: "3"
         retryPolicy: OnFailure
-        # backoff: # Not needed for this process. Retry immediately.
-        #   maxDuration: "30m" # Max backoff wait time between retries, not total runtime.
-        # # Don't retry OOMKills (137) because we don't scale up resources on retries.
-        # When pod fails because <10 scenes are found code is 1. This would prevent retries of other errors too.
-        expression: "asInt(lastRetry.exitCode) != 137 && asInt(lastRetry.exitCode) != 1"
+        # Don't retry OOMKills (137)
+        expression: "asInt(lastRetry.exitCode) != 137"
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
         resources:
           requests:
-            # Pod memory needed = (n_workers * memory_limit) + scheduler_overhead + main_process_overhead
-            memory: 24Gi
-            # Pod CPU needed = (n_workers * threads_per_worker) + scheduler_threads
-            cpu: 14
+            memory: 8Gi
+            cpu: 4
           limits:
-            memory: 32Gi
-            cpu: 18
+            memory: 12Gi
+            cpu: 6
         command: [ldn]
         args:
-          - geomad
+          - classify
+          - classify
           - --tile-id
           - "{{ inputs.parameters.tile-id }}"
           - --year
@@ -155,14 +141,8 @@ spec:
           - --region
           - "{{ inputs.parameters.region }}"
           - --version
-          - "{{ workflow.parameters.version }}"
-          - --memory-limit
-          - "12GB"
-          - --n-workers
-          - "2"
-          - --threads-per-worker
-          - "6"
-          - --xy-chunk-size
-          - "800"
-          - "{{ workflow.parameters.overwrite }}"
+          - "{{ workflow.parameters.prediction-version }}"
+          - --version-geomad
+          - "{{ workflow.parameters.geomad-version }}"
           - "{{ workflow.parameters.decimated }}"
+          - "{{ workflow.parameters.overwrite }}"

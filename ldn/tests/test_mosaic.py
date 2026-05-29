@@ -28,11 +28,10 @@ def test_stac_self_link_returns_self_href():
 # _build_mosaic_for_year
 
 
-def _make_stac_item(item_id: str, bbox: list[float]) -> MagicMock:
-    """Helper to create a mock STAC item with a Polygon geometry from a bbox."""
+def _make_feature(item_id: str, bbox: list[float], year: str = "2020") -> dict:
+    """Helper to create a STAC feature dict."""
     minx, miny, maxx, maxy = bbox
-    item = MagicMock()
-    item.to_dict.return_value = {
+    return {
         "id": item_id,
         "type": "Feature",
         "geometry": {
@@ -48,51 +47,33 @@ def _make_stac_item(item_id: str, bbox: list[float]) -> MagicMock:
             ],
         },
         "links": [{"rel": "self", "href": f"https://example.com/items/{item_id}"}],
-        "properties": {"datetime": "2020-06-01T00:00:00Z"},
+        "properties": {"datetime": f"{year}-06-01T00:00:00Z"},
         "assets": {},
     }
-    return item
 
 
-@patch("ldn.cli.search_sync")
-@patch("ldn.cli.ItemCollection")
-def test_build_mosaic_for_year_returns_mosaic(mock_item_collection, mock_search):
-    items = [
-        _make_stac_item("item-1", [103.6, 1.2, 104.0, 1.5]),
-        _make_stac_item("item-2", [104.0, 1.2, 104.4, 1.5]),
-        _make_stac_item("item-3", [103.6, 1.5, 104.0, 1.8]),
+def test_build_mosaic_for_year_returns_mosaic():
+    features = [
+        _make_feature("item-1", [103.6, 1.2, 104.0, 1.5]),
+        _make_feature("item-2", [104.0, 1.2, 104.4, 1.5]),
+        _make_feature("item-3", [103.6, 1.5, 104.0, 1.8]),
     ]
-    mock_search.return_value = ["raw-item-1", "raw-item-2", "raw-item-3"]
-    mock_item_collection.return_value = items
 
-    mosaic = _build_mosaic_for_year("2020", "https://example.com/stac.parquet")
+    mosaic = _build_mosaic_for_year("2020", features)
 
-    mock_search.assert_called_once_with(
-        "https://example.com/stac.parquet", datetime="2020"
-    )
     assert isinstance(mosaic, MosaicJSON)
     assert mosaic.minzoom == 5
     assert mosaic.maxzoom == 14
 
 
-@patch("ldn.cli.search_sync")
-@patch("ldn.cli.ItemCollection")
-def test_build_mosaic_for_year_raises_on_empty(mock_item_collection, mock_search):
-    mock_search.return_value = []
-    mock_item_collection.return_value = []
-
+def test_build_mosaic_for_year_raises_on_empty():
     with pytest.raises(LdnError, match="No STAC items found for year 2020"):
-        _build_mosaic_for_year("2020", "https://example.com/stac.parquet")
+        _build_mosaic_for_year("2020", [])
 
 
-@patch("ldn.cli.search_sync")
-@patch("ldn.cli.ItemCollection")
-def test_build_mosaic_for_year_converts_multipolygon_to_convex_hull(
-    mock_item_collection, mock_search
-):
+def test_build_mosaic_for_year_converts_multipolygon_to_convex_hull():
     """Items with MultiPolygon geometries should be converted to convex hull."""
-    item = MagicMock()
-    item.to_dict.return_value = {
+    feature = {
         "id": "multi-item",
         "type": "Feature",
         "geometry": {
@@ -106,10 +87,8 @@ def test_build_mosaic_for_year_converts_multipolygon_to_convex_hull(
         "properties": {"datetime": "2020-06-01T00:00:00Z"},
         "assets": {},
     }
-    mock_search.return_value = ["raw"]
-    mock_item_collection.return_value = [item]
 
-    mosaic = _build_mosaic_for_year("2020", "https://example.com/stac.parquet")
+    mosaic = _build_mosaic_for_year("2020", [feature])
 
     assert isinstance(mosaic, MosaicJSON)
 
@@ -118,12 +97,13 @@ def test_build_mosaic_for_year_converts_multipolygon_to_convex_hull(
 
 
 @patch("ldn.cli.MosaicBackend")
-@patch("ldn.cli._build_mosaic_for_year")
-def test_make_mosaics_geomad_single_year(mock_build, mock_backend):
-    mock_mosaic = MagicMock(spec=MosaicJSON)
-    mock_build.return_value = mock_mosaic
+@patch("ldn.cli._extract_years")
+@patch("ldn.cli._load_all_features")
+def test_make_mosaics_geomad_single_year(mock_load, mock_years, mock_backend):
+    features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
+    mock_load.return_value = features
+    mock_years.return_value = ["2020"]
 
-    # MosaicBackend is used as a context manager
     mock_backend_instance = MagicMock()
     mock_backend.return_value.__enter__ = MagicMock(return_value=mock_backend_instance)
     mock_backend.return_value.__exit__ = MagicMock(return_value=False)
@@ -132,10 +112,10 @@ def test_make_mosaics_geomad_single_year(mock_build, mock_backend):
         app,
         [
             "make-mosaics",
-            "--years",
-            "2020",
             "--dataset",
             "geomad",
+            "--region",
+            "pacific",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-prediction",
@@ -144,20 +124,19 @@ def test_make_mosaics_geomad_single_year(mock_build, mock_backend):
     )
 
     assert result.exit_code == 0, result.output
-    mock_build.assert_called_once_with(
-        "2020",
-        f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/{GEOMAD_VERSION}/ausp_ls_geomad.parquet",
-    )
     mock_backend.assert_called_once()
-    # Check the output path contains the expected pattern
     out_path = mock_backend.call_args[0][0]
     assert "geomad_2020_mosaic.json" in out_path
 
 
 @patch("ldn.cli.MosaicBackend")
-@patch("ldn.cli._build_mosaic_for_year")
-def test_make_mosaics_prediction_single_year(mock_build, mock_backend):
-    mock_build.return_value = MagicMock(spec=MosaicJSON)
+@patch("ldn.cli._extract_years")
+@patch("ldn.cli._load_all_features")
+def test_make_mosaics_prediction_single_year(mock_load, mock_years, mock_backend):
+    features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
+    mock_load.return_value = features
+    mock_years.return_value = ["2020"]
+
     mock_backend.return_value.__enter__ = MagicMock(return_value=MagicMock())
     mock_backend.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -165,10 +144,10 @@ def test_make_mosaics_prediction_single_year(mock_build, mock_backend):
         app,
         [
             "make-mosaics",
-            "--years",
-            "2020",
             "--dataset",
             "prediction",
+            "--region",
+            "pacific",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-prediction",
@@ -177,15 +156,19 @@ def test_make_mosaics_prediction_single_year(mock_build, mock_backend):
     )
 
     assert result.exit_code == 0, result.output
-    mock_build.assert_called_once()
+    mock_backend.assert_called_once()
     out_path = mock_backend.call_args[0][0]
     assert "prediction_2020_mosaic.json" in out_path
 
 
 @patch("ldn.cli.MosaicBackend")
-@patch("ldn.cli._build_mosaic_for_year")
-def test_make_mosaics_all_builds_both_datasets(mock_build, mock_backend):
-    mock_build.return_value = MagicMock(spec=MosaicJSON)
+@patch("ldn.cli._extract_years")
+@patch("ldn.cli._load_all_features")
+def test_make_mosaics_all_builds_both_datasets(mock_load, mock_years, mock_backend):
+    features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
+    mock_load.return_value = features
+    mock_years.return_value = ["2020"]
+
     mock_backend.return_value.__enter__ = MagicMock(return_value=MagicMock())
     mock_backend.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -193,10 +176,10 @@ def test_make_mosaics_all_builds_both_datasets(mock_build, mock_backend):
         app,
         [
             "make-mosaics",
-            "--years",
-            "2020",
             "--dataset",
             "all",
+            "--region",
+            "pacific",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-prediction",
@@ -205,17 +188,25 @@ def test_make_mosaics_all_builds_both_datasets(mock_build, mock_backend):
     )
 
     assert result.exit_code == 0, result.output
-    assert mock_build.call_count == 2
+    # Two datasets (geomad + prediction), each with 1 year = 2 backend calls
+    assert mock_backend.call_count == 2
 
-    called_urls = [c.args[1] for c in mock_build.call_args_list]
-    assert any("prediction" in url for url in called_urls)
-    assert any("geomad" in url for url in called_urls)
+    out_paths = [c[0][0] for c in mock_backend.call_args_list]
+    assert any("prediction" in p for p in out_paths)
+    assert any("geomad" in p for p in out_paths)
 
 
 @patch("ldn.cli.MosaicBackend")
-@patch("ldn.cli._build_mosaic_for_year")
-def test_make_mosaics_multiple_years(mock_build, mock_backend):
-    mock_build.return_value = MagicMock(spec=MosaicJSON)
+@patch("ldn.cli._extract_years")
+@patch("ldn.cli._load_all_features")
+def test_make_mosaics_multiple_years(mock_load, mock_years, mock_backend):
+    features = [
+        _make_feature("item-1", [103.6, 1.2, 104.0, 1.5], "2020"),
+        _make_feature("item-2", [104.0, 1.2, 104.4, 1.5], "2021"),
+    ]
+    mock_load.return_value = features
+    mock_years.return_value = ["2020", "2021"]
+
     mock_backend.return_value.__enter__ = MagicMock(return_value=MagicMock())
     mock_backend.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -223,10 +214,10 @@ def test_make_mosaics_multiple_years(mock_build, mock_backend):
         app,
         [
             "make-mosaics",
-            "--years",
-            "2020,2021",
             "--dataset",
             "geomad",
+            "--region",
+            "pacific",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-prediction",
@@ -235,10 +226,7 @@ def test_make_mosaics_multiple_years(mock_build, mock_backend):
     )
 
     assert result.exit_code == 0, result.output
-    assert mock_build.call_count == 2
-
-    called_years = [c.args[0] for c in mock_build.call_args_list]
-    assert called_years == ["2020", "2021"]
+    assert mock_backend.call_count == 2
 
     out_paths = [c[0][0] for c in mock_backend.call_args_list]
     assert any("geomad_2020_mosaic.json" in p for p in out_paths)
@@ -246,10 +234,12 @@ def test_make_mosaics_multiple_years(mock_build, mock_backend):
 
 
 @patch("ldn.cli.MosaicBackend")
-@patch("ldn.cli._build_mosaic_for_year")
-def test_make_mosaics_writes_with_overwrite(mock_build, mock_backend):
-    mock_mosaic = MagicMock(spec=MosaicJSON)
-    mock_build.return_value = mock_mosaic
+@patch("ldn.cli._extract_years")
+@patch("ldn.cli._load_all_features")
+def test_make_mosaics_writes_with_overwrite(mock_load, mock_years, mock_backend):
+    features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
+    mock_load.return_value = features
+    mock_years.return_value = ["2020"]
 
     mock_writer = MagicMock()
     mock_backend.return_value.__enter__ = MagicMock(return_value=mock_writer)
@@ -259,10 +249,10 @@ def test_make_mosaics_writes_with_overwrite(mock_build, mock_backend):
         app,
         [
             "make-mosaics",
-            "--years",
-            "2020",
             "--dataset",
             "geomad",
+            "--region",
+            "pacific",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-prediction",

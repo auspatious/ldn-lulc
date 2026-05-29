@@ -50,26 +50,41 @@ def http_to_s3_url(http_url):
 
 
 def set_stac_properties(input_xr: Dataset, output_xr: Dataset) -> Dataset:
+    """Set STAC temporal properties on the output dataset.
+
+    The datetime fields represent the nominal target year (the year the
+    GeoMAD product represents), not the full observation window. For LS7-era
+    products (<=2012) that use a multi-year buffer, the actual observation window is
+    stored in custom properties for provenance.
+    """
     start_year = np.datetime64(input_xr.time.min().values, "Y")
     end_year = np.datetime64(input_xr.time.max().values, "Y")
     start_year_index = int(start_year.astype("int64"))
     end_year_index = int(end_year.astype("int64"))
 
-    start_datetime = _to_utc_ms_string(start_year)
-    end_datetime = _to_utc_ms_string(
-        end_year + np.timedelta64(1, "Y") - np.timedelta64(1, "s")
-    )
-
     midpoint_year_index = (start_year_index + end_year_index) // 2
     midpoint_year = 1970 + midpoint_year_index
-    midpoint_datetime = f"{midpoint_year}-06-30T00:00:00.000Z"
 
-    output_xr.attrs["stac_properties"] = dict(
+    # Nominal year boundaries for STAC temporal search.
+    start_datetime = f"{midpoint_year}-01-01T00:00:00Z"
+    end_datetime = f"{midpoint_year}-12-31T23:59:59Z"
+    midpoint_datetime = f"{midpoint_year}-06-30T00:00:00Z"
+
+    properties = dict(
         start_datetime=start_datetime,
         datetime=midpoint_datetime,
         end_datetime=end_datetime,
         created=_to_utc_ms_string(np.datetime64(datetime.now())),
     )
+
+    # Record the actual observation window when it differs from the nominal year.
+    obs_start_year = 1970 + start_year_index
+    obs_end_year = 1970 + end_year_index
+    if obs_start_year != midpoint_year or obs_end_year != midpoint_year:
+        properties["ldn:observation_start"] = f"{obs_start_year}-01-01T00:00:00Z"
+        properties["ldn:observation_end"] = f"{obs_end_year}-12-31T23:59:59Z"
+
+    output_xr.attrs["stac_properties"] = properties
 
     return output_xr
 

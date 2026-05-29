@@ -38,11 +38,23 @@
     .opacity-row span { min-width:32px; text-align:right; font-size:11px; color:#666; }
 
     /* Legend */
-    #legend-class, #legend-prob {
+    #legend-container {
       position:absolute; bottom:30px; right:10px; z-index:1000;
+      display:flex; flex-direction:column; gap:12px;
       background:rgba(255,255,255,0.95); border-radius:8px;
       padding:12px 14px; box-shadow:0 2px 8px rgba(0,0,0,0.25);
       font-size:12px;
+    }
+    #legend-container:empty { display:none; }
+    #legend-class, #legend-prob, #legend-count {
+      border-top:1px solid #e0e0e0; padding-top:10px;
+    }
+    #legend-container > .legend-hidden { display:none; }
+    #legend-container > div:not(.legend-hidden) ~ div:not(.legend-hidden) {
+      border-top:1px solid #e0e0e0; padding-top:10px;
+    }
+    #legend-container > div:not(.legend-hidden) {
+      border-top:none; padding-top:0;
     }
     .legend-title { font-weight:bold; margin-bottom:8px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
     .legend-item { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
@@ -115,13 +127,18 @@
 
     <div class="section">
       <h3>Layers</h3>
-      <label><input type="checkbox" id="chk-class" checked/> Classification</label>
+      <label><input type="checkbox" id="chk-class" checked/> <span id="lbl-class">Classification</span></label>
+      <label><input type="checkbox" id="chk-classuf"/> <span id="lbl-classuf">Classification (unfiltered)</span></label>
+      <label><input type="checkbox" id="chk-prob"/> <span id="lbl-prob">Probability</span></label>
       <label><input type="checkbox" id="chk-rgb" checked/> <span id="lbl-rgb">GeoMedian (RGB)</span></label>
-      <label><input type="checkbox" id="chk-rgb-new"/> <span id="lbl-rgb-new">GeoMedian new (RGB)</span></label>
       <label><input type="checkbox" id="chk-geomad"/> <span id="lbl-geomad">GeoMAD (S, E, BC)</span></label>
-      <label><input type="checkbox" id="chk-geomad-new"/> <span id="lbl-geomad-new">GeoMAD new (S, E, BC)</span></label>
-      <label><input type="checkbox" id="chk-classuf"/> Classification (unfiltered)</label>
-      <label><input type="checkbox" id="chk-prob"/> Probability</label>
+      <label><input type="checkbox" id="chk-count"/> <span id="lbl-count">Observation count</span></label>
+    </div>
+
+    <div class="section">
+      <h3>Region</h3>
+      <label><input type="checkbox" id="chk-region-pacific" checked/> Pacific</label>
+      <label><input type="checkbox" id="chk-region-non-pacific" checked/> Non-Pacific</label>
     </div>
 
     <div class="section">
@@ -142,23 +159,35 @@
     </div>
   </div>
 
-  <div id="legend-class" style="display:none;">
-    <div class="legend-title">Land Cover <span id="legend-version-info" style="font-weight:normal;text-transform:none;letter-spacing:normal;"></span></div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(0,100,0);"></span>Tree cover</div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(255,255,76);"></span>Grassland</div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(240,150,255);"></span>Cropland</div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(0,150,160);"></span>Wetland</div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(250,0,0);"></span>Built-up</div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(0,100,200);"></span>Water</div>
-    <div class="legend-item"><span class="swatch" style="background:rgb(180,180,180);"></span>Other</div>
-  </div>
+  <div id="legend-container">
+    <div id="legend-class" class="legend-hidden">
+      <div class="legend-title">Land Cover <span id="legend-version-info" style="font-weight:normal;text-transform:none;letter-spacing:normal;"></span></div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(0,100,0);"></span>Tree cover</div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(255,255,76);"></span>Grassland</div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(240,150,255);"></span>Cropland</div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(0,150,160);"></span>Wetland</div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(250,0,0);"></span>Built-up</div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(0,100,200);"></span>Water</div>
+      <div class="legend-item"><span class="swatch" style="background:rgb(180,180,180);"></span>Other</div>
+    </div>
 
-  <div id="legend-prob" style="display:none;">
-    <div class="legend-title">Probability</div>
-    <div style="display:flex;align-items:stretch;gap:6px;">
-      <div style="width:18px;height:120px;background:linear-gradient(to bottom,#1a9641,#a6d96a,#ffffbf,#fdae61,#d7191c);border:1px solid #ccc;border-radius:3px;"></div>
-      <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:11px;">
-        <span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span>
+    <div id="legend-prob" class="legend-hidden">
+      <div class="legend-title">Probability</div>
+      <div style="display:flex;align-items:stretch;gap:6px;">
+        <div style="width:18px;height:120px;background:linear-gradient(to bottom,#1a9641,#a6d96a,#ffffbf,#fdae61,#d7191c);border:1px solid #ccc;border-radius:3px;"></div>
+        <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:11px;">
+          <span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="legend-count" class="legend-hidden">
+      <div class="legend-title">Observation count</div>
+      <div style="display:flex;align-items:stretch;gap:6px;">
+        <div style="width:18px;height:120px;background:linear-gradient(to bottom,#fde725,#5ec962,#21918c,#3b528b,#440154);border:1px solid #ccc;border-radius:3px;"></div>
+        <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:11px;">
+          <span>65</span><span>48</span><span>32</span><span>16</span><span>0</span>
+        </div>
       </div>
     </div>
   </div>
@@ -175,9 +204,10 @@
       this.textContent = panel.classList.contains("collapsed") ? "\u2630" : "\u2715";
     });
 
-    var YEARS_GEOMAD = [];
-    var YEARS_GEOMAD_NEW = [];
-    var YEARS_PREDICTION = [];
+    var YEARS_GEOMAD_PACIFIC = [];
+    var YEARS_GEOMAD_NON_PACIFIC = [];
+    var YEARS_PREDICTION_PACIFIC = [];
+    var YEARS_PREDICTION_NON_PACIFIC = [];
     var VERSIONS = {};
     var CLASS_LABELS = {1:"Tree cover",2:"Grassland",3:"Cropland",4:"Wetland",5:"Built-up",6:"Water",7:"Other",255:"No data"};
 
@@ -220,22 +250,32 @@
     var BASE = window.location.origin + "/mosaic/tiles/WebMercatorQuad/{z}/{x}/{y}.png?";
 
     // Layer definitions (order determines z-order on map: first = bottom)
-    var LAYER_ORDER = ["prob", "classuf", "geomad-new", "geomad", "rgb-new", "rgb", "class"];
+    var LAYER_ORDER = ["count-pacific", "count-non-pacific", "geomad-pacific", "geomad-non-pacific", "rgb-pacific", "rgb-non-pacific", "prob-pacific", "prob-non-pacific", "classuf-pacific", "classuf-non-pacific", "class-pacific", "class-non-pacific"];
     var LAYERS = {
-      "class":    { label:"Classification", ds:"prediction", dsYears:YEARS_PREDICTION,
+      "class-pacific":    { label:"Classification Pacific", ds:"prediction_pacific", dsYears:YEARS_PREDICTION_PACIFIC, region:"pacific",
                      qs:"assets=classification&colormap_name=lulc" },
-      "rgb":      { label:"GeoMedian (RGB)", ds:"geomad", dsYears:YEARS_GEOMAD,
+      "class-non-pacific":    { label:"Classification Non-Pacific", ds:"prediction_non_pacific", dsYears:YEARS_PREDICTION_NON_PACIFIC, region:"non-pacific",
+                     qs:"assets=classification&colormap_name=lulc" },
+      "rgb-pacific": { label:"GeoMedian Pacific (RGB)", ds:"geomad_pacific", dsYears:YEARS_GEOMAD_PACIFIC, region:"pacific",
                      qs:"assets=red&assets=green&assets=blue&rescale=7200,12000&rescale=7200,12000&rescale=7200,12000" },
-      "rgb-new": { label:"GeoMedian new (RGB)", ds:"geomad_new", dsYears:YEARS_GEOMAD_NEW,
+      "rgb-non-pacific": { label:"GeoMedian Non-Pacific (RGB)", ds:"geomad_non_pacific", dsYears:YEARS_GEOMAD_NON_PACIFIC, region:"non-pacific",
                      qs:"assets=red&assets=green&assets=blue&rescale=7200,12000&rescale=7200,12000&rescale=7200,12000" },
-      "geomad":   { label:"GeoMAD (S, E, BC)", ds:"geomad", dsYears:YEARS_GEOMAD,
+      "geomad-pacific": { label:"GeoMAD Pacific (S, E, BC)", ds:"geomad_pacific", dsYears:YEARS_GEOMAD_PACIFIC, region:"pacific",
                      qs:"assets=smad&assets=emad&assets=bcmad&rescale=0,0.0012&rescale=262,2150&rescale=0.006,0.04" },
-      "geomad-new": { label:"GeoMAD new (S, E, BC)", ds:"geomad_new", dsYears:YEARS_GEOMAD_NEW,
+      "geomad-non-pacific": { label:"GeoMAD Non-Pacific (S, E, BC)", ds:"geomad_non_pacific", dsYears:YEARS_GEOMAD_NON_PACIFIC, region:"non-pacific",
                      qs:"assets=smad&assets=emad&assets=bcmad&rescale=0,0.0012&rescale=262,2150&rescale=0.006,0.04" },
-      "classuf":  { label:"Classification (unfiltered)", ds:"prediction", dsYears:YEARS_PREDICTION,
+      "classuf-pacific":  { label:"Classification (unfiltered) Pacific", ds:"prediction_pacific", dsYears:YEARS_PREDICTION_PACIFIC, region:"pacific",
                      qs:"assets=classification_unfiltered&colormap_name=lulc" },
-      "prob":     { label:"Probability", ds:"prediction", dsYears:YEARS_PREDICTION,
-                     qs:"assets=classification_probability&colormap_name=rdylgn&rescale=0,100" }
+      "classuf-non-pacific":  { label:"Classification (unfiltered) Non-Pacific", ds:"prediction_non_pacific", dsYears:YEARS_PREDICTION_NON_PACIFIC, region:"non-pacific",
+                     qs:"assets=classification_unfiltered&colormap_name=lulc" },
+      "prob-pacific":     { label:"Probability Pacific", ds:"prediction_pacific", dsYears:YEARS_PREDICTION_PACIFIC, region:"pacific",
+                     qs:"assets=classification_probability&colormap_name=rdylgn&rescale=0,100" },
+      "prob-non-pacific":     { label:"Probability Non-Pacific", ds:"prediction_non_pacific", dsYears:YEARS_PREDICTION_NON_PACIFIC, region:"non-pacific",
+                     qs:"assets=classification_probability&colormap_name=rdylgn&rescale=0,100" },
+      "count-pacific":    { label:"Obs count Pacific", ds:"geomad_pacific", dsYears:YEARS_GEOMAD_PACIFIC, region:"pacific",
+                     qs:"assets=count&colormap_name=viridis&rescale=0,65" },
+      "count-non-pacific":    { label:"Obs count Non-Pacific", ds:"geomad_non_pacific", dsYears:YEARS_GEOMAD_NON_PACIFIC, region:"non-pacific",
+                     qs:"assets=count&colormap_name=viridis&rescale=0,65" }
     };
 
     var tileLayers = {};
@@ -247,17 +287,24 @@
       return BASE + "dataset=" + layer.ds + "&year=" + year + "&" + layer.qs;
     }
 
-    var CHECKBOX_MAP = {"class":"chk-class", rgb:"chk-rgb", "rgb-new":"chk-rgb-new", "geomad-new":"chk-geomad-new", geomad:"chk-geomad", classuf:"chk-classuf", prob:"chk-prob"};
+    var CHECKBOX_MAP = {"class-pacific":"chk-class", "class-non-pacific":"chk-class", "rgb-pacific":"chk-rgb", "rgb-non-pacific":"chk-rgb", "geomad-pacific":"chk-geomad", "geomad-non-pacific":"chk-geomad", "classuf-pacific":"chk-classuf", "classuf-non-pacific":"chk-classuf", "prob-pacific":"chk-prob", "prob-non-pacific":"chk-prob", "count-pacific":"chk-count", "count-non-pacific":"chk-count"};
 
     function updateCheckboxAvailability() {
+      // Track availability per checkbox (multiple layer keys may map to same checkbox)
+      var cbAvailable = {};
       for (var key in CHECKBOX_MAP) {
-        var cb = document.getElementById(CHECKBOX_MAP[key]);
-        var lbl = cb.parentElement;
+        var cbId = CHECKBOX_MAP[key];
         var available = LAYERS[key].dsYears.indexOf(currentYear) >= 0;
-        cb.disabled = !available;
-        lbl.style.opacity = available ? "1" : "0.4";
-        lbl.style.cursor = available ? "pointer" : "default";
-        if (!available && cb.checked) {
+        if (!cbAvailable[cbId]) cbAvailable[cbId] = false;
+        if (available) cbAvailable[cbId] = true;
+      }
+      for (var cbId in cbAvailable) {
+        var cb = document.getElementById(cbId);
+        var lbl = cb.parentElement;
+        cb.disabled = !cbAvailable[cbId];
+        lbl.style.opacity = cbAvailable[cbId] ? "1" : "0.4";
+        lbl.style.cursor = cbAvailable[cbId] ? "pointer" : "default";
+        if (!cbAvailable[cbId] && cb.checked) {
           cb.checked = false;
         }
       }
@@ -275,13 +322,22 @@
     }
 
     function createTileLayer(key, year) {
+      var zIndex = LAYER_ORDER.indexOf(key) + 1;
       var layer = L.tileLayer(tileUrl(key, year), {
-        opacity: 0.75, minZoom: 5, maxZoom: 18, tileSize: 256,
+        opacity: 0.75, minZoom: 0, maxZoom: 18, tileSize: 256, zIndex: zIndex,
         errorTileUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
       });
       layer.on("tileloadstart", function() { tilesLoading++; updateLoadingIndicator(); });
       layer.on("tileload tileunload tileerror", function() { tilesLoading = Math.max(0, tilesLoading - 1); updateLoadingIndicator(); });
       return layer;
+    }
+
+    function isRegionEnabled(key) {
+      var layer = LAYERS[key];
+      if (!layer.region) return true;
+      if (layer.region === "pacific") return document.getElementById("chk-region-pacific").checked;
+      if (layer.region === "non-pacific") return document.getElementById("chk-region-non-pacific").checked;
+      return true;
     }
 
     function rebuildLayers() {
@@ -304,7 +360,7 @@
       // Create layers in z-order (first added = bottom)
       LAYER_ORDER.forEach(function(key) {
         var cb = document.getElementById(CHECKBOX_MAP[key]);
-        if (cb && cb.checked && LAYERS[key].dsYears.indexOf(currentYear) >= 0) {
+        if (cb && cb.checked && LAYERS[key].dsYears.indexOf(currentYear) >= 0 && isRegionEnabled(key)) {
           tileLayers[key] = createTileLayer(key, currentYear);
           tileLayers[key].addTo(map);
         }
@@ -357,15 +413,13 @@
     }
 
     function updateLegends() {
-      var hasClass = tileLayers["class"] || tileLayers["classuf"];
-      var hasProb = tileLayers["prob"];
-      document.getElementById("legend-class").style.display = hasClass ? "block" : "none";
-      var probEl = document.getElementById("legend-prob");
-      probEl.style.display = hasProb ? "block" : "none";
-      // Stack probability legend above classification legend if both visible
-      probEl.style.bottom = hasClass ? "210px" : "30px";
-
-
+      var hasClass = tileLayers["class-pacific"] || tileLayers["class-non-pacific"] || tileLayers["classuf-pacific"] || tileLayers["classuf-non-pacific"];
+      var hasProb = tileLayers["prob-pacific"] || tileLayers["prob-non-pacific"];
+      var hasCount = tileLayers["count-pacific"] || tileLayers["count-non-pacific"];
+      document.getElementById("legend-class").classList.toggle("legend-hidden", !hasClass);
+      document.getElementById("legend-prob").classList.toggle("legend-hidden", !hasProb);
+      document.getElementById("legend-count").classList.toggle("legend-hidden", !hasCount);
+      document.getElementById("legend-container").style.display = (hasClass || hasProb || hasCount) ? "flex" : "none";
     }
 
     function rebuildOpacitySliders() {
@@ -464,8 +518,34 @@
       rebuildLayers();
     });
 
-    ["chk-rgb","chk-rgb-new","chk-geomad","chk-geomad-new","chk-class","chk-classuf","chk-prob"].forEach(function(id) {
+    ["chk-rgb","chk-geomad","chk-class","chk-classuf","chk-prob","chk-count"].forEach(function(id) {
       document.getElementById(id).addEventListener("change", syncLayers);
+    });
+
+    ["chk-region-pacific","chk-region-non-pacific"].forEach(function(id) {
+      document.getElementById(id).addEventListener("change", function() {
+        var region = id === "chk-region-pacific" ? "pacific" : "non-pacific";
+        var enabled = this.checked;
+        LAYER_ORDER.forEach(function(key) {
+          if (LAYERS[key].region !== region) return;
+          if (enabled) {
+            var cb = document.getElementById(CHECKBOX_MAP[key]);
+            if (cb && cb.checked && LAYERS[key].dsYears.indexOf(currentYear) >= 0 && !tileLayers[key]) {
+              tileLayers[key] = createTileLayer(key, currentYear);
+              tileLayers[key].addTo(map);
+            }
+          } else {
+            if (tileLayers[key]) {
+              map.removeLayer(tileLayers[key]);
+              delete tileLayers[key];
+            }
+          }
+        });
+        rebuildOpacitySliders();
+        rebuildSwipeSelects();
+        updateSwipe();
+        pushState();
+      });
     });
 
     // Tooltip on hover
@@ -597,36 +677,51 @@
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     }).then(function(config) {
-      YEARS_GEOMAD = config.years_geomad;
-      YEARS_GEOMAD_NEW = config.years_geomad_new;
-      YEARS_PREDICTION = config.years_prediction;
+      YEARS_GEOMAD_PACIFIC = config.years_geomad_pacific;
+      YEARS_GEOMAD_NON_PACIFIC = config.years_geomad_non_pacific;
+      YEARS_PREDICTION_PACIFIC = config.years_prediction_pacific;
+      YEARS_PREDICTION_NON_PACIFIC = config.years_prediction_non_pacific;
       VERSIONS = {
         geomad: config.geomad_version,
-        geomad_new: config.geomad_new_version,
         prediction: config.prediction_version
       };
       currentYear = config.default_year;
 
       // Update layer dsYears references
-      LAYERS["class"].dsYears = YEARS_PREDICTION;
-      LAYERS["classuf"].dsYears = YEARS_PREDICTION;
-      LAYERS["prob"].dsYears = YEARS_PREDICTION;
-      LAYERS["rgb"].dsYears = YEARS_GEOMAD;
-      LAYERS["rgb-new"].dsYears = YEARS_GEOMAD_NEW;
-      LAYERS["geomad"].dsYears = YEARS_GEOMAD;
-      LAYERS["geomad-new"].dsYears = YEARS_GEOMAD_NEW;
+      LAYERS["class-pacific"].dsYears = YEARS_PREDICTION_PACIFIC;
+      LAYERS["class-non-pacific"].dsYears = YEARS_PREDICTION_NON_PACIFIC;
+      LAYERS["classuf-pacific"].dsYears = YEARS_PREDICTION_PACIFIC;
+      LAYERS["classuf-non-pacific"].dsYears = YEARS_PREDICTION_NON_PACIFIC;
+      LAYERS["prob-pacific"].dsYears = YEARS_PREDICTION_PACIFIC;
+      LAYERS["prob-non-pacific"].dsYears = YEARS_PREDICTION_NON_PACIFIC;
+      LAYERS["rgb-pacific"].dsYears = YEARS_GEOMAD_PACIFIC;
+      LAYERS["rgb-non-pacific"].dsYears = YEARS_GEOMAD_NON_PACIFIC;
+      LAYERS["geomad-pacific"].dsYears = YEARS_GEOMAD_PACIFIC;
+      LAYERS["geomad-non-pacific"].dsYears = YEARS_GEOMAD_NON_PACIFIC;
+      LAYERS["count-pacific"].dsYears = YEARS_GEOMAD_PACIFIC;
+      LAYERS["count-non-pacific"].dsYears = YEARS_GEOMAD_NON_PACIFIC;
 
       // Set labels with version numbers from config
       var gv = config.geomad_version;
-      var gnv = config.geomad_new_version;
-      LAYERS["rgb"].label = "GeoMedian v" + gv + " (RGB)";
-      LAYERS["rgb-new"].label = "GeoMedian v" + gnv + " (RGB)";
-      LAYERS["geomad"].label = "GeoMAD v" + gv + " (S, E, BC)";
-      LAYERS["geomad-new"].label = "GeoMAD v" + gnv + " (S, E, BC)";
-      document.getElementById("lbl-rgb").textContent = LAYERS["rgb"].label;
-      document.getElementById("lbl-rgb-new").textContent = LAYERS["rgb-new"].label;
-      document.getElementById("lbl-geomad").textContent = LAYERS["geomad"].label;
-      document.getElementById("lbl-geomad-new").textContent = LAYERS["geomad-new"].label;
+      var pv = config.prediction_version;
+      LAYERS["class-pacific"].label = "Classification v" + pv + " Pacific";
+      LAYERS["class-non-pacific"].label = "Classification v" + pv + " Non-Pacific";
+      LAYERS["classuf-pacific"].label = "Classification v" + pv + " (unfiltered) Pacific";
+      LAYERS["classuf-non-pacific"].label = "Classification v" + pv + " (unfiltered) Non-Pacific";
+      LAYERS["prob-pacific"].label = "Probability v" + pv + " Pacific";
+      LAYERS["prob-non-pacific"].label = "Probability v" + pv + " Non-Pacific";
+      LAYERS["rgb-pacific"].label = "GeoMedian v" + gv + " Pacific (RGB)";
+      LAYERS["rgb-non-pacific"].label = "GeoMedian v" + gv + " Non-Pacific (RGB)";
+      LAYERS["geomad-pacific"].label = "GeoMAD v" + gv + " Pacific (S, E, BC)";
+      LAYERS["geomad-non-pacific"].label = "GeoMAD v" + gv + " Non-Pacific (S, E, BC)";
+      LAYERS["count-pacific"].label = "Obs count v" + gv + " Pacific";
+      LAYERS["count-non-pacific"].label = "Obs count v" + gv + " Non-Pacific";
+      document.getElementById("lbl-class").textContent = "Classification v" + pv;
+      document.getElementById("lbl-classuf").textContent = "Classification v" + pv + " (unfiltered)";
+      document.getElementById("lbl-prob").textContent = "Probability v" + pv;
+      document.getElementById("lbl-rgb").textContent = "GeoMedian v" + gv + " (RGB)";
+      document.getElementById("lbl-geomad").textContent = "GeoMAD v" + gv + " (S, E, BC)";
+      document.getElementById("lbl-count").textContent = "Observation count v" + gv;
 
       // Populate year select
       var yearSelect = document.getElementById("year-select");
@@ -675,6 +770,7 @@
 
       // Update hash on map move and basemap/swipe changes
       map.on("moveend", pushState);
+
       document.getElementById("basemap-select").addEventListener("change", pushState);
       document.getElementById("swipe-left").addEventListener("change", pushState);
       document.getElementById("swipe-right").addEventListener("change", pushState);

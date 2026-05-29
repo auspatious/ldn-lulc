@@ -110,16 +110,109 @@ TEST_TILES_PACIFIC = [
     ("052_021", "pacific", {"Vanuatu": "VUT"}),
 ]
 
-GEOMAD_VERSION = "0-2-1"  # TODO: Make this 0-2-0 once we have compared.
-GEOMAD_VERSION_NEW = "0-2-0"  # TODO: Remove this. It is just to compare.
-PREDICTION_VERSION = "0-0-3"
+GEOMAD_VERSION = "0-2-1"
+PREDICTION_VERSION = "0-0-4"
 MODEL_VERSION = "0-0-3"
+TRAINING_DATA_VERSION = "0-0-3"
+
+# Mosaic source configuration per region
+PACIFIC_BUCKET = "dep-public-staging"
+PACIFIC_OWNER = "dep"
+
+NON_PACIFIC_BUCKET = "data.ldn.auspatious.com"
+NON_PACIFIC_OWNER = "ci"
+
+SENSOR = "ls"
+GEOMAD_DATASET_ID = "geomad"
+PREDICTION_DATASET_ID = "lulc_prediction"
+AWS_REGION = "us-west-2"
 
 training_data_year = "2020"
 
 class_attr = "lulc"
 
 wgs84 = "EPSG:4326"
+
+
+def bucket_for_region(
+    region: Literal["pacific", "non-pacific"],
+    bucket_pacific: str = PACIFIC_BUCKET,
+    bucket_non_pacific: str = NON_PACIFIC_BUCKET,
+) -> str:
+    """Return the S3 bucket for a given region."""
+    return bucket_pacific if region == "pacific" else bucket_non_pacific
+
+
+def owner_for_region(
+    region: Literal["pacific", "non-pacific"],
+    owner_pacific: str = PACIFIC_OWNER,
+    owner_non_pacific: str = NON_PACIFIC_OWNER,
+    product_owner: str | None = None,
+) -> str:
+    """Return the short owner prefix for a given region (e.g. 'dep' or 'ci').
+
+    If product_owner is set, it overrides the region-based lookup.
+    """
+    if product_owner is not None:
+        return product_owner
+    return owner_pacific if region == "pacific" else owner_non_pacific
+
+
+def dataset_prefix(owner: str, dataset_id: str) -> str:
+    """Build the full dataset prefix from owner and dataset_id.
+
+    Args:
+        owner: Short owner prefix (e.g. "dep" or "ci").
+        dataset_id: Dataset identifier (e.g. "geomad" or "lulc_prediction").
+
+    Returns:
+        Full prefix like "dep_ls_geomad" or "ci_ls_lulc_prediction".
+    """
+    return f"{owner}_{SENSOR}_{dataset_id}"
+
+
+def get_geomad_stac_geoparquet_url(
+    region: Literal["pacific", "non-pacific"],
+    product_owner: str | None = None,
+    version: str | None = None,
+) -> str:
+    """Build the STAC-Geoparquet URL for GeoMAD data in a given region.
+
+    Args:
+        region: Either "pacific" or "non-pacific".
+        product_owner: Optional override for the region-derived owner prefix.
+        version: GeoMAD version string. Defaults to GEOMAD_VERSION.
+
+    Returns:
+        HTTPS URL to the STAC-Geoparquet file.
+    """
+    ver = version if version is not None else GEOMAD_VERSION
+    bucket = bucket_for_region(region)
+    owner = owner_for_region(region, product_owner=product_owner)
+    prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
+    return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/{prefix}/{ver}/{prefix}.parquet"
+
+
+def get_geomad_item_id(
+    region: Literal["pacific", "non-pacific"],
+    tile_id: str,
+    year: str,
+    product_owner: str | None = None,
+) -> str:
+    """Build the STAC item ID for a GeoMAD tile.
+
+    Args:
+        region: Either "pacific" or "non-pacific".
+        tile_id: Grid tile identifier (e.g. "058_043").
+        year: Year string (e.g. "2020").
+        product_owner: Optional override for the region-derived owner prefix.
+
+    Returns:
+        The full STAC item ID string.
+    """
+    owner = owner_for_region(region, product_owner=product_owner)
+    prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
+    return f"{prefix}_{tile_id}_{year}"
 
 
 def get_analysis_epsg(

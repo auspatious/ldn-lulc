@@ -39,7 +39,15 @@ from odc.geo.geom import box as odc_box
 
 
 from ldn.grids import get_gadm, get_gridspec
-from ldn.utils import GEOMAD_VERSION, LdnError, get_analysis_epsg
+from ldn.utils import (
+    GEOMAD_VERSION,
+    PREDICTION_DATASET_ID,
+    SENSOR,
+    LdnError,
+    get_analysis_epsg,
+    get_geomad_stac_geoparquet_url,
+    get_geomad_item_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,9 +135,6 @@ GEOMAD_BANDS = [
 # Copernicus DEM collection on MS PC.
 DEM_CATALOG = "https://planetarycomputer.microsoft.com/api/stac/v1/"
 DEM_COLLECTION = "cop-dem-glo-30"
-
-# TODO: Make bucket a variable
-GEOMAD_STAC_GEOPARQUET_URL = f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ausp_ls_geomad/{GEOMAD_VERSION}/ausp_ls_geomad.parquet"
 
 wgs84 = "EPSG:4326"
 
@@ -413,8 +418,11 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
 def search_and_load_geomad_indices_dem(
     tile_id: str,
     year: str,
+    region: Literal["pacific", "non-pacific"],
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     geopolygon: GeoDataFrame,
+    product_owner: str | None,
+    version_geomad: str | None = None,
 ) -> xr.Dataset:
     """Search, load, scale, and merge GeoMAD bands, spectral indices, and DEM terrain for a tile.
         Supports antimeridian-crossing tiles.
@@ -422,19 +430,27 @@ def search_and_load_geomad_indices_dem(
     Args:
         tile_id: Grid tile identifier (e.g. "058_043").
         year: Year string for the GeoMAD item search (e.g. "2020").
+        region: Grid region, either "pacific" or "non-pacific".
         analysis_crs: The expected CRS of the GeoMAD data (either "EPSG:3832" or "EPSG:6933").
         geopolygon: GeoDataFrame used to constrain the stac_load extent (the country geom).
+        product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
+        version_geomad: Optional GeoMAD version override.
 
     Returns:
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
+    geomad_url = get_geomad_stac_geoparquet_url(
+        region, product_owner=product_owner, version=version_geomad
+    )
+    item_id = get_geomad_item_id(region, tile_id, year, product_owner=product_owner)
+
     logging.info(
         f"Searching for GeoMAD item for tile {tile_id} and year {year}, using latest version {GEOMAD_VERSION}"
     )
     geomad_items = search_sync(
-        GEOMAD_STAC_GEOPARQUET_URL,
-        ids=f"ausp_ls_geomad_{tile_id}_{year}",
+        geomad_url,
+        ids=item_id,
     )
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
     geomad_items_n = len(geomad_items)
@@ -601,10 +617,11 @@ def do_prediction(
 
     if valid.any():
         valid_df = obs.loc[valid]
-        full_predictions.loc[valid] = model.predict(valid_df).astype(np.float32)
-        full_probabilities.loc[valid] = (
-            model.predict_proba(valid_df).max(axis=1) * 100
-        ).astype(np.float32)
+        proba = model.predict_proba(valid_df)
+        full_predictions.loc[valid] = model.classes_[proba.argmax(axis=1)].astype(
+            np.float32
+        )
+        full_probabilities.loc[valid] = (proba.max(axis=1) * 100).astype(np.float32)
 
     # Reshape back to 2D; nodata_mask stamps nodata_value over masked pixels.
     nodata_mask_2d = nodata_mask.unstack("dims")
@@ -751,6 +768,8 @@ def run_classify_task(
     version_geomad: Annotated[str, typer.Option()],
     region: Literal["pacific", "non-pacific"],
     output_bucket: str,
+    output_prefix: str,
+    geomad_prefix: str,
     model_path: str,
     xy_chunk_size: int,
     asset_url_prefix: str | None,
@@ -770,7 +789,9 @@ def run_classify_task(
         version: Output version string (e.g. "0-0-1").
         version_geomad: Version of the GeoMAD data to use (e.g. "0-0-1").
         region: Grid region, either "pacific" or "non-pacific".
-        output_bucket: S3 bucket for output COGs and STAC metadata.
+        output_bucket: S3 bucket for output COGs, STAC metadata, and GeoMAD source data.
+        output_prefix: Output prefix for paths (e.g. "dep" or "ci").
+        geomad_prefix: Dataset prefix for the GeoMAD geoparquet (e.g. "dep_ls_geomad").
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
         asset_url_prefix: Optional URL prefix for STAC asset hrefs.
@@ -788,11 +809,9 @@ def run_classify_task(
         logger.info(
             "Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
         )
-        geomad_stac_geoparquet_url = GEOMAD_STAC_GEOPARQUET_URL.replace(
-            GEOMAD_VERSION, version_geomad
-        )
-    else:
-        geomad_stac_geoparquet_url = GEOMAD_STAC_GEOPARQUET_URL
+    geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(
+        region, version=version_geomad
+    )
 
     # Split by any of [",", "-", "_"] to be robust.
     tile_id_parts = [int(i) for i in re.split(r"[,\-_]", tile_id)]
@@ -831,22 +850,22 @@ def run_classify_task(
         )
 
     itempath = S3ItemPath(
-        prefix="ausp",
+        prefix=output_prefix,
         bucket=output_bucket,
-        sensor="ls",
-        dataset_id="lulc_prediction",
+        sensor=SENSOR,
+        dataset_id=PREDICTION_DATASET_ID,
         version=version,
         time=datetime,
         full_path_prefix=asset_url_prefix,
     )
-    stac_url = itempath.stac_path(tile_id)
+    stac_url = itempath.stac_path(tile_id_tuple)
 
     if not overwrite and object_exists(output_bucket, stac_url, client=s3_client):
         logger.info(
-            f"Item already exists at {itempath.stac_path(tile_id, absolute=True)}"
+            f"Item already exists at {itempath.stac_path(tile_id_tuple, absolute=True)}"
         )
         raise LdnError(
-            f"Item already exists at {itempath.stac_path(tile_id, absolute=True)}"
+            f"Item already exists at {itempath.stac_path(tile_id_tuple, absolute=True)}"
         )
 
     logger.info(
@@ -881,7 +900,7 @@ def run_classify_task(
         logger.info("Started dask client")
         paths = Task(
             itempath=itempath,
-            id=tile_id,  # TODO: Check this type
+            id=tile_id_tuple,
             area=geobox,
             searcher=searcher,
             loader=loader,
@@ -900,7 +919,7 @@ def run_classify_task(
 
     logger.info(
         f"Completed processing. Wrote {len(paths)} items to"
-        f" {itempath.stac_path(tile_id, absolute=True)}"
+        f" {itempath.stac_path(tile_id_tuple, absolute=True)}"
     )
 
 
@@ -909,8 +928,11 @@ def run_classify_task(
 def get_tile_year_geomad_dem_indices(
     tile_id: str,
     year: str,
+    region: Literal["pacific", "non-pacific"],
     country_wgs84_buffered: GeoDataFrame,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
+    product_owner: str | None,
+    version_geomad: str | None = None,
 ) -> xr.Dataset:
     """Load GeoMAD + DEM features for a tile, clipped to buffered country.
 
@@ -921,8 +943,11 @@ def get_tile_year_geomad_dem_indices(
     Args:
         tile_id: Grid tile identifier (e.g. "058_043").
         year: Temporal filter used for GeoMAD item search (e.g. "2020").
+        region: Grid region, either "pacific" or "non-pacific".
         country_wgs84_buffered: Buffered country geometry in WGS84.
         analysis_crs: Projected CRS string (e.g. "EPSG:3832").
+        product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
+        version_geomad: Optional GeoMAD version override.
 
     Returns:
         Dataset with GeoMAD bands, spectral indices, elevation, slope,
@@ -931,8 +956,11 @@ def get_tile_year_geomad_dem_indices(
     merged = search_and_load_geomad_indices_dem(
         tile_id=tile_id,
         year=year,
+        region=region,
         analysis_crs=analysis_crs,
         geopolygon=country_wgs84_buffered,
+        product_owner=product_owner,
+        version_geomad=version_geomad,
     )
 
     # Clip to intersection of tile extent and buffered country

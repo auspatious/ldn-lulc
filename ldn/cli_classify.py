@@ -4,7 +4,21 @@ from typing import Literal
 import typer
 
 from ldn.classify import run_classify_task
-from ldn.utils import GEOMAD_VERSION, MODEL_VERSION, LdnError, PREDICTION_VERSION
+from ldn.utils import (
+    AWS_REGION,
+    GEOMAD_DATASET_ID,
+    GEOMAD_VERSION,
+    MODEL_VERSION,
+    LdnError,
+    NON_PACIFIC_BUCKET,
+    NON_PACIFIC_OWNER,
+    PACIFIC_BUCKET,
+    PACIFIC_OWNER,
+    PREDICTION_VERSION,
+    bucket_for_region,
+    dataset_prefix,
+    owner_for_region,
+)
 
 classify_app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -38,11 +52,23 @@ def _classify(
     region: Literal["pacific", "non-pacific"] = typer.Option(
         ..., help="Region to predict LULC for. Can be 'pacific' or 'non-pacific'."
     ),
-    output_bucket: str = typer.Option(
-        "data.ldn.auspatious.com", help="S3 bucket to write predictions to."
+    bucket_pacific: str = typer.Option(
+        PACIFIC_BUCKET, help="S3 bucket for pacific data."
+    ),
+    bucket_non_pacific: str = typer.Option(
+        NON_PACIFIC_BUCKET, help="S3 bucket for non-pacific data."
+    ),
+    owner_pacific: str = typer.Option(
+        PACIFIC_OWNER, help="S3 owner prefix for pacific data."
+    ),
+    owner_non_pacific: str = typer.Option(
+        NON_PACIFIC_OWNER, help="S3 owner prefix for non-pacific data."
+    ),
+    product_owner: str | None = typer.Option(
+        None, help="Override the region-derived owner prefix."
     ),
     model_path: str = typer.Option(
-        f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/lulc_random_forest_model.joblib",
+        f"https://s3.{AWS_REGION}.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/lulc_random_forest_model.joblib",
         help="Model to use for prediction.",
     ),
     xy_chunk_size: int = typer.Option(
@@ -69,6 +95,12 @@ def _classify(
     if int(year) < 2000 or int(year) > 2025:
         raise LdnError("Year must be between 2000 and 2025.")
 
+    # Resolve bucket and prefix based on region
+    output_bucket = bucket_for_region(region, bucket_pacific, bucket_non_pacific)
+    owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
+    output_prefix = owner
+    geomad_prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
+
     run_classify_task(
         tile_id,
         datetime=year,
@@ -76,6 +108,8 @@ def _classify(
         version_geomad=version_geomad,
         region=region,
         output_bucket=output_bucket,
+        output_prefix=output_prefix,
+        geomad_prefix=geomad_prefix,
         model_path=model_path,
         xy_chunk_size=xy_chunk_size,
         asset_url_prefix=asset_url_prefix,

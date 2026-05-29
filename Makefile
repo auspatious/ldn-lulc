@@ -1,5 +1,6 @@
 # Here we will store commands for working with the grid, GeoMAD, training data, and ML models.
 
+# Workflow for 2 regions writing to different buckets/paths.
 # Workflow:
 # 1. Run GeoMAD for all tiles/years
 # 2. Run index GeoMAD (STAC-Geoparquet)
@@ -13,15 +14,14 @@
 VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)")
 VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)")
 VERSION_MODEL := $(shell python3 -c "from ldn.utils import MODEL_VERSION; print(MODEL_VERSION)")
+
 # TEST_TILES is a list of tuples: (tile_id, region, {country_name: country_code}) e.g. ("089_016", "pacific", {"Cook Islands": "COK"})
 TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
 # TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] == '312_106']))")
 # TEST_TILES_PACIFIC := $(shell python3 -c "from ldn.utils import TEST_TILES_PACIFIC; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES_PACIFIC]))")
 # TEST_TILES = $(TEST_TILES_PACIFIC)
 
-
 DECIMATED ?= --no-decimated
-
 
 # Get grid tiles - all
 grid-get-tiles-all:
@@ -37,22 +37,39 @@ grid-list-countries-pacific:
 grid-list-countries-non-pacific:
 	ldn grid list-countries --grids="non-pacific"
 
-print-tasks-2000-2025-all-grids:
-	ldn print-tasks --years="2000-2025" --grids="all"
+print-tasks-2000-2025-all:
+	ldn print-tasks --years="2000-2025" --region="all"
 
 print-tasks-2025-pacific:
-	ldn print-tasks --years="2025" --grids="pacific"
+	ldn print-tasks --years="2025" --region="pacific"
 
-filter-tasks:
+filter-tasks-geomad:
 	ldn filter-tasks \
 	--tasks-json "$$(cat tasks.json)" \
-	--version "0-1-0" \
-	--bucket "dep-public-staging" \
+	--version $(VERSION_GEOMAD) \
+	--dataset "geomad" \
 	--no-overwrite
 
 
+TEST_TILES_2_REGIONS := 076_024:pacific 144_127:non-pacific
+
+# TODO: Run these non-decimated. Just testing bucket stuff here.
+# TODO: Get write access for Will to dep-public-staging.
+geomad-2-regions-decimated:
+	for site in $(TEST_TILES_2_REGIONS); do \
+		tile_id=$${site%%:*}; \
+		region=$${site#*:}; region=$${region%%:*}; \
+		ldn geomad \
+			--tile-id $$tile_id \
+			--region $$region \
+			--year 2010 \
+			--version $(VERSION_GEOMAD) \
+			--decimated \
+			--overwrite; \
+	done
+
+
 # Run geomad for all test case sites for years 2000-2025.
-# TODO: do we want to use the product owner flag? This puts all regions in the same S3 path.
 geomad-2000-2025:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
@@ -63,36 +80,17 @@ geomad-2000-2025:
 				--region $$region \
 				--year $$year \
 				--version $(VERSION_GEOMAD) \
-				--product-owner ausp \
 				--overwrite; \
 		done; \
 	done
 
-# geomad-test:
-# 	for year in 2000 2010 2020; do \
-# 		ldn geomad \
-# 			--tile-id 063_020 \
-# 			--region pacific \
-# 			--year $$year \
-# 			--version $(VERSION_GEOMAD) \
-# 			--product-owner ausp \
-# 			--overwrite; \
-# 	done
-
-# geomad-test-2:
-# 	ldn geomad \
-# 		--tile-id 058_043 \
-# 		--region pacific \
-# 		--year 2010 \
-# 		--version $(VERSION_GEOMAD) \
-# 		--product-owner ausp \
-# 		--overwrite;
 
 index-geomad:
 	ldn index-to-stac-geoparquet \
-	--prefix "ausp_ls_geomad" \
-	--output-filename "ausp_ls_geomad" \
-	--version $(VERSION_GEOMAD)
+	--dataset "geomad" \
+	--region "all" \
+	--version-geomad $(VERSION_GEOMAD) \
+	--version-prediction $(VERSION_PREDICTION)
 
 
 ###### Classification/Prediction
@@ -105,8 +103,20 @@ index-geomad:
 
 
 # 3. Predict LULC for the test tiles and one year (2025).
+
+# 3a. print-tasks
+
+# 3b.
+filter-tasks-prediction:
+	ldn filter-tasks \
+	--tasks-json "$$(cat tasks.json)" \
+	--version $(VERSION_PREDICTION) \
+	--dataset "prediction" \
+	--no-overwrite
+
+# 3c.
 # TODO: Run for all years in future
-predict-lulc-test-tiles-a-few-years:
+predict-lulc-test-tiles:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
@@ -117,40 +127,124 @@ predict-lulc-test-tiles-a-few-years:
 				--version $(VERSION_PREDICTION) \
 				--version-geomad $(VERSION_GEOMAD) \
 				--region $$region \
-				--output-bucket="data.ldn.auspatious.com" \
-				--model-path="ldn/models/$(VERSION_MODEL)/lulc_random_forest_model.joblib" \
-				--xy-chunk-size 1024 \
 				$(DECIMATED) \
 				--overwrite; \
 		done; \
 	done
 
+# TODO: Get write access for Will to dep-public-staging.
+prediction-2-regions-decimated:
+	for site in $(TEST_TILES_2_REGIONS); do \
+		tile_id=$${site%%:*}; \
+		region=$${site#*:}; region=$${region%%:*}; \
+		ldn classify classify \
+			--tile-id $$tile_id \
+			--year 2010 \
+			--version $(VERSION_PREDICTION) \
+			--version-geomad $(VERSION_GEOMAD) \
+			--region $$region \
+			--decimated \
+			--overwrite; \
+	done
+
+
 
 # 4. Update the STAC-Geoparquet index after all tiles/years have run.
 index-predictions:
 	ldn index-to-stac-geoparquet \
-	--prefix "ausp_ls_lulc_prediction" \
-	--output-filename "ausp_ls_lulc_prediction" \
-	--version $(VERSION_PREDICTION)
+	--dataset "prediction" \
+	--region "all" \
+	--version-geomad $(VERSION_GEOMAD) \
+	--version-prediction $(VERSION_PREDICTION)
 
 
 # Visualisation
-# make-mosaics-all:
-# 	ldn make-mosaics \
-# 	--dataset all \
-# 	--years "2000-2025" \
-# 	--version-geomad $(VERSION_GEOMAD) \
-# 	--version-prediction $(VERSION_PREDICTION)
-make-mosaics-geomad-all-years:
+make-mosaics-geomad:
 	ldn make-mosaics \
 	--dataset geomad \
-	--years "2000-2025" \
-	--version-geomad $(VERSION_GEOMAD) \
-	--version-prediction $(VERSION_PREDICTION)
-# TODO: Run for all years in future
-make-mosaics-prediction-a-few-years:
+	--region "all"
+
+make-mosaics-prediction:
 	ldn make-mosaics \
 	--dataset prediction \
-	--years "2023-2025" \
-	--version-geomad $(VERSION_GEOMAD) \
-	--version-prediction $(VERSION_PREDICTION)
+	--region "all"
+
+
+
+
+
+
+# Non-Pacific workflow testing
+
+# poetry run ldn geomad \
+#         --tile-id 145_127 \
+#         --region non-pacific \
+#         --year 2000 \
+#         --version "0-2-1" \
+#         --decimated \
+#         --overwrite;
+# poetry run ldn geomad \
+#         --tile-id 145_127 \
+#         --region non-pacific \
+#         --year 2010 \
+#         --version "0-2-1" \
+#         --decimated \
+#         --overwrite;
+# poetry run ldn geomad \
+#         --tile-id 145_127 \
+#         --region non-pacific \
+#         --year 2025 \
+#         --version "0-2-1" \
+#         --decimated \
+#         --overwrite;
+
+
+# poetry run ldn index-to-stac-geoparquet \
+# 	--dataset "geomad" \
+# 	--region "non-pacific" \
+# 	--version-geomad "0-2-1" \
+# 	--version-prediction "0-0-4"
+
+# poetry run ldn make-mosaics \
+# 	--dataset "geomad" \
+# 	--region "non-pacific"
+
+
+# poetry run ldn classify classify \
+# 	--tile-id 145_127 \
+# 	--year 2000 \
+# 	--version "0-0-4" \
+# 	--version-geomad "0-2-1" \
+# 	--region non-pacific \
+# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-3/lulc_random_forest_model.joblib" \
+#         --decimated \
+# 	--overwrite;
+# poetry run ldn classify classify \
+# 	--tile-id 145_127 \
+# 	--year 2010 \
+# 	--version "0-0-4" \
+# 	--version-geomad "0-2-1" \
+# 	--region non-pacific \
+# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-3/lulc_random_forest_model.joblib" \
+#         --decimated \
+# 	--overwrite;
+# poetry run ldn classify classify \
+# 	--tile-id 145_127 \
+# 	--year 2025 \
+# 	--version "0-0-4" \
+# 	--version-geomad "0-2-1" \
+# 	--region non-pacific \
+# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-3/lulc_random_forest_model.joblib" \
+#         --decimated \
+# 	--overwrite;
+
+
+# poetry run ldn index-to-stac-geoparquet \
+# 	--dataset "prediction" \
+# 	--region "non-pacific" \
+# 	--version-geomad "0-2-1" \
+# 	--version-prediction "0-0-4"
+
+# poetry run ldn make-mosaics \
+# 	--dataset "prediction" \
+# 	--region "non-pacific"
