@@ -40,7 +40,6 @@ from odc.geo.geom import box as odc_box
 
 from ldn.grids import get_gadm, get_gridspec
 from ldn.utils import (
-    AWS_REGION,
     GEOMAD_VERSION,
     PREDICTION_DATASET_ID,
     SENSOR,
@@ -423,6 +422,7 @@ def search_and_load_geomad_indices_dem(
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     geopolygon: GeoDataFrame,
     product_owner: str | None,
+    version_geomad: str | None = None,
 ) -> xr.Dataset:
     """Search, load, scale, and merge GeoMAD bands, spectral indices, and DEM terrain for a tile.
         Supports antimeridian-crossing tiles.
@@ -434,12 +434,15 @@ def search_and_load_geomad_indices_dem(
         analysis_crs: The expected CRS of the GeoMAD data (either "EPSG:3832" or "EPSG:6933").
         geopolygon: GeoDataFrame used to constrain the stac_load extent (the country geom).
         product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
+        version_geomad: Optional GeoMAD version override.
 
     Returns:
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
-    geomad_url = get_geomad_stac_geoparquet_url(region, product_owner=product_owner)
+    geomad_url = get_geomad_stac_geoparquet_url(
+        region, product_owner=product_owner, version=version_geomad
+    )
     item_id = get_geomad_item_id(region, tile_id, year, product_owner=product_owner)
 
     logging.info(
@@ -806,9 +809,9 @@ def run_classify_task(
         logger.info(
             "Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
         )
-        geomad_stac_geoparquet_url = f"https://s3.{AWS_REGION}.amazonaws.com/{output_bucket}/{geomad_prefix}/{version_geomad}/{geomad_prefix}.parquet"
-    else:
-        geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(region)
+    geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(
+        region, version=version_geomad
+    )
 
     # Split by any of [",", "-", "_"] to be robust.
     tile_id_parts = [int(i) for i in re.split(r"[,\-_]", tile_id)]
@@ -929,6 +932,7 @@ def get_tile_year_geomad_dem_indices(
     country_wgs84_buffered: GeoDataFrame,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     product_owner: str | None,
+    version_geomad: str | None = None,
 ) -> xr.Dataset:
     """Load GeoMAD + DEM features for a tile, clipped to buffered country.
 
@@ -943,6 +947,7 @@ def get_tile_year_geomad_dem_indices(
         country_wgs84_buffered: Buffered country geometry in WGS84.
         analysis_crs: Projected CRS string (e.g. "EPSG:3832").
         product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
+        version_geomad: Optional GeoMAD version override.
 
     Returns:
         Dataset with GeoMAD bands, spectral indices, elevation, slope,
@@ -955,6 +960,7 @@ def get_tile_year_geomad_dem_indices(
         analysis_crs=analysis_crs,
         geopolygon=country_wgs84_buffered,
         product_owner=product_owner,
+        version_geomad=version_geomad,
     )
 
     # Clip to intersection of tile extent and buffered country

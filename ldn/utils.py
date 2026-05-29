@@ -174,20 +174,23 @@ def dataset_prefix(owner: str, dataset_id: str) -> str:
 def get_geomad_stac_geoparquet_url(
     region: Literal["pacific", "non-pacific"],
     product_owner: str | None = None,
+    version: str | None = None,
 ) -> str:
     """Build the STAC-Geoparquet URL for GeoMAD data in a given region.
 
     Args:
         region: Either "pacific" or "non-pacific".
         product_owner: Optional override for the region-derived owner prefix.
+        version: GeoMAD version string. Defaults to GEOMAD_VERSION.
 
     Returns:
         HTTPS URL to the STAC-Geoparquet file.
     """
+    ver = version if version is not None else GEOMAD_VERSION
     bucket = bucket_for_region(region)
     owner = owner_for_region(region, product_owner=product_owner)
     prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
-    return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/{prefix}/{GEOMAD_VERSION}/{prefix}.parquet"
+    return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/{prefix}/{ver}/{prefix}.parquet"
 
 
 def get_geomad_item_id(
