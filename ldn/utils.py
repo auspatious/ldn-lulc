@@ -112,8 +112,8 @@ TEST_TILES_PACIFIC = [
 
 GEOMAD_VERSION = "0-2-1"
 PREDICTION_VERSION = "0-0-4"
-MODEL_VERSION = "0-0-3"
-TRAINING_DATA_VERSION = "0-0-3"
+MODEL_VERSION = "0-0-4"
+TRAINING_DATA_VERSION = "0-0-4"
 
 # Mosaic source configuration per region
 PACIFIC_BUCKET = "dep-public-staging"
