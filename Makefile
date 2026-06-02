@@ -42,13 +42,6 @@ print-tasks-2000-2025-all:
 print-tasks-2000-2025-pacific:
 	ldn print-tasks --years="2000-2025" --region="pacific"
 
-filter-tasks-geomad:
-	ldn filter-tasks \
-	--tasks-json "$$(cat tasks.json)" \
-	--version $(VERSION_GEOMAD) \
-	--dataset "geomad" \
-	--no-overwrite
-
 
 TEST_TILES_2_REGIONS := 076_024:pacific 144_127:non-pacific
 
@@ -146,14 +139,12 @@ training-data-generate-am-crossing:
 # 3. Predict LULC for the test tiles and one year (2025).
 
 # 3a. print-tasks
+print-tasks-prediction-2025:
+	ldn print-tasks \
+	--years="2025" \
+	--region="pacific" \
+	--dataset="prediction"
 
-# 3b.
-filter-tasks-prediction:
-	ldn filter-tasks \
-	--tasks-json "$$(cat tasks.json)" \
-	--version $(VERSION_PREDICTION) \
-	--dataset "prediction" \
-	--no-overwrite
 
 # 3c.
 # TODO: Run for all years in future
