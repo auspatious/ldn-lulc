@@ -134,7 +134,7 @@ def print_tasks(
                 }
             )
 
-    tasks_json_str = json.dumps(tasks, indent=2)
+    tasks_json_str = json.dumps(tasks, separators=(",", ":"))
     with open("tasks.json", "w") as f:
         f.write(tasks_json_str)
 
@@ -188,7 +188,7 @@ def filter_tasks(
 
     if overwrite:
         logger.info(f"Overwrite enabled, passing all {len(tasks)} tasks through.")
-        typer.echo(json.dumps(tasks))
+        typer.echo(json.dumps(tasks, separators=(",", ":")))
         return
 
     logger.info(f"Filtering {len(tasks)} tasks for existing outputs.")
