@@ -36,10 +36,13 @@ spec:
         # Just run Pacific in DEP Argo instance.
         value: "pacific" # "all", "pacific", or "non-pacific"
       - name: years
-        # value: "2000-2025" # Which year(s) to process (e.g. "2000-2025" or "2000,2005,2010")
-        value: "2025" # Just one year to test.
+      # TODO: Remove workaround of 6-year blocks once the JSON issue is resolved.
+        # value: "2000-2006"
+        # value: "2007-2013"
+        # value: "2014-2020"
+        value: "2021-2025"
       - name: overwrite
-        value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
+        value: "--overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated
         value: "--no-decimated" # Can be "--decimated" or "--no-decimated"
   templates:
@@ -49,18 +52,8 @@ spec:
           - name: print-tasks
             template: print-tasks
 
-          - name: filter-tasks
-            depends: print-tasks.Succeeded
-            template: filter-tasks
-            arguments:
-              parameters:
-                - name: tasks-json
-                  value: "{{ tasks.print-tasks.outputs.result }}"
-                - name: overwrite
-                  value: "{{ workflow.parameters.overwrite }}"
-
           - name: process-geomad
-            depends: filter-tasks.Succeeded
+            depends: print-tasks.Succeeded
             template: process-geomad
             arguments:
               parameters:
@@ -70,8 +63,8 @@ spec:
                   value: "{{item.year}}"
                 - name: region
                   value: "{{item.region}}"
-            # withParam: "{{ tasks.filter-tasks.outputs.result }}" # TODO: Reenable this after testing.
-            withParam: '[{"id": "76_24","year": "2010","region": "pacific"}]' # Just one task to test.
+            withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
+
 
     - name: print-tasks
       container:
@@ -84,39 +77,17 @@ spec:
             # provision a small node first (c6.xlarge/large), then process geomad can't fit
             #and has to wait for another node to come up. Not critical, just saves a few minutes
             # of waiting between tasks.
-            memory: 18Gi
-            cpu: 10
-        command: [ldn]
+            memory: 24Gi
+            cpu: 14
+        command: [sh, -c]
         args:
-          - print-tasks
-          - --years
-          - "{{ workflow.parameters.years }}"
-          - --region
-          - "{{ workflow.parameters.region }}"
-
-    - name: filter-tasks
-      inputs:
+          - |
+            ldn print-tasks --years "{{ workflow.parameters.years }}" --region "{{ workflow.parameters.region }}" --version "{{ workflow.parameters.version }}" --dataset geomad {{ workflow.parameters.overwrite }} > /tmp/tasks.json
+      outputs:
         parameters:
-          - name: tasks-json
-          - name: overwrite
-      container:
-        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
-        imagePullPolicy: IfNotPresent
-        resources:
-          requests:
-            # Same as print-tasks resources comment.
-            memory: 18Gi
-            cpu: 10
-        command: [ldn]
-        args:
-          - filter-tasks
-          - --tasks-json
-          - "{{ inputs.parameters.tasks-json }}"
-          - --version
-          - "{{ workflow.parameters.version }}"
-          - --dataset
-          - "geomad"
-          - "{{ inputs.parameters.overwrite }}"
+          - name: tasks
+            valueFrom:
+              path: /tmp/tasks.json
 
     - name: process-geomad
       inputs:
@@ -124,7 +95,7 @@ spec:
           - name: tile-id
           - name: year
           - name: region
-      # activeDeadlineSeconds: 900 # 15 minutes. Max time for a single try. Each retry pod will be killed after this time.
+      activeDeadlineSeconds: 900 # 15 minutes. Max time for a single try. Each retry pod will be killed after this time.
       retryStrategy:
         limit: "3"
         retryPolicy: OnFailure
@@ -137,6 +108,7 @@ spec:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
         resources:
+          # TODO: increase? This task was slow because of large graph taking up too much memory. id:028_030,region:pacific,year:2010
           requests:
             # Pod memory needed = (n_workers * memory_limit) + scheduler_overhead + main_process_overhead
             memory: 24Gi

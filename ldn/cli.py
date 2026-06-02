@@ -56,6 +56,7 @@ from ldn.utils import (
     owner_for_region,
     dataset_prefix,
 )
+from ldn.training_data import cli_training_app
 
 app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -78,6 +79,9 @@ app.add_typer(
 app.add_typer(
     classify_app, name="classify", help="Commands for classifying/predicting LULC."
 )
+app.add_typer(
+    cli_training_app, name="training", help="Commands for generating training data."
+)
 
 
 # Work for version and --version
@@ -95,12 +99,122 @@ if __name__ == "__main__":
     app()
 
 
+def _find_existing_tasks(
+    tasks,
+    version,
+    dataset_id,
+    bucket_pacific,
+    bucket_non_pacific,
+    owner_pacific,
+    owner_non_pacific,
+    product_owner,
+):
+    """Check which tasks already have outputs using S3 listing.
+
+    Lists all STAC items under each (bucket, owner) prefix and returns
+    a set of (id, year) tuples for tasks whose output already exists.
+    """
+    client = boto3.client("s3")
+
+    def _full_path_prefix_for_bucket(bucket: str) -> str:
+        """Return the full path prefix URL for a bucket."""
+        if bucket.startswith("https://"):
+            return bucket
+        elif "." in bucket:
+            return f"https://{bucket}"
+        else:
+            return f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
+
+    # Collect unique (bucket, owner) combos
+    region_combos: set[tuple[str, str]] = set()
+    for task in tasks:
+        r = task["region"]
+        region_combos.add(
+            (
+                bucket_for_region(r, bucket_pacific, bucket_non_pacific),
+                owner_for_region(r, owner_pacific, owner_non_pacific, product_owner),
+            )
+        )
+
+    # List all STAC items under each prefix
+    existing_keys: dict[str, set[str]] = {}
+    for combo_bucket, combo_owner in region_combos:
+        full_prefix = dataset_prefix(combo_owner, dataset_id)
+        s3_prefix = f"{full_prefix}/{version}/"
+        paginator = client.get_paginator("list_objects_v2")
+        key_set: set[str] = set()
+        for page in paginator.paginate(Bucket=combo_bucket, Prefix=s3_prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                if key.endswith(".stac-item.json"):
+                    key_set.add(key)
+        existing_keys[f"{combo_bucket}/{combo_owner}"] = key_set
+
+    total_existing = sum(len(v) for v in existing_keys.values())
+    logger.info(
+        f"Found {total_existing} existing STAC items in S3 (this value may be more because of input parameters to print-tasks)."
+    )
+
+    # Check each task against the set
+    existing_tasks: set[tuple[str, str]] = set()
+    for task in tasks:
+        tile_index = tuple(map(int, task["id"].split("_")))
+        r = task["region"]
+        bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
+        owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
+        full_path_prefix = _full_path_prefix_for_bucket(bucket)
+
+        itempath = S3ItemPath(
+            prefix=owner,
+            bucket=bucket,
+            sensor=SENSOR,
+            dataset_id=dataset_id,
+            version=version,
+            time=task["year"],
+            full_path_prefix=full_path_prefix,
+        )
+        stac_key = itempath.stac_path(tile_index, absolute=False)
+
+        lookup_key = f"{bucket}/{owner}"
+        if stac_key in existing_keys.get(lookup_key, set()):
+            existing_tasks.add((task["id"], task["year"]))
+
+    return existing_tasks
+
+
 @app.command()
 def print_tasks(
     years: Annotated[str, typer.Option()],
     region: Annotated[Literal["all", "pacific", "non-pacific"], typer.Option()] = "all",
+    dataset: Annotated[
+        Literal["geomad", "prediction"], typer.Option(help="Dataset name.")
+    ] = "geomad",
+    version_geomad: Annotated[
+        str, typer.Option(help="Version string for GeoMAD dataset.")
+    ] = GEOMAD_VERSION,
+    version_prediction: Annotated[
+        str, typer.Option(help="Version string for prediction dataset.")
+    ] = PREDICTION_VERSION,
+    bucket_pacific: Annotated[
+        str, typer.Option(help="S3 bucket for pacific data.")
+    ] = PACIFIC_BUCKET,
+    bucket_non_pacific: Annotated[
+        str, typer.Option(help="S3 bucket for non-pacific data.")
+    ] = NON_PACIFIC_BUCKET,
+    owner_pacific: Annotated[
+        str, typer.Option(help="Short owner prefix for pacific (e.g. 'dep').")
+    ] = PACIFIC_OWNER,
+    owner_non_pacific: Annotated[
+        str, typer.Option(help="Short owner prefix for non-pacific (e.g. 'ci').")
+    ] = NON_PACIFIC_OWNER,
+    product_owner: Annotated[
+        str | None, typer.Option(help="Override the region-derived owner prefix.")
+    ] = None,
+    overwrite: Annotated[
+        bool, typer.Option(help="If true, skip filtering existing outputs.")
+    ] = False,
 ) -> None:
-    """Print all tasks for given years for either all grids, or just the Pacific or non-Pacific grid."""
+    """Print tasks for given years, optionally filtering out those with existing outputs."""
     logger.info(f"Generating tasks for years: {years} and region: {region}")
 
     years_list = []
@@ -134,138 +248,35 @@ def print_tasks(
                 }
             )
 
-    tasks_json_str = json.dumps(tasks, indent=2)
-    with open("tasks.json", "w") as f:
-        f.write(tasks_json_str)
+    # Filter out tasks whose output already exists in S3
+    if not overwrite:
+        dataset_id = (
+            PREDICTION_DATASET_ID if dataset == "prediction" else GEOMAD_DATASET_ID
+        )
+        version = version_prediction if dataset == "prediction" else version_geomad
 
-    typer.echo(tasks_json_str)
-    logger.info(
-        f"{len(tasks)} tasks written to tasks.json for years: {years} and region: {region}."
-    )
+        existing = _find_existing_tasks(
+            tasks,
+            version,
+            dataset_id,
+            bucket_pacific,
+            bucket_non_pacific,
+            owner_pacific,
+            owner_non_pacific,
+            product_owner,
+        )
+        before_count = len(tasks)
+        tasks = [t for t in tasks if (t["id"], t["year"]) not in existing]
+        logger.info(
+            f"Filtered: {before_count - len(tasks)} already exist, {len(tasks)} remaining."
+        )
+    else:
+        logger.info("Overwrite enabled, skipping existence check.")
+
+    tasks_json_str = json.dumps(tasks, separators=(",", ":"))
+    sys.stdout.write(tasks_json_str)
+    logger.info(f"{len(tasks)} tasks output for years: {years} and region: {region}.")
     return
-
-
-# This command is helpful for developing.
-# It is basically a performance optimization to prevent a lot of pods spinning up to discover that their output exists and shouldn't be overwritten.
-# It duplicates a lot of code and isn't very clean. If something was changed in geomad, this would be out of sync and cause issues.
-@app.command()
-def filter_tasks(
-    tasks_json: Annotated[str, typer.Option(help="JSON string of tasks to filter.")],
-    version: Annotated[
-        str,
-        typer.Option(
-            help="Version string for the data product. Depending on dataset parameter."
-        ),
-    ],
-    bucket_pacific: Annotated[
-        str, typer.Option(help="S3 bucket for pacific data.")
-    ] = PACIFIC_BUCKET,
-    bucket_non_pacific: Annotated[
-        str, typer.Option(help="S3 bucket for non-pacific data.")
-    ] = NON_PACIFIC_BUCKET,
-    owner_pacific: Annotated[
-        str, typer.Option(help="Short owner prefix for pacific (e.g. 'dep').")
-    ] = PACIFIC_OWNER,
-    owner_non_pacific: Annotated[
-        str, typer.Option(help="Short owner prefix for non-pacific (e.g. 'ci').")
-    ] = NON_PACIFIC_OWNER,
-    product_owner: Annotated[
-        str | None, typer.Option(help="Override the region-derived owner prefix.")
-    ] = None,
-    dataset: Annotated[
-        Literal["geomad", "prediction"], typer.Option(help="Dataset name.")
-    ] = "geomad",
-    overwrite: Annotated[
-        bool, typer.Option(help="If true, skip filtering and pass all tasks through.")
-    ] = False,
-) -> None:
-    """Filter tasks by checking if the output STAC item already exists in S3.
-
-    Takes a JSON array of tasks (with id, year, region fields) and outputs
-    only those tasks whose output STAC items do not yet exist.
-    """
-    tasks = json.loads(tasks_json)
-
-    if overwrite:
-        logger.info(f"Overwrite enabled, passing all {len(tasks)} tasks through.")
-        typer.echo(json.dumps(tasks))
-        return
-
-    logger.info(f"Filtering {len(tasks)} tasks for existing outputs.")
-
-    # Map CLI dataset name to S3 dataset_id
-    dataset_id = PREDICTION_DATASET_ID if dataset == "prediction" else GEOMAD_DATASET_ID
-
-    # Normalize version the same way S3ItemPath does internally
-    version = version.replace(".", "-")
-
-    client = boto3.client("s3")
-
-    def _full_path_prefix_for_bucket(bucket: str) -> str:
-        """Return the full path prefix URL for a bucket."""
-        if bucket.startswith("https://"):
-            return bucket
-        elif "." in bucket:
-            return f"https://{bucket}"
-        else:
-            return f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
-
-    # Collect unique (bucket, owner) combos to list
-    region_combos: set[tuple[str, str]] = set()
-    for task in tasks:
-        r = task["region"]
-        region_combos.add(
-            (
-                bucket_for_region(r, bucket_pacific, bucket_non_pacific),
-                owner_for_region(r, owner_pacific, owner_non_pacific, product_owner),
-            )
-        )
-
-    # List all STAC items under each prefix in one paginated call
-    existing_keys: dict[str, set[str]] = {}
-    for combo_bucket, combo_owner in region_combos:
-        full_prefix = dataset_prefix(combo_owner, dataset_id)
-        s3_prefix = f"{full_prefix}/{version}/"
-        paginator = client.get_paginator("list_objects_v2")
-        key_set: set[str] = set()
-        for page in paginator.paginate(Bucket=combo_bucket, Prefix=s3_prefix):
-            for obj in page.get("Contents", []):
-                key = obj["Key"]
-                if key.endswith(".stac-item.json"):
-                    key_set.add(key)
-        existing_keys[f"{combo_bucket}/{combo_owner}"] = key_set
-
-    total_existing = sum(len(v) for v in existing_keys.values())
-    logger.info(f"Found {total_existing} existing STAC items in S3.")
-
-    # Check each task against the set
-    remaining = []
-    for task in tasks:
-        tile_index = tuple(map(int, task["id"].split("_")))
-        r = task["region"]
-        bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
-        owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
-        full_path_prefix = _full_path_prefix_for_bucket(bucket)
-
-        itempath = S3ItemPath(
-            prefix=owner,
-            bucket=bucket,
-            sensor=SENSOR,
-            dataset_id=dataset_id,
-            version=version,
-            time=task["year"],
-            full_path_prefix=full_path_prefix,
-        )
-        stac_key = itempath.stac_path(tile_index, absolute=False)
-
-        lookup_key = f"{bucket}/{owner}"
-        if stac_key not in existing_keys.get(lookup_key, set()):
-            remaining.append(task)
-
-    logger.info(
-        f"Filtered: {len(tasks) - len(remaining)} already exist, {len(remaining)} remaining."
-    )
-    typer.echo(json.dumps(remaining))
 
 
 @app.command()

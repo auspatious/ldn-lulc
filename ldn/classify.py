@@ -510,7 +510,9 @@ def search_and_load_geomad_indices_dem(
     if "spatial_ref" in dem_ds.coords:
         dem_ds = dem_ds.drop_vars("spatial_ref")
 
-    merged = xr.merge([geomad_ds, dem_ds])
+    # Fix: assign GeoMAD coords to DEM before merge
+    dem_ds = dem_ds.assign_coords(x=geomad_ds.x, y=geomad_ds.y)
+    merged = xr.merge([geomad_ds, dem_ds], join="override")  # Override prefers geomad
     logger.info(f"Merged GeoMAD+DEM shape: {merged.dims}")
     return merged
 
@@ -690,8 +692,8 @@ class LulcProcessor(Processor):
         if "spatial_ref" in dem_ds.coords:
             dem_ds = dem_ds.drop_vars("spatial_ref")
 
-        # Merge GeoMAD features with terrain features
-        merged = xr.merge([data, dem_ds])
+        # Merge GeoMAD features with terrain features (override join to prefer GeoMAD coords and metadata).
+        merged = xr.merge([data, dem_ds], join="override")
 
         # Compute before prediction: sklearn needs eager numpy arrays,
         # and sending a large lazy graph to Dask workers is slow.
@@ -967,8 +969,9 @@ def get_tile_year_geomad_dem_indices(
     country_prj = country_wgs84_buffered.to_crs(merged.odc.geobox.crs)
     tile_extent = merged.odc.geobox.extent
     country_union = country_prj.union_all()
+    intersection = tile_extent.geom.intersection(country_union)
     clip_geom = Geometry(
-        tile_extent.geom.intersection(country_union),
+        intersection,
         crs=merged.odc.geobox.crs,
     )
     merged = merged.odc.crop(clip_geom, apply_mask=True, all_touched=True)
@@ -979,7 +982,7 @@ def get_tile_year_geomad_dem_indices(
 
 # Dep tools utils have mask_to_gadm() which would be helpful, but I want to buffer gadm before masking.
 def get_buffered_country(
-    country_of_interest: dict,
+    country_of_interest: dict[str, str],
     wgs84: str,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
 ) -> GeoDataFrame:

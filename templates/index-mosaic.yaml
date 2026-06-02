@@ -16,6 +16,7 @@ spec:
       karpenter.sh/do-not-disrupt: "true"
   nodeSelector:
     karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-processing nodepool can only pick spot instances
+    # TODO: Need to disactivate all dep-specific tags to run non-Pacific processes in another Argo instance.
     dep/workload: data-processing
   tolerations:
     - key: dep/workload
@@ -29,9 +30,9 @@ spec:
       - name: image-tag
         value: "latest"
       - name: dataset
-        value: "all" # "all", "geomad", or "prediction"
+        value: "geomad" # "all", "geomad", or "prediction"
       - name: region
-        value: "all" # "all", "pacific", or "non-pacific"
+        value: "pacific" # "all", "pacific", or "non-pacific"
 
   templates:
     - name: workflow-entrypoint

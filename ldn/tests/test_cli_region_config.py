@@ -1,6 +1,5 @@
 """Smoke tests verifying CLI region config params wire through to S3ItemPath."""
 
-import json
 from unittest.mock import patch, MagicMock
 
 from typer.testing import CliRunner
@@ -11,28 +10,28 @@ from ldn.cli_classify import classify_app
 runner = CliRunner()
 
 
-class TestFilterTasksRegionConfig:
-    """Verify filter_tasks passes bucket/owner params through to S3ItemPath."""
+class TestPrintTasksRegionConfig:
+    """Verify print_tasks passes bucket/owner params through to S3ItemPath."""
 
+    @patch("ldn.cli.get_grid_tiles")
     @patch("ldn.cli.boto3")
-    def test_custom_bucket_and_owner_used_in_listing(self, mock_boto3):
+    def test_custom_bucket_and_owner_used_in_listing(self, mock_boto3, mock_get_tiles):
         """Custom bucket/owner should appear in the S3 paginator call."""
+        mock_get_tiles.return_value = [((66, 22), "pacific")]
         mock_client = MagicMock()
         mock_boto3.client.return_value = mock_client
         mock_paginator = MagicMock()
         mock_client.get_paginator.return_value = mock_paginator
         mock_paginator.paginate.return_value = [{"Contents": []}]
 
-        tasks = [{"id": "066_022", "year": "2020", "region": "pacific"}]
-
         result = runner.invoke(
             app,
             [
-                "filter-tasks",
-                "--tasks-json",
-                json.dumps(tasks),
-                "--version",
-                "0-2-1",
+                "print-tasks",
+                "--years",
+                "2020",
+                "--region",
+                "pacific",
                 "--bucket-pacific",
                 "my-custom-bucket",
                 "--owner-pacific",
@@ -46,25 +45,25 @@ class TestFilterTasksRegionConfig:
         assert call_kwargs["Bucket"] == "my-custom-bucket"
         assert call_kwargs["Prefix"].startswith("myorg_ls_geomad/")
 
+    @patch("ldn.cli.get_grid_tiles")
     @patch("ldn.cli.boto3")
-    def test_product_owner_overrides_region_default(self, mock_boto3):
+    def test_product_owner_overrides_region_default(self, mock_boto3, mock_get_tiles):
         """--product-owner should override the region-derived owner."""
+        mock_get_tiles.return_value = [((119, 126), "non-pacific")]
         mock_client = MagicMock()
         mock_boto3.client.return_value = mock_client
         mock_paginator = MagicMock()
         mock_client.get_paginator.return_value = mock_paginator
         mock_paginator.paginate.return_value = [{"Contents": []}]
 
-        tasks = [{"id": "119_126", "year": "2020", "region": "non-pacific"}]
-
         result = runner.invoke(
             app,
             [
-                "filter-tasks",
-                "--tasks-json",
-                json.dumps(tasks),
-                "--version",
-                "0-2-1",
+                "print-tasks",
+                "--years",
+                "2020",
+                "--region",
+                "non-pacific",
                 "--product-owner",
                 "override",
             ],
@@ -74,25 +73,25 @@ class TestFilterTasksRegionConfig:
         call_kwargs = mock_paginator.paginate.call_args[1]
         assert call_kwargs["Prefix"].startswith("override_ls_geomad/")
 
+    @patch("ldn.cli.get_grid_tiles")
     @patch("ldn.cli.boto3")
-    def test_filter_tasks_prediction_dataset(self, mock_boto3):
+    def test_filter_tasks_prediction_dataset(self, mock_boto3, mock_get_tiles):
         """--dataset prediction should use lulc_prediction prefix."""
+        mock_get_tiles.return_value = [((66, 22), "pacific")]
         mock_client = MagicMock()
         mock_boto3.client.return_value = mock_client
         mock_paginator = MagicMock()
         mock_client.get_paginator.return_value = mock_paginator
         mock_paginator.paginate.return_value = [{"Contents": []}]
 
-        tasks = [{"id": "066_022", "year": "2020", "region": "pacific"}]
-
         result = runner.invoke(
             app,
             [
-                "filter-tasks",
-                "--tasks-json",
-                json.dumps(tasks),
-                "--version",
-                "0-0-4",
+                "print-tasks",
+                "--years",
+                "2020",
+                "--region",
+                "pacific",
                 "--dataset",
                 "prediction",
             ],
