@@ -36,31 +36,32 @@ spec:
         # Just run Pacific in DEP Argo instance.
         value: "pacific" # "all", "pacific", or "non-pacific"
       - name: years
-        # value: "2000-2025" # Which year(s) to process (e.g. "2000-2025" or "2000,2005,2010")
-        value: "2025" # Just one year to test.
+        value: "2000-2025" # Which year(s) to process (e.g. "2000-2025" or "2000,2005,2010")
+        # value: "2025" # Just one year to test.
       - name: overwrite
-        value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
+        value: "--overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated
         value: "--no-decimated" # Can be "--decimated" or "--no-decimated"
   templates:
     - name: workflow-entrypoint
       dag:
         tasks:
-          # - name: print-tasks
-          #   template: print-tasks
+          - name: print-tasks
+            template: print-tasks
 
-          # - name: filter-tasks
-          #   depends: print-tasks.Succeeded
-          #   template: filter-tasks
-          #   arguments:
-          #     parameters:
-          #       - name: tasks-json
-          #         value: "{{ tasks.print-tasks.outputs.result }}"
-          #       - name: overwrite
-          #         value: "{{ workflow.parameters.overwrite }}"
+          - name: filter-tasks
+            depends: print-tasks.Succeeded
+            template: filter-tasks
+            arguments:
+              parameters:
+                - name: tasks-json
+                  value: "{{ tasks.print-tasks.outputs.result }}"
+                - name: overwrite
+                  value: "{{ workflow.parameters.overwrite }}"
 
           - name: process-geomad
-            # depends: filter-tasks.Succeeded # TODO: Reenable after testing.
+            depends: filter-tasks.Succeeded
+            # depends: print-tasks.Succeeded
             template: process-geomad
             arguments:
               parameters:
@@ -70,57 +71,58 @@ spec:
                   value: "{{item.year}}"
                 - name: region
                   value: "{{item.region}}"
-            # withParam: "{{ tasks.filter-tasks.outputs.result }}" # TODO: Reenable this after testing.
+            withParam: "{{ tasks.filter-tasks.outputs.result }}"
+            # withParam: "{{ tasks.print-tasks.outputs.result }}"
             # TESTING:
             # withParam: '[{"id": "063_020","year": "2000","region": "pacific"}, {"id": "063_020","year": "2010","region": "pacific"}, {"id": "063_020","year": "2025","region": "pacific"},{"id": "76_24","year": "2000","region": "pacific"}, {"id": "76_24","year": "2010","region": "pacific"}, {"id": "76_24","year": "2025","region": "pacific"},{"id": "089_016","year": "2000","region": "pacific"}, {"id": "089_016","year": "2010","region": "pacific"}, {"id": "089_016","year": "2025","region": "pacific"},{"id": "028_030","year": "2000","region": "pacific"}, {"id": "028_030","year": "2010","region": "pacific"}, {"id": "028_030","year": "2025","region": "pacific"},{"id": "058_043","year": "2000","region": "pacific"}, {"id": "058_043","year": "2010","region": "pacific"}, {"id": "058_043","year": "2025","region": "pacific"}]'
             # 2020 needed for training data.
-            withParam: '[{"id": "063_020","year": "2020","region": "pacific"},{"id": "76_24","year": "2020","region": "pacific"},{"id": "089_016","year": "2020","region": "pacific"},{"id": "028_030","year": "2020","region": "pacific"},{"id": "058_043","year": "2020","region": "pacific"}]'
+            # withParam: '[{"id": "063_020","year": "2020","region": "pacific"},{"id": "76_24","year": "2020","region": "pacific"},{"id": "089_016","year": "2020","region": "pacific"},{"id": "028_030","year": "2020","region": "pacific"},{"id": "058_043","year": "2020","region": "pacific"}]'
 
 
-    # - name: print-tasks
-    #   container:
-    #     image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
-    #     imagePullPolicy: IfNotPresent
-    #     resources:
-    #       requests:
-    #         # Requesting a lot of resources for this simple task
-    #         # This is a scheduling trick, if print-tasks requests small, karpenter would
-    #         # provision a small node first (c6.xlarge/large), then process geomad can't fit
-    #         #and has to wait for another node to come up. Not critical, just saves a few minutes
-    #         # of waiting between tasks.
-    #         memory: 18Gi
-    #         cpu: 10
-    #     command: [ldn]
-    #     args:
-    #       - print-tasks
-    #       - --years
-    #       - "{{ workflow.parameters.years }}"
-    #       - --region
-    #       - "{{ workflow.parameters.region }}"
+    - name: print-tasks
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            # Requesting a lot of resources for this simple task
+            # This is a scheduling trick, if print-tasks requests small, karpenter would
+            # provision a small node first (c6.xlarge/large), then process geomad can't fit
+            #and has to wait for another node to come up. Not critical, just saves a few minutes
+            # of waiting between tasks.
+            memory: 24Gi
+            cpu: 14
+        command: [ldn]
+        args:
+          - print-tasks
+          - --years
+          - "{{ workflow.parameters.years }}"
+          - --region
+          - "{{ workflow.parameters.region }}"
 
-    # - name: filter-tasks
-    #   inputs:
-    #     parameters:
-    #       - name: tasks-json
-    #       - name: overwrite
-    #   container:
-    #     image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
-    #     imagePullPolicy: IfNotPresent
-    #     resources:
-    #       requests:
-    #         # Same as print-tasks resources comment.
-    #         memory: 18Gi
-    #         cpu: 10
-    #     command: [ldn]
-    #     args:
-    #       - filter-tasks
-    #       - --tasks-json
-    #       - "{{ inputs.parameters.tasks-json }}"
-    #       - --version
-    #       - "{{ workflow.parameters.version }}"
-    #       - --dataset
-    #       - "geomad"
-    #       - "{{ inputs.parameters.overwrite }}"
+    - name: filter-tasks
+      inputs:
+        parameters:
+          - name: tasks-json
+          - name: overwrite
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            # Same as print-tasks resources comment.
+            memory: 24Gi
+            cpu: 14
+        command: [ldn]
+        args:
+          - filter-tasks
+          - --tasks-json
+          - "{{ inputs.parameters.tasks-json }}"
+          - --version
+          - "{{ workflow.parameters.version }}"
+          - --dataset
+          - "geomad"
+          - "{{ inputs.parameters.overwrite }}"
 
     - name: process-geomad
       inputs:
