@@ -982,7 +982,7 @@ def get_tile_year_geomad_dem_indices(
 
 # Dep tools utils have mask_to_gadm() which would be helpful, but I want to buffer gadm before masking.
 def get_buffered_country(
-    country_of_interest: dict,
+    country_of_interest: dict[str, str],
     wgs84: str,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
 ) -> GeoDataFrame:

@@ -17,9 +17,8 @@ VERSION_MODEL := $(shell python3 -c "from ldn.utils import MODEL_VERSION; print(
 
 # TEST_TILES is a list of tuples: (tile_id, region, {country_name: country_code}) e.g. ("089_016", "pacific", {"Cook Islands": "COK"})
 TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
+TEST_TILES_WITH_COUNTRY := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TEST_TILES]))")
 # TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] == '312_106']))")
-# TEST_TILES_PACIFIC := $(shell python3 -c "from ldn.utils import TEST_TILES_PACIFIC; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES_PACIFIC]))")
-# TEST_TILES = $(TEST_TILES_PACIFIC)
 
 DECIMATED ?= --no-decimated
 
@@ -40,8 +39,8 @@ grid-list-countries-non-pacific:
 print-tasks-2000-2025-all:
 	ldn print-tasks --years="2000-2025" --region="all"
 
-print-tasks-2025-pacific:
-	ldn print-tasks --years="2025" --region="pacific"
+print-tasks-2000-2025-pacific:
+	ldn print-tasks --years="2000-2025" --region="pacific"
 
 filter-tasks-geomad:
 	ldn filter-tasks \
@@ -92,6 +91,48 @@ index-geomad:
 	--version-geomad $(VERSION_GEOMAD) \
 	--version-prediction $(VERSION_PREDICTION)
 
+
+
+#### Training Data
+# Format: tile_id:region:country_name:country_code (spaces in names replaced with _)
+# training-data-generate:
+# 	for site in $(TEST_TILES_WITH_COUNTRY); do \
+# 		tile_id=$$(echo $$site | cut -d: -f1); \
+# 		region=$$(echo $$site | cut -d: -f2); \
+# 		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
+# 		country_code=$$(echo $$site | cut -d: -f4); \
+# 		ldn training generate-training-data \
+# 			--tile-id $$tile_id \
+# 			--region $$region \
+# 			--country-name "$$country_name" \
+# 			--country-code "$$country_code"; \
+# 	done
+training-data-generate:
+	ldn training generate-training-data \
+		--tile-id 028_030 \
+		--region pacific \
+		--country-name "Papua New Guinea" \
+		--country-code PNG
+# TODO: Figure out why this one OOM kills.
+# training-data-generate:
+# 	ldn training generate-training-data \
+# 		--tile-id 058_043 \
+# 		--region pacific \
+# 		--country-name Kiribati \
+# 		--country-code KIR
+# training-data-generate:
+# 	ldn training generate-training-data \
+# 		--tile-id 076_024 \
+# 		--region pacific \
+# 		--country-name "American Samoa" \
+# 		--country-code ASM
+# TODO: Run geomad for 2020 in DEP Bucket for this:
+training-data-generate-am-crossing:
+	ldn training generate-training-data \
+		--tile-id 066_022 \
+		--region pacific \
+		--country-name "Fiji" \
+		--country-code FJI
 
 ###### Classification/Prediction
 
@@ -216,7 +257,7 @@ make-mosaics-prediction:
 # 	--version "0-0-4" \
 # 	--version-geomad "0-2-1" \
 # 	--region non-pacific \
-# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-3/lulc_random_forest_model.joblib" \
+# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/lulc_random_forest_model.joblib" \
 #         --decimated \
 # 	--overwrite;
 # poetry run ldn classify classify \
@@ -225,7 +266,7 @@ make-mosaics-prediction:
 # 	--version "0-0-4" \
 # 	--version-geomad "0-2-1" \
 # 	--region non-pacific \
-# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-3/lulc_random_forest_model.joblib" \
+# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/lulc_random_forest_model.joblib" \
 #         --decimated \
 # 	--overwrite;
 # poetry run ldn classify classify \
@@ -234,7 +275,7 @@ make-mosaics-prediction:
 # 	--version "0-0-4" \
 # 	--version-geomad "0-2-1" \
 # 	--region non-pacific \
-# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-3/lulc_random_forest_model.joblib" \
+# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/lulc_random_forest_model.joblib" \
 #         --decimated \
 # 	--overwrite;
 

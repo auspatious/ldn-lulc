@@ -56,6 +56,7 @@ from ldn.utils import (
     owner_for_region,
     dataset_prefix,
 )
+from ldn.training_data import cli_training_app
 
 app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -77,6 +78,9 @@ app.add_typer(
 )
 app.add_typer(
     classify_app, name="classify", help="Commands for classifying/predicting LULC."
+)
+app.add_typer(
+    cli_training_app, name="training", help="Commands for generating training data."
 )
 
 
@@ -148,6 +152,7 @@ def print_tasks(
 # This command is helpful for developing.
 # It is basically a performance optimization to prevent a lot of pods spinning up to discover that their output exists and shouldn't be overwritten.
 # It duplicates a lot of code and isn't very clean. If something was changed in geomad, this would be out of sync and cause issues.
+# TODO: use this instead https://github.com/digitalearthpacific/dep-geomad/blob/main/src/print_tasks.py
 @app.command()
 def filter_tasks(
     tasks_json: Annotated[str, typer.Option(help="JSON string of tasks to filter.")],

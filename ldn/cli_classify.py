@@ -68,7 +68,8 @@ def _classify(
         None, help="Override the region-derived owner prefix."
     ),
     model_path: str = typer.Option(
-        f"https://s3.{AWS_REGION}.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/lulc_random_forest_model.joblib",
+        # TODO: defaults to pacific. Later have per region/time period models.
+        f"https://s3.{AWS_REGION}.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/pacific/lulc_random_forest_model.joblib",
         help="Model to use for prediction.",
     ),
     xy_chunk_size: int = typer.Option(
