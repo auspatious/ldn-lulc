@@ -37,12 +37,11 @@ spec:
         value: "pacific" # "all", "pacific", or "non-pacific"
       - name: years
       # TODO: Remove workaround of 6-year blocks once the JSON issue is resolved.
-        # value: "2000-2006"
-        # value: "2007-2013"
-        # value: "2014-2020"
-        value: "2021-2025"
+        # value: "2000-2008"
+        # value: "2009-2016"
+        value: "2017-2025"
       - name: overwrite
-        value: "--overwrite" # Can be "--overwrite" or "--no-overwrite"
+        value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated
         value: "--no-decimated" # Can be "--decimated" or "--no-decimated"
   templates:
@@ -82,7 +81,7 @@ spec:
         command: [sh, -c]
         args:
           - |
-            ldn print-tasks --years "{{ workflow.parameters.years }}" --region "{{ workflow.parameters.region }}" --version "{{ workflow.parameters.version }}" --dataset geomad {{ workflow.parameters.overwrite }} > /tmp/tasks.json
+            ldn print-tasks --years "{{ workflow.parameters.years }}" --region "{{ workflow.parameters.region }}" --version-geomad "{{ workflow.parameters.version }}" --dataset geomad {{ workflow.parameters.overwrite }} > /tmp/tasks.json
       outputs:
         parameters:
           - name: tasks
@@ -95,15 +94,17 @@ spec:
           - name: tile-id
           - name: year
           - name: region
+        # 15 minutes is more than enough time for a process to run. If more is needed then we should scale up resources.
       activeDeadlineSeconds: 900 # 15 minutes. Max time for a single try. Each retry pod will be killed after this time.
-      retryStrategy:
-        limit: "3"
-        retryPolicy: OnFailure
-        # backoff: # Not needed for this process. Retry immediately.
-        #   maxDuration: "30m" # Max backoff wait time between retries, not total runtime.
-        # # Don't retry OOMKills (137) because we don't scale up resources on retries.
-        # When pod fails because <10 scenes are found code is 1. This would prevent retries of other errors too.
-        expression: "asInt(lastRetry.exitCode) != 137 && asInt(lastRetry.exitCode) != 1"
+      # Don't retry.
+      # retryStrategy:
+      #   limit: "3"
+      #   retryPolicy: OnFailure
+      #   # backoff: # Not needed for this process. Retry immediately.
+      #   #   maxDuration: "30m" # Max backoff wait time between retries, not total runtime.
+      #   # # Don't retry OOMKills (137) because we don't scale up resources on retries.
+      #   # When pod fails because <10 scenes are found code is 1. This would prevent retries of other errors too.
+      #   expression: "asInt(lastRetry.exitCode) != 137 && asInt(lastRetry.exitCode) != 1"
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
