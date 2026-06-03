@@ -877,11 +877,9 @@ def run_classify_task(
 
     if not overwrite and object_exists(output_bucket, stac_url, client=s3_client):
         logger.info(
-            f"Item already exists at {itempath.stac_path(tile_id_tuple, absolute=True)}"
+            f"Item already exists at {itempath.stac_path(tile_id_tuple, absolute=True)}, skipping."
         )
-        raise LdnError(
-            f"Item already exists at {itempath.stac_path(tile_id_tuple, absolute=True)}"
-        )
+        return
 
     logger.info(
         "Either item does not exist or overwrite is True, proceeding with processing."

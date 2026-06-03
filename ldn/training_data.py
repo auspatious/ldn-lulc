@@ -18,6 +18,7 @@ import rioxarray  # noqa: F401
 import typer
 import xarray as xr
 from dep_tools.utils import search_across_180, bbox_across_180
+from dep_tools.aws import object_exists
 from odc.geo.geom import Geometry
 from odc.stac import load
 from planetary_computer import sign_url
@@ -694,6 +695,9 @@ def generate_training_data(
     country_code: str = typer.Option(None, help="Country ISO3 code (e.g. FJI)"),
     n: int = typer.Option(2100, help="Total number of sample points"),
     min_sample_per_class_n: int = typer.Option(300, help="Minimum samples per class"),
+    overwrite: bool = typer.Option(
+        False, help="Whether to overwrite existing data in S3"
+    ),
 ):
     """Generate training data for LULC classification."""
     if not tile_id:
@@ -706,6 +710,21 @@ def generate_training_data(
         country_of_interest = {country_name: country_code}
     else:
         raise LdnError("Country name and code must both be provided")
+
+    tile_id_parts = tile_id.split("_")
+
+    s3_client = boto3.client("s3")
+
+    prefix = f"training_data/{training_data_version}/{region}/{tile_id_parts[0]}/{tile_id_parts[1]}/{year}/samples.csv"
+    logger.info(f"Checking if object exists at s3://{bucket}/{prefix}")
+
+    if not overwrite and object_exists(bucket, prefix, client=s3_client):
+        logger.info("Item already exists. Skipping.")
+        return
+
+    logger.info(
+        "Either item does not exist or overwrite is True, proceeding with processing."
+    )
 
     make_training_data(
         tile_id=tile_id,
