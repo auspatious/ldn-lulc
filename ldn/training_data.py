@@ -618,22 +618,31 @@ def make_training_data(
     # Critical for countries like Kiribati that span huge parts of the Pacific —
     # passing the full country geometry into get_tile_year_geomad_dem_indices
     # causes Dask to materialise a massive array, leading to OOM kills.
+    # Skip for AM-crossing tiles: their WGS84 footprint straddles ±180° and
+    # intersects incorrectly with standard WGS84 country geometries.
     tile_index = tuple(int(i) for i in tile_id.split("_"))
     grid = get_gridspec(region=region)
     tile_geobox = grid.tile_geobox(tile_index)
     tile_footprint_wgs84 = gpd.GeoDataFrame(
         geometry=[tile_geobox.extent.geom], crs=tile_geobox.crs
     ).to_crs(wgs84)
-    country_wgs84_buffered = gpd.GeoDataFrame(
-        geometry=country_wgs84_buffered.intersection(tile_footprint_wgs84.union_all()),
-        crs=wgs84,
-    )
-    country_wgs84_buffered = country_wgs84_buffered[
-        country_wgs84_buffered.geometry.notna() & ~country_wgs84_buffered.is_empty
-    ]
-    if country_wgs84_buffered.empty:
-        raise LdnError(f"Country geometry does not overlap tile {tile_id}")
-    logger.info("Clipped country geometry to tile footprint")
+    tile_crosses_am = isinstance(bbox_across_180(tile_footprint_wgs84), tuple)
+
+    if tile_crosses_am:
+        logger.info("AM-crossing tile — skipping country clip to tile footprint")
+    else:
+        country_wgs84_buffered = gpd.GeoDataFrame(
+            geometry=country_wgs84_buffered.intersection(
+                tile_footprint_wgs84.union_all()
+            ),
+            crs=wgs84,
+        )
+        country_wgs84_buffered = country_wgs84_buffered[
+            country_wgs84_buffered.geometry.notna() & ~country_wgs84_buffered.is_empty
+        ]
+        if country_wgs84_buffered.empty:
+            raise LdnError(f"Country geometry does not overlap tile {tile_id}")
+        logger.info("Clipped country geometry to tile footprint")
 
     # 2. Load GeoMAD with DEM and indices
     logger.info("Loading GeoMAD")
@@ -741,13 +750,16 @@ def generate_training_data(
     prefix = f"training_data/{training_data_version}/{region}/{tile_id_parts[0]}/{tile_id_parts[1]}/{year}/samples.csv"
     logger.info(f"Checking if object exists at s3://{bucket}/{prefix}")
 
-    if not overwrite and object_exists(bucket, prefix, client=s3_client):
-        logger.info("Item already exists. Skipping.")
-        return
-
-    logger.info(
-        "Either item does not exist or overwrite is True, proceeding with processing."
-    )
+    if not overwrite:
+        logger.info("Overwrite is False, checking for existing object")
+        exists = object_exists(bucket, prefix, client=s3_client)
+        if exists:
+            logger.info("Item already exists and overwrite is False. Skipping.")
+            return
+        else:
+            logger.info("Item does not exist, proceeding with processing.")
+    else:
+        logger.info("Overwrite is True, proceeding with processing.")
 
     make_training_data(
         tile_id=tile_id,
