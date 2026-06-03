@@ -213,32 +213,14 @@ make-mosaics-prediction:
 
 
 # poetry run ldn classify classify \
-# 	--tile-id 145_127 \
+# 	--tile-id XXX_YYY \
 # 	--year 2000 \
 # 	--version "0-0-4" \
 # 	--version-geomad "0-2-1" \
-# 	--region non-pacific \
-# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/lulc_random_forest_model.joblib" \
-#         --decimated \
-# 	--overwrite;
-# poetry run ldn classify classify \
-# 	--tile-id 145_127 \
-# 	--year 2010 \
-# 	--version "0-0-4" \
-# 	--version-geomad "0-2-1" \
-# 	--region non-pacific \
-# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/lulc_random_forest_model.joblib" \
-#         --decimated \
-# 	--overwrite;
-# poetry run ldn classify classify \
-# 	--tile-id 145_127 \
-# 	--year 2025 \
-# 	--version "0-0-4" \
-# 	--version-geomad "0-2-1" \
-# 	--region non-pacific \
-# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/lulc_random_forest_model.joblib" \
-#         --decimated \
-# 	--overwrite;
+# 	--region pacific \
+# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+#         --no-decimated \
+# 	      --no-overwrite;
 
 
 # poetry run ldn index-to-stac-geoparquet \
