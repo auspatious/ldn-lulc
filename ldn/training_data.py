@@ -33,6 +33,7 @@ from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from ldn.classify import get_tile_year_geomad_dem_indices, get_buffered_country
+from ldn.grids import get_gridspec
 from ldn.random_sampling import random_sampling
 from ldn.typology import world_cover_map, cci_lc_map, io_map
 from ldn.utils import (
@@ -577,7 +578,7 @@ def _upload_dataframe_csv_to_s3(df, bucket: str, path: str) -> str:
 def make_training_data(
     tile_id: str,
     year: str,
-    region: str,
+    region: Literal["pacific", "non-pacific"],
     training_data_version: str,
     bucket: str,
     country_of_interest: dict[str, str],
@@ -609,10 +610,30 @@ def make_training_data(
     analysis_crs = get_analysis_epsg(region)
 
     # 1. Get buffered country boundary
-    logger.info(f"Processing tile {tile_id}, year {year}, region {region}")
     country_wgs84_buffered = get_buffered_country(
         country_of_interest, wgs84, analysis_crs
     )
+
+    # 1b. Clip country geometry to this tile's footprint before any data loading.
+    # Critical for countries like Kiribati that span huge parts of the Pacific —
+    # passing the full country geometry into get_tile_year_geomad_dem_indices
+    # causes Dask to materialise a massive array, leading to OOM kills.
+    tile_index = tuple(int(i) for i in tile_id.split("_"))
+    grid = get_gridspec(region=region)
+    tile_geobox = grid.tile_geobox(tile_index)
+    tile_footprint_wgs84 = gpd.GeoDataFrame(
+        geometry=[tile_geobox.extent.geom], crs=tile_geobox.crs
+    ).to_crs(wgs84)
+    country_wgs84_buffered = gpd.GeoDataFrame(
+        geometry=country_wgs84_buffered.intersection(tile_footprint_wgs84.union_all()),
+        crs=wgs84,
+    )
+    country_wgs84_buffered = country_wgs84_buffered[
+        country_wgs84_buffered.geometry.notna() & ~country_wgs84_buffered.is_empty
+    ]
+    if country_wgs84_buffered.empty:
+        raise LdnError(f"Country geometry does not overlap tile {tile_id}")
+    logger.info("Clipped country geometry to tile footprint")
 
     # 2. Load GeoMAD with DEM and indices
     logger.info("Loading GeoMAD")
@@ -710,6 +731,8 @@ def generate_training_data(
         country_of_interest = {country_name: country_code}
     else:
         raise LdnError("Country name and code must both be provided")
+
+    logger.info(f"Processing tile {tile_id}, year {year}, region {region}")
 
     tile_id_parts = tile_id.split("_")
 

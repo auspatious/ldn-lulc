@@ -98,8 +98,6 @@ PACIFIC_TRAINING_TILES = [
     ("063_020", "pacific", {"Fiji": "FJI"}),  # Elevation.
     ("066_022", "pacific", {"Fiji": "FJI"}),  # AM-crossing.
     ("064_020", "pacific", {"Fiji": "FJI"}),  # Suva urban area.
-    # Timor-Leste for dry savanna/grassland
-    ("334_092", "pacific", {"Timor-Leste": "TLS"}),
     # Palau for raised limestone/rock island jungle
     ("013_050", "pacific", {"Palau": "PLW"}),
     # New Caledonia for maquis shrubland / lagoon

@@ -95,20 +95,7 @@ training-data-generate:
 			--country-name "$$country_name" \
 			--country-code "$$country_code"; \
 	done
-# TODO: Figure out why this one OOM kills.
-# training-data-generate:
-# 	ldn training generate-training-data \
-# 		--tile-id 058_043 \
-# 		--region pacific \
-# 		--country-name Kiribati \
-# 		--country-code KIR
-# TODO: Check this works (AM crossing tile).
-# training-data-generate-am-crossing:
-# 	ldn training generate-training-data \
-# 		--tile-id 066_022 \
-# 		--region pacific \
-# 		--country-name "Fiji" \
-# 		--country-code FJI
+
 
 ###### Classification/Prediction
 
