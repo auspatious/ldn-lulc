@@ -16,9 +16,11 @@ VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSI
 VERSION_MODEL := $(shell python3 -c "from ldn.utils import MODEL_VERSION; print(MODEL_VERSION)")
 
 # TEST_TILES is a list of tuples: (tile_id, region, {country_name: country_code}) e.g. ("089_016", "pacific", {"Cook Islands": "COK"})
-TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
-TEST_TILES_WITH_COUNTRY := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TEST_TILES]))")
+# TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
+# TEST_TILES_WITH_COUNTRY := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TEST_TILES]))")
 # TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] == '312_106']))")
+
+PACIFIC_TRAINING_TILES := := $(shell python3 -c "from ldn.utils import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))")
 
 DECIMATED ?= --no-decimated
 
@@ -89,7 +91,7 @@ index-geomad:
 #### Training Data
 # Format: tile_id:region:country_name:country_code (spaces in names replaced with _)
 # training-data-generate:
-# 	for site in $(TEST_TILES_WITH_COUNTRY); do \
+# 	for site in $(PACIFIC_TRAINING_TILES); do \
 # 		tile_id=$$(echo $$site | cut -d: -f1); \
 # 		region=$$(echo $$site | cut -d: -f2); \
 # 		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
