@@ -94,30 +94,29 @@ spec:
           - name: tile-id
           - name: year
           - name: region
-        # 15 minutes is more than enough time for a process to run. If more is needed then we should scale up resources.
-      activeDeadlineSeconds: 900 # 15 minutes. Max time for a single try. Each retry pod will be killed after this time.
-      # Don't retry.
-      # retryStrategy:
-      #   limit: "3"
-      #   retryPolicy: OnFailure
-      #   # backoff: # Not needed for this process. Retry immediately.
-      #   #   maxDuration: "30m" # Max backoff wait time between retries, not total runtime.
-      #   # # Don't retry OOMKills (137) because we don't scale up resources on retries.
-      #   # When pod fails because <10 scenes are found code is 1. This would prevent retries of other errors too.
-      #   expression: "asInt(lastRetry.exitCode) != 137 && asInt(lastRetry.exitCode) != 1"
+        # 15 minutes is more than enough time for a process to run (in a single try). If more is needed then we scale up resources.
+      activeDeadlineSeconds: 900
+      # Scale resources on retry. Just a single retry.
+      retryStrategy:
+        limit: "2"
+        retryPolicy: OnFailure
+        # When pod fails because < 3 scenes are found code is 1. This would prevent retries of other errors too.
+        expression: "asInt(lastRetry.exitCode) != 1"
+      # Pod memory needed = (n_workers * memory_limit) + scheduler_overhead + main_process_overhead
+      # Pod CPU needed = (n_workers * threads_per_worker) + scheduler_threads
+      podSpecPatch: |
+        containers:
+          - name: main
+            resources:
+              requests:
+                memory: "{{= (asInt(retries) == 0 ? 16 : 32)}}Gi"
+                cpu: "{{= (asInt(retries) == 0 ? 10 : 18)}}"
+              limits:
+                memory: "{{= (asInt(retries) == 0 ? 24 : 48)}}Gi"
+                cpu: "{{= (asInt(retries) == 0 ? 12 : 24)}}"
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
-        resources:
-          # TODO: increase? This task was slow because of large graph taking up too much memory. id:028_030,region:pacific,year:2010
-          requests:
-            # Pod memory needed = (n_workers * memory_limit) + scheduler_overhead + main_process_overhead
-            memory: 24Gi
-            # Pod CPU needed = (n_workers * threads_per_worker) + scheduler_threads
-            cpu: 14
-          limits:
-            memory: 32Gi
-            cpu: 18
         command: [ldn]
         args:
           - geomad
@@ -130,11 +129,11 @@ spec:
           - --version
           - "{{ workflow.parameters.version }}"
           - --memory-limit
-          - "12GB"
+          - "{{= asInt(retries) == 0 ? '6GB' : '12GB'}}"
           - --n-workers
           - "2"
           - --threads-per-worker
-          - "6"
+          - "{{= asInt(retries) == 0 ? '4' : '8'}}"
           - --xy-chunk-size
           - "800"
           - "{{ workflow.parameters.overwrite }}"
