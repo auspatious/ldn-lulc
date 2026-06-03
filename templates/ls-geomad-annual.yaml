@@ -39,7 +39,8 @@ spec:
       # TODO: Remove workaround of 6-year blocks once the JSON issue is resolved.
         # value: "2000-2008"
         # value: "2009-2016"
-        value: "2017-2025"
+        # value: "2017-2025"
+        value: "2000-2025"
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated

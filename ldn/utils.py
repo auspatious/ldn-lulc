@@ -87,7 +87,7 @@ PACIFIC_TRAINING_TILES = [
     ("058_043", "pacific", {"Kiribati": "KIR"}),
     ("059_040", "pacific", {"Kiribati": "KIR"}),
     # Vanuatu: Active volcanic islands with crater lakes, lava fields, and cloud forest.
-    ("051_023`", "pacific", {"Vanuatu": "VUT"}),
+    ("051_023", "pacific", {"Vanuatu": "VUT"}),
     ("053_018", "pacific", {"Vanuatu": "VUT"}),  # Mt Yasur volcano.
     ("052_022", "pacific", {"Vanuatu": "VUT"}),  # Lava lake.
     # Samoa: Elevated volcanic interior with waterfalls and lava tubes, fringed by reef/beach coastline.
