@@ -99,39 +99,30 @@ training-data-generate:
 
 ###### Classification/Prediction
 
-# 1. Training data is created in notebooks/training_data/0_Generate_Training_Points.ipynb.
+# Predict LULC for the test tiles and one year (2025).
 
-# 2. Train a model with the training data made in the notebook above.
-# train-model:
-# 	ldn classify train-model
-
-
-# 3. Predict LULC for the test tiles and one year (2025).
-
-# 3a. print-tasks
-print-tasks-prediction-2025:
+# 1. Print tasks
+print-tasks-prediction-2020:
 	ldn print-tasks \
-	--years="2025" \
+	--years="2020" \
 	--region="pacific" \
 	--dataset="prediction"
 
 
-# 3c.
+# 2. Classify
 # TODO: Run for all years in future
-predict-lulc-test-tiles:
+predict-lulc-test-tiles-2020:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
-		for year in $$(seq 2023 2025); do \
-			ldn classify classify \
-				--tile-id $$tile_id \
-				--year $$year \
-				--version $(VERSION_PREDICTION) \
-				--version-geomad $(VERSION_GEOMAD) \
-				--region $$region \
-				$(DECIMATED) \
-				--overwrite; \
-		done; \
+		ldn classify classify \
+			--tile-id $$tile_id \
+			--year 2020 \
+			--version $(VERSION_PREDICTION) \
+			--version-geomad $(VERSION_GEOMAD) \
+			--region $$region \
+			$(DECIMATED) \
+			--overwrite; \
 	done
 
 # TODO: Get write access for Will to dep-public-staging.
@@ -151,7 +142,7 @@ prediction-2-regions-decimated:
 
 
 
-# 4. Update the STAC-Geoparquet index after all tiles/years have run.
+# 3. Update the STAC-Geoparquet index after all tiles/years have run.
 index-predictions:
 	ldn index-to-stac-geoparquet \
 	--dataset "prediction" \
@@ -160,7 +151,7 @@ index-predictions:
 	--version-prediction $(VERSION_PREDICTION)
 
 
-# Visualisation
+# 4. Visualisation
 make-mosaics-geomad:
 	ldn make-mosaics \
 	--dataset geomad \
@@ -170,65 +161,3 @@ make-mosaics-prediction:
 	ldn make-mosaics \
 	--dataset prediction \
 	--region "all"
-
-
-
-
-
-
-# Non-Pacific workflow testing
-
-# poetry run ldn geomad \
-#         --tile-id 145_127 \
-#         --region non-pacific \
-#         --year 2000 \
-#         --version "0-2-1" \
-#         --decimated \
-#         --overwrite;
-# poetry run ldn geomad \
-#         --tile-id 145_127 \
-#         --region non-pacific \
-#         --year 2010 \
-#         --version "0-2-1" \
-#         --decimated \
-#         --overwrite;
-# poetry run ldn geomad \
-#         --tile-id 145_127 \
-#         --region non-pacific \
-#         --year 2025 \
-#         --version "0-2-1" \
-#         --decimated \
-#         --overwrite;
-
-
-# poetry run ldn index-to-stac-geoparquet \
-# 	--dataset "geomad" \
-# 	--region "non-pacific" \
-# 	--version-geomad "0-2-1" \
-# 	--version-prediction "0-0-4"
-
-# poetry run ldn make-mosaics \
-# 	--dataset "geomad" \
-# 	--region "non-pacific"
-
-
-# poetry run ldn classify classify \
-# 	--tile-id XXX_YYY \
-# 	--year 2000 \
-# 	--version "0-0-4" \
-# 	--version-geomad "0-2-1" \
-# 	--region pacific \
-# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
-#         --no-decimated \
-# 	      --no-overwrite;
-
-
-# poetry run ldn index-to-stac-geoparquet \
-# 	--dataset "prediction" \
-# 	--region "non-pacific" \
-# 	--version-geomad "0-2-1" \
-# 	--version-prediction "0-0-4"
-
-# poetry run ldn make-mosaics \
-# 	--dataset "prediction" \
-# 	--region "non-pacific"
