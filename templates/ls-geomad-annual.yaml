@@ -6,8 +6,10 @@ metadata:
 spec:
   entrypoint: workflow-entrypoint
   serviceAccountName: public-bucket-writer
+  ttlStrategy:
+    secondsAfterCompletion: 300
   podGC:
-    strategy: OnWorkflowSuccess
+    strategy: OnWorkflowCompletion
     deleteDelayDuration: 600s
   parallelism: 50
   podMetadata:
@@ -36,7 +38,7 @@ spec:
         # Just run Pacific in DEP Argo instance.
         value: "pacific" # "all", "pacific", or "non-pacific"
       - name: years
-      # TODO: Remove workaround of 6-year blocks once the JSON issue is resolved.
+      # TODO: Remove workaround of year subset blocks once the JSON issue is resolved.
         # value: "2000-2008"
         # value: "2009-2016"
         # value: "2017-2025"
@@ -75,7 +77,7 @@ spec:
             # Requesting a lot of resources for this simple task
             # This is a scheduling trick, if print-tasks requests small, karpenter would
             # provision a small node first (c6.xlarge/large), then process geomad can't fit
-            #and has to wait for another node to come up. Not critical, just saves a few minutes
+            # and has to wait for another node to come up. Not critical, just saves a few minutes
             # of waiting between tasks.
             memory: 24Gi
             cpu: 14
