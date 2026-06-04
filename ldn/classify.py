@@ -579,8 +579,8 @@ def do_prediction(
     model: RandomForestClassifier,
     probability_threshold: float,
     nodata_value: int,
-) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
-    """Run random forest prediction and extract target class probability.
+) -> tuple[xr.DataArray, dict[str, xr.DataArray]]:
+    """Run random forest prediction and extract per-class probabilities.
 
     Converts the dataset to a flat observation table, runs the model,
     and reshapes results back to 2D.
@@ -588,12 +588,15 @@ def do_prediction(
     Args:
         ds: Feature dataset with y/x spatial dimensions.
         model: Fitted scikit-learn classifier with predict/predict_proba.
-        probability_threshold: Confidence threshold (0-100) for the binary mask.
+        probability_threshold: Confidence threshold (0-100) below which
+            classification is set to nodata.
         nodata_value: Integer nodata value for output bands.
 
     Returns:
-        A (classification, probability, probability_mask) tuple of uint8
-        DataArrays with nodata_value for masked pixels.
+        A (classification, probabilities) tuple where classification is the
+        argmax class where max probability >= threshold (else nodata), and
+        probabilities is a dict mapping "probability_1" through "probability_N"
+        to uint8 DataArrays of per-class probability (0-100).
     """
     stacked = ds.to_array().stack(dims=["y", "x"])
 
@@ -614,8 +617,11 @@ def do_prediction(
     # Flatten the spatial nodata mask to match the observation index.
     valid = ~nodata_mask.values
 
+    n_classes = len(model.classes_)
     full_predictions = pd.Series(nodata_value, index=obs.index, dtype=np.float32)
-    full_probabilities = pd.Series(nodata_value, index=obs.index, dtype=np.float32)
+    full_probabilities = np.full(
+        (len(obs.index), n_classes), nodata_value, dtype=np.float32
+    )
 
     if valid.any():
         valid_df = obs.loc[valid]
@@ -623,24 +629,32 @@ def do_prediction(
         full_predictions.loc[valid] = model.classes_[proba.argmax(axis=1)].astype(
             np.float32
         )
-        full_probabilities.loc[valid] = (proba.max(axis=1) * 100).astype(np.float32)
+        full_probabilities[valid] = (proba * 100).astype(np.float32)
 
     # Reshape back to 2D; nodata_mask stamps nodata_value over masked pixels.
     nodata_mask_2d = nodata_mask.unstack("dims")
-    classification_unfiltered = reshape_array_to_2d(
+    predictions_2d = reshape_array_to_2d(
         full_predictions, ds, nodata_mask_2d, nodata_value=nodata_value
     )
-    probability = reshape_array_to_2d(
-        full_probabilities, ds, nodata_mask_2d, nodata_value=nodata_value
+
+    # Per-class probability bands.
+    probabilities = {}
+    for i in range(n_classes):
+        series = pd.Series(full_probabilities[:, i], index=obs.index)
+        probabilities[f"probability_{i + 1}"] = reshape_array_to_2d(
+            series, ds, nodata_mask_2d, nodata_value=nodata_value
+        )
+
+    # Classification = argmax class only where max probability >= threshold, else nodata.
+    max_prob = np.stack([da.values for da in probabilities.values()], axis=0).max(
+        axis=0
     )
-    probability_mask = probability_binary(
-        probability, probability_threshold, nodata_value=nodata_value
-    )
-    # Keep predictions only where probability_mask == 1 (above threshold).
-    classification = classification_unfiltered.where(
-        probability_mask == 1, nodata_value
+    max_prob_da = xr.DataArray(max_prob, coords={"y": ds.y, "x": ds.x}, dims=["y", "x"])
+    classification = predictions_2d.where(
+        max_prob_da >= probability_threshold, nodata_value
     ).astype("uint8")
-    return classification, classification_unfiltered, probability
+
+    return classification, probabilities
 
 
 class LulcProcessor(Processor):
@@ -701,15 +715,14 @@ class LulcProcessor(Processor):
         merged = merged.compute()
 
         self._logger.info("Running prediction")
-        classification, classification_unfiltered, probability = do_prediction(
+        classification, probabilities = do_prediction(
             merged, self._model, self._probability_threshold, self._nodata_value
         )
 
         output = xr.Dataset(
             {
                 "classification": classification,
-                "classification_unfiltered": classification_unfiltered,
-                "classification_probability": probability,
+                **probabilities,
             }
         )
 
@@ -864,11 +877,9 @@ def run_classify_task(
 
     if not overwrite and object_exists(output_bucket, stac_url, client=s3_client):
         logger.info(
-            f"Item already exists at {itempath.stac_path(tile_id_tuple, absolute=True)}"
+            f"Item already exists at {itempath.stac_path(tile_id_tuple, absolute=True)}, skipping."
         )
-        raise LdnError(
-            f"Item already exists at {itempath.stac_path(tile_id_tuple, absolute=True)}"
-        )
+        return
 
     logger.info(
         "Either item does not exist or overwrite is True, proceeding with processing."

@@ -15,10 +15,7 @@ VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; prin
 VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)")
 VERSION_MODEL := $(shell python3 -c "from ldn.utils import MODEL_VERSION; print(MODEL_VERSION)")
 
-# TEST_TILES is a list of tuples: (tile_id, region, {country_name: country_code}) e.g. ("089_016", "pacific", {"Cook Islands": "COK"})
-TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES]))")
-TEST_TILES_WITH_COUNTRY := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TEST_TILES]))")
-# TEST_TILES := $(shell python3 -c "from ldn.utils import TEST_TILES; print(' '.join([f'{t[0]}:{t[1]}' for t in TEST_TILES if t[0] == '312_106']))")
+PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.utils import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))")
 
 DECIMATED ?= --no-decimated
 
@@ -85,83 +82,47 @@ index-geomad:
 	--version-prediction $(VERSION_PREDICTION)
 
 
-
 #### Training Data
-# Format: tile_id:region:country_name:country_code (spaces in names replaced with _)
-# training-data-generate:
-# 	for site in $(TEST_TILES_WITH_COUNTRY); do \
-# 		tile_id=$$(echo $$site | cut -d: -f1); \
-# 		region=$$(echo $$site | cut -d: -f2); \
-# 		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
-# 		country_code=$$(echo $$site | cut -d: -f4); \
-# 		ldn training generate-training-data \
-# 			--tile-id $$tile_id \
-# 			--region $$region \
-# 			--country-name "$$country_name" \
-# 			--country-code "$$country_code"; \
-# 	done
 training-data-generate:
-	ldn training generate-training-data \
-		--tile-id 028_030 \
-		--region pacific \
-		--country-name "Papua New Guinea" \
-		--country-code PNG
-# TODO: Figure out why this one OOM kills.
-# training-data-generate:
-# 	ldn training generate-training-data \
-# 		--tile-id 058_043 \
-# 		--region pacific \
-# 		--country-name Kiribati \
-# 		--country-code KIR
-# training-data-generate:
-# 	ldn training generate-training-data \
-# 		--tile-id 076_024 \
-# 		--region pacific \
-# 		--country-name "American Samoa" \
-# 		--country-code ASM
-# TODO: Run geomad for 2020 in DEP Bucket for this:
-training-data-generate-am-crossing:
-	ldn training generate-training-data \
-		--tile-id 066_022 \
-		--region pacific \
-		--country-name "Fiji" \
-		--country-code FJI
+	for site in $(PACIFIC_TRAINING_TILES); do \
+		tile_id=$$(echo $$site | cut -d: -f1); \
+		region=$$(echo $$site | cut -d: -f2); \
+		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
+		country_code=$$(echo $$site | cut -d: -f4); \
+		ldn training generate-training-data \
+			--tile-id $$tile_id \
+			--region $$region \
+			--country-name "$$country_name" \
+			--country-code "$$country_code"; \
+	done
+
 
 ###### Classification/Prediction
 
-# 1. Training data is created in notebooks/training_data/0_Generate_Training_Points.ipynb.
+# Predict LULC for the test tiles and one year (2025).
 
-# 2. Train a model with the training data made in the notebook above.
-# train-model:
-# 	ldn classify train-model
-
-
-# 3. Predict LULC for the test tiles and one year (2025).
-
-# 3a. print-tasks
-print-tasks-prediction-2025:
+# 1. Print tasks
+print-tasks-prediction-2020:
 	ldn print-tasks \
-	--years="2025" \
+	--years="2020" \
 	--region="pacific" \
 	--dataset="prediction"
 
 
-# 3c.
+# 2. Classify
 # TODO: Run for all years in future
-predict-lulc-test-tiles:
+predict-lulc-test-tiles-2020:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
-		for year in $$(seq 2023 2025); do \
-			ldn classify classify \
-				--tile-id $$tile_id \
-				--year $$year \
-				--version $(VERSION_PREDICTION) \
-				--version-geomad $(VERSION_GEOMAD) \
-				--region $$region \
-				$(DECIMATED) \
-				--overwrite; \
-		done; \
+		ldn classify classify \
+			--tile-id $$tile_id \
+			--year 2020 \
+			--version $(VERSION_PREDICTION) \
+			--version-geomad $(VERSION_GEOMAD) \
+			--region $$region \
+			$(DECIMATED) \
+			--overwrite; \
 	done
 
 # TODO: Get write access for Will to dep-public-staging.
@@ -181,7 +142,7 @@ prediction-2-regions-decimated:
 
 
 
-# 4. Update the STAC-Geoparquet index after all tiles/years have run.
+# 3. Update the STAC-Geoparquet index after all tiles/years have run.
 index-predictions:
 	ldn index-to-stac-geoparquet \
 	--dataset "prediction" \
@@ -190,7 +151,7 @@ index-predictions:
 	--version-prediction $(VERSION_PREDICTION)
 
 
-# Visualisation
+# 4. Visualisation
 make-mosaics-geomad:
 	ldn make-mosaics \
 	--dataset geomad \
@@ -200,83 +161,3 @@ make-mosaics-prediction:
 	ldn make-mosaics \
 	--dataset prediction \
 	--region "all"
-
-
-
-
-
-
-# Non-Pacific workflow testing
-
-# poetry run ldn geomad \
-#         --tile-id 145_127 \
-#         --region non-pacific \
-#         --year 2000 \
-#         --version "0-2-1" \
-#         --decimated \
-#         --overwrite;
-# poetry run ldn geomad \
-#         --tile-id 145_127 \
-#         --region non-pacific \
-#         --year 2010 \
-#         --version "0-2-1" \
-#         --decimated \
-#         --overwrite;
-# poetry run ldn geomad \
-#         --tile-id 145_127 \
-#         --region non-pacific \
-#         --year 2025 \
-#         --version "0-2-1" \
-#         --decimated \
-#         --overwrite;
-
-
-# poetry run ldn index-to-stac-geoparquet \
-# 	--dataset "geomad" \
-# 	--region "non-pacific" \
-# 	--version-geomad "0-2-1" \
-# 	--version-prediction "0-0-4"
-
-# poetry run ldn make-mosaics \
-# 	--dataset "geomad" \
-# 	--region "non-pacific"
-
-
-# poetry run ldn classify classify \
-# 	--tile-id 145_127 \
-# 	--year 2000 \
-# 	--version "0-0-4" \
-# 	--version-geomad "0-2-1" \
-# 	--region non-pacific \
-# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/lulc_random_forest_model.joblib" \
-#         --decimated \
-# 	--overwrite;
-# poetry run ldn classify classify \
-# 	--tile-id 145_127 \
-# 	--year 2010 \
-# 	--version "0-0-4" \
-# 	--version-geomad "0-2-1" \
-# 	--region non-pacific \
-# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/lulc_random_forest_model.joblib" \
-#         --decimated \
-# 	--overwrite;
-# poetry run ldn classify classify \
-# 	--tile-id 145_127 \
-# 	--year 2025 \
-# 	--version "0-0-4" \
-# 	--version-geomad "0-2-1" \
-# 	--region non-pacific \
-# 	--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/lulc_random_forest_model.joblib" \
-#         --decimated \
-# 	--overwrite;
-
-
-# poetry run ldn index-to-stac-geoparquet \
-# 	--dataset "prediction" \
-# 	--region "non-pacific" \
-# 	--version-geomad "0-2-1" \
-# 	--version-prediction "0-0-4"
-
-# poetry run ldn make-mosaics \
-# 	--dataset "prediction" \
-# 	--region "non-pacific"

@@ -18,6 +18,7 @@ import rioxarray  # noqa: F401
 import typer
 import xarray as xr
 from dep_tools.utils import search_across_180, bbox_across_180
+from dep_tools.aws import object_exists
 from odc.geo.geom import Geometry
 from odc.stac import load
 from planetary_computer import sign_url
@@ -32,6 +33,7 @@ from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from ldn.classify import get_tile_year_geomad_dem_indices, get_buffered_country
+from ldn.grids import get_gridspec
 from ldn.random_sampling import random_sampling
 from ldn.typology import world_cover_map, cci_lc_map, io_map
 from ldn.utils import (
@@ -576,7 +578,7 @@ def _upload_dataframe_csv_to_s3(df, bucket: str, path: str) -> str:
 def make_training_data(
     tile_id: str,
     year: str,
-    region: str,
+    region: Literal["pacific", "non-pacific"],
     training_data_version: str,
     bucket: str,
     country_of_interest: dict[str, str],
@@ -608,10 +610,39 @@ def make_training_data(
     analysis_crs = get_analysis_epsg(region)
 
     # 1. Get buffered country boundary
-    logger.info(f"Processing tile {tile_id}, year {year}, region {region}")
     country_wgs84_buffered = get_buffered_country(
         country_of_interest, wgs84, analysis_crs
     )
+
+    # 1b. Clip country geometry to this tile's footprint before any data loading.
+    # Critical for countries like Kiribati that span huge parts of the Pacific —
+    # passing the full country geometry into get_tile_year_geomad_dem_indices
+    # causes Dask to materialise a massive array, leading to OOM kills.
+    # Skip for AM-crossing tiles: their WGS84 footprint straddles ±180° and
+    # intersects incorrectly with standard WGS84 country geometries.
+    tile_index = tuple(int(i) for i in tile_id.split("_"))
+    grid = get_gridspec(region=region)
+    tile_geobox = grid.tile_geobox(tile_index)
+    tile_footprint_wgs84 = gpd.GeoDataFrame(
+        geometry=[tile_geobox.extent.geom], crs=tile_geobox.crs
+    ).to_crs(wgs84)
+    tile_crosses_am = isinstance(bbox_across_180(tile_footprint_wgs84), tuple)
+
+    if tile_crosses_am:
+        logger.info("AM-crossing tile — skipping country clip to tile footprint")
+    else:
+        country_wgs84_buffered = gpd.GeoDataFrame(
+            geometry=country_wgs84_buffered.intersection(
+                tile_footprint_wgs84.union_all()
+            ),
+            crs=wgs84,
+        )
+        country_wgs84_buffered = country_wgs84_buffered[
+            country_wgs84_buffered.geometry.notna() & ~country_wgs84_buffered.is_empty
+        ]
+        if country_wgs84_buffered.empty:
+            raise LdnError(f"Country geometry does not overlap tile {tile_id}")
+        logger.info("Clipped country geometry to tile footprint")
 
     # 2. Load GeoMAD with DEM and indices
     logger.info("Loading GeoMAD")
@@ -694,6 +725,9 @@ def generate_training_data(
     country_code: str = typer.Option(None, help="Country ISO3 code (e.g. FJI)"),
     n: int = typer.Option(2100, help="Total number of sample points"),
     min_sample_per_class_n: int = typer.Option(300, help="Minimum samples per class"),
+    overwrite: bool = typer.Option(
+        False, help="Whether to overwrite existing data in S3"
+    ),
 ):
     """Generate training data for LULC classification."""
     if not tile_id:
@@ -706,6 +740,26 @@ def generate_training_data(
         country_of_interest = {country_name: country_code}
     else:
         raise LdnError("Country name and code must both be provided")
+
+    logger.info(f"Processing tile {tile_id}, year {year}, region {region}")
+
+    tile_id_parts = tile_id.split("_")
+
+    s3_client = boto3.client("s3")
+
+    prefix = f"training_data/{training_data_version}/{region}/{tile_id_parts[0]}/{tile_id_parts[1]}/{year}/samples.csv"
+    logger.info(f"Checking if object exists at s3://{bucket}/{prefix}")
+
+    if not overwrite:
+        logger.info("Overwrite is False, checking for existing object")
+        exists = object_exists(bucket, prefix, client=s3_client)
+        if exists:
+            logger.info("Item already exists and overwrite is False. Skipping.")
+            return
+        else:
+            logger.info("Item does not exist, proceeding with processing.")
+    else:
+        logger.info("Overwrite is True, proceeding with processing.")
 
     make_training_data(
         tile_id=tile_id,

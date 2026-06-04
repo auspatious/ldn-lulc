@@ -69,7 +69,7 @@ def _classify(
     ),
     model_path: str = typer.Option(
         # TODO: defaults to pacific. Later have per region/time period models.
-        f"https://s3.{AWS_REGION}.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/pacific/lulc_random_forest_model.joblib",
+        f"https://s3.{AWS_REGION}.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/pacific/2020/lulc_random_forest_model_pacific_2020.joblib",
         help="Model to use for prediction.",
     ),
     xy_chunk_size: int = typer.Option(

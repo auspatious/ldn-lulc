@@ -6,8 +6,10 @@ metadata:
 spec:
   entrypoint: workflow-entrypoint
   serviceAccountName: public-bucket-writer
+  ttlStrategy:
+    secondsAfterCompletion: 300
   podGC:
-    strategy: OnWorkflowSuccess
+    strategy: OnWorkflowCompletion
     deleteDelayDuration: 600s
   parallelism: 50
   podMetadata:
@@ -36,13 +38,13 @@ spec:
         # Just run Pacific in DEP Argo instance.
         value: "pacific" # "all", "pacific", or "non-pacific"
       - name: years
-      # TODO: Remove workaround of 6-year blocks once the JSON issue is resolved.
-        # value: "2000-2006"
-        # value: "2007-2013"
-        # value: "2014-2020"
-        value: "2021-2025"
+      # TODO: Remove workaround of year subset blocks once the JSON issue is resolved.
+        # value: "2000-2008"
+        # value: "2009-2016"
+        # value: "2017-2025"
+        value: "2000-2025"
       - name: overwrite
-        value: "--overwrite" # Can be "--overwrite" or "--no-overwrite"
+        value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated
         value: "--no-decimated" # Can be "--decimated" or "--no-decimated"
   templates:
@@ -75,14 +77,14 @@ spec:
             # Requesting a lot of resources for this simple task
             # This is a scheduling trick, if print-tasks requests small, karpenter would
             # provision a small node first (c6.xlarge/large), then process geomad can't fit
-            #and has to wait for another node to come up. Not critical, just saves a few minutes
+            # and has to wait for another node to come up. Not critical, just saves a few minutes
             # of waiting between tasks.
             memory: 24Gi
             cpu: 14
         command: [sh, -c]
         args:
           - |
-            ldn print-tasks --years "{{ workflow.parameters.years }}" --region "{{ workflow.parameters.region }}" --version "{{ workflow.parameters.version }}" --dataset geomad {{ workflow.parameters.overwrite }} > /tmp/tasks.json
+            ldn print-tasks --years "{{ workflow.parameters.years }}" --region "{{ workflow.parameters.region }}" --version-geomad "{{ workflow.parameters.version }}" --dataset geomad {{ workflow.parameters.overwrite }} > /tmp/tasks.json
       outputs:
         parameters:
           - name: tasks
@@ -95,28 +97,29 @@ spec:
           - name: tile-id
           - name: year
           - name: region
-      activeDeadlineSeconds: 900 # 15 minutes. Max time for a single try. Each retry pod will be killed after this time.
+        # 15 minutes is more than enough time for a process to run (in a single try). If more is needed then we scale up resources.
+      activeDeadlineSeconds: 900
+      # Scale resources on retry. Just a single retry.
       retryStrategy:
-        limit: "3"
+        limit: "2"
         retryPolicy: OnFailure
-        # backoff: # Not needed for this process. Retry immediately.
-        #   maxDuration: "30m" # Max backoff wait time between retries, not total runtime.
-        # # Don't retry OOMKills (137) because we don't scale up resources on retries.
-        # When pod fails because <10 scenes are found code is 1. This would prevent retries of other errors too.
-        expression: "asInt(lastRetry.exitCode) != 137 && asInt(lastRetry.exitCode) != 1"
+        # When pod fails because < 3 scenes are found code is 1. This would prevent retries of other errors too.
+        expression: "asInt(lastRetry.exitCode) != 1"
+      # Pod memory needed = (n_workers * memory_limit) + scheduler_overhead + main_process_overhead
+      # Pod CPU needed = (n_workers * threads_per_worker) + scheduler_threads
+      podSpecPatch: |
+        containers:
+          - name: main
+            resources:
+              requests:
+                memory: "{{= (asInt(retries) == 0 ? 16 : 32)}}Gi"
+                cpu: "{{= (asInt(retries) == 0 ? 10 : 18)}}"
+              limits:
+                memory: "{{= (asInt(retries) == 0 ? 24 : 48)}}Gi"
+                cpu: "{{= (asInt(retries) == 0 ? 12 : 24)}}"
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
-        resources:
-          # TODO: increase? This task was slow because of large graph taking up too much memory. id:028_030,region:pacific,year:2010
-          requests:
-            # Pod memory needed = (n_workers * memory_limit) + scheduler_overhead + main_process_overhead
-            memory: 24Gi
-            # Pod CPU needed = (n_workers * threads_per_worker) + scheduler_threads
-            cpu: 14
-          limits:
-            memory: 32Gi
-            cpu: 18
         command: [ldn]
         args:
           - geomad
@@ -129,11 +132,11 @@ spec:
           - --version
           - "{{ workflow.parameters.version }}"
           - --memory-limit
-          - "12GB"
+          - "{{= asInt(retries) == 0 ? '6GB' : '12GB'}}"
           - --n-workers
           - "2"
           - --threads-per-worker
-          - "6"
+          - "{{= asInt(retries) == 0 ? '4' : '8'}}"
           - --xy-chunk-size
           - "800"
           - "{{ workflow.parameters.overwrite }}"
