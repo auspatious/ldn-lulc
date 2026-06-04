@@ -48,7 +48,7 @@ geomad-2-regions-decimated:
 	for site in $(TEST_TILES_2_REGIONS); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
-		ldn geomad \
+		ldn geomad run \
 			--tile-id $$tile_id \
 			--region $$region \
 			--year 2010 \
@@ -64,7 +64,7 @@ geomad-2000-2025:
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
 		for year in $$(seq 2000 2025); do \
-			ldn geomad \
+			ldn geomad run \
 				--tile-id $$tile_id \
 				--region $$region \
 				--year $$year \
@@ -115,7 +115,7 @@ predict-lulc-test-tiles-2020:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
-		ldn classify classify \
+		ldn classify run \
 			--tile-id $$tile_id \
 			--year 2020 \
 			--version $(VERSION_PREDICTION) \
@@ -130,7 +130,7 @@ prediction-2-regions-decimated:
 	for site in $(TEST_TILES_2_REGIONS); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
-		ldn classify classify \
+		ldn classify run \
 			--tile-id $$tile_id \
 			--year 2010 \
 			--version $(VERSION_PREDICTION) \

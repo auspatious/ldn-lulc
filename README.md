@@ -54,7 +54,7 @@ This installs main group. Deps like `cogeo-mosaic` and `boto3` are in both main 
 5. Run the CLI tool:
 ```bash
    poetry run ldn --help
-   poetry run make geomad-singapore
+   poetry run make {command from Makefile}
 ```
 
 
@@ -92,7 +92,6 @@ You can run these:
 - `poetry run ldn grid list-countries` or `make grid-list-countries`
 
 Future commands could look like:
-- Run our random forest model to predict/classify a tile: `ldn process --tile-id xxx`.
 - Get a class: `ldn grid <class_name>` e.g. forest or grassland
 
 
