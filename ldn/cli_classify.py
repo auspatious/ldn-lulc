@@ -24,21 +24,8 @@ classify_app = typer.Typer()
 logger = logging.getLogger(__name__)
 
 
-@classify_app.command("train-model")
-def _train_model() -> None:
-    # year = 2020
-    # Steps:
-    # 1. Gather all training data CSVs. Later do this per region/time range.
-    # 2. Again filter by outliers per class.
-    # 3. Train a random forest model.
-    # 4. Write model to S3.
-
-    # TODO: Adapt from notebooks/training_data/1_Train_Predict.ipynb.
-    raise LdnError("This command is not implemented yet.")
-
-
-@classify_app.command("classify")
-def _classify(
+@classify_app.command()
+def run(
     tile_id: str = typer.Option(..., help="Tile ID to predict LULC for."),
     year: str = typer.Option(..., help="Year to predict LULC for."),
     version: str = typer.Option(

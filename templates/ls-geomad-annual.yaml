@@ -69,6 +69,7 @@ spec:
 
 
     - name: print-tasks
+      activeDeadlineSeconds: 900 # 15 mins
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
@@ -123,6 +124,7 @@ spec:
         command: [ldn]
         args:
           - geomad
+          - run
           - --tile-id
           - "{{ inputs.parameters.tile-id }}"
           - --year

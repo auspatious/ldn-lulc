@@ -32,9 +32,12 @@ spec:
       - name: image-tag
         value: "latest"
       - name: dataset
-        value: "geomad" # "all", "geomad", or "prediction"
+        # "all", "geomad", or "prediction"
+        # value: "geomad"
+        value: "prediction"
       - name: region
-        value: "pacific" # "all", "pacific", or "non-pacific"
+        # "all", "pacific", or "non-pacific"
+        value: "pacific"
 
   templates:
     - name: workflow-entrypoint
@@ -48,6 +51,7 @@ spec:
             template: make-mosaics
 
     - name: index-to-stac-geoparquet
+      activeDeadlineSeconds: 900 # 15 mins
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
@@ -64,6 +68,7 @@ spec:
           - "{{ workflow.parameters.region }}"
 
     - name: make-mosaics
+      activeDeadlineSeconds: 900 # 15 mins
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent

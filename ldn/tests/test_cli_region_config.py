@@ -105,9 +105,9 @@ class TestPrintTasksRegionConfig:
 class TestGeomadRegionConfig:
     """Verify geomad command wires bucket/owner into S3ItemPath."""
 
-    @patch("ldn.cli.object_exists", return_value=True)
-    @patch("ldn.cli.configure_s3_access")
-    @patch("ldn.cli.boto3")
+    @patch("ldn.cli_geomad.object_exists", return_value=True)
+    @patch("ldn.cli_geomad.configure_s3_access")
+    @patch("ldn.cli_geomad.boto3")
     def test_custom_bucket_skips_existing(
         self, mock_boto3, mock_s3_access, mock_exists
     ):
@@ -118,6 +118,7 @@ class TestGeomadRegionConfig:
             app,
             [
                 "geomad",
+                "run",
                 "--tile-id",
                 "066_022",
                 "--year",
@@ -152,7 +153,6 @@ class TestClassifyRegionConfig:
         result = runner.invoke(
             classify_app,
             [
-                "classify",
                 "--tile-id",
                 "066_022",
                 "--year",
@@ -183,7 +183,6 @@ class TestClassifyRegionConfig:
         result = runner.invoke(
             classify_app,
             [
-                "classify",
                 "--tile-id",
                 "119_126",
                 "--year",
