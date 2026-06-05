@@ -100,13 +100,16 @@ spec:
           - name: tile-id
           - name: year
           - name: region
-      activeDeadlineSeconds: 1200 # 20 mins
-      # Scale resources on retry. Just a single retry.
+      activeDeadlineSeconds: 1800 # 30 mins
+      # Scale resources on retry.
       retryStrategy:
-        limit: "2"
-        retryPolicy: OnFailure
-        # Only retry on killer worker or OOM errors
-        expression: "asInt(lastRetry.exitCode) == 42 || asInt(lastRetry.exitCode) == 137 || (asInt(lastRetry.exitCode) == 143)"
+        limit: "1" # Just a single retry.
+        # Only retry on killer worker or OOM errors. Error means exit code is unavailable (kubernetes killed the pod).
+        expression: >-
+          asInt(lastRetry.exitCode) == 42 ||
+          asInt(lastRetry.exitCode) == 137 ||
+          asInt(lastRetry.exitCode) == 143 ||
+          lastRetry.status == "Error"
       # Pod memory needed = (n_workers * memory_limit) + scheduler_overhead + main_process_overhead
       # Pod CPU needed = (n_workers * threads_per_worker) + scheduler_threads
       podSpecPatch: |
@@ -137,12 +140,12 @@ spec:
           - --version
           - "{{ workflow.parameters.version }}"
           - --memory-limit
-          - "{{= asInt(retries) == 0 ? '6GB' : '12GB'}}"
+          - "{{= asInt(retries) == 0 ? '6GB' : '14GB'}}"
           - --n-workers
           - "2"
           - --threads-per-worker
           - "{{= asInt(retries) == 0 ? '4' : '8'}}"
           - --xy-chunk-size
-          - "800"
+          - "{{= asInt(retries) == 0 ? '800' : '1600'}}"
           - "{{ workflow.parameters.overwrite }}"
           - "{{ workflow.parameters.decimated }}"

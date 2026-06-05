@@ -48,6 +48,49 @@ EXIT_OOM = 42  # KilledWorker — retry with more resources
 EXIT_SKIP = 43  # too few scenes / no items — expected, don't retry
 
 
+def count_scenes(
+    tile_id: str = typer.Option(..., help="Tile ID to count scenes for."),
+    region: Literal["pacific", "non-pacific"] = typer.Option(
+        ..., help="Region tile is in."
+    ),
+    year: str = typer.Option(..., help="Year to count scenes for."),
+) -> int:
+    """Count (tier 1) scenes per tile and year. Precursor product to geomad creation."""
+
+    # Set up variables and check
+    tile_index = tuple(map(int, tile_id.split("_")))
+
+    grid = get_gridspec(region=region)
+    geobox = grid.tile_geobox(tile_index)
+
+    # Searcher finds STAC Items
+    searcher = PystacSearcher(
+        catalog=USGS_CATALOG,
+        collections=[USGS_COLLECTION],
+        datetime=year,
+        query={"landsat:collection_category": {"in": ["T1"]}},
+    )
+
+    items = searcher.search(geobox)
+    logger.info(f"Found {len(items)} tier 1 LS items for this tile/year")
+
+    # Loader loads the data from STAC Items.
+    loader = OdcLoader(
+        bands=["red"],  # Just need one band to count scenes.
+        chunks={"x": 256, "y": 256, "time": 1},
+        groupby="solar_day",
+        fail_on_error=False,  # We don't control the Landsat data so it may have issues, but we still want to load what we can.
+    )
+
+    items_grouped = loader.load(items, geobox)
+    count = len(items_grouped.time.values)
+    logger.info(
+        f"Loaded {count} tier 1 LS items for this tile/year (grouped by solar_day)"
+    )
+
+    return count
+
+
 @geomad_app.command()
 def run(
     tile_id: Annotated[str, typer.Option()],
@@ -106,25 +149,41 @@ def run(
         f"chunk={xy_chunk_size} geomad_threads={geomad_threads}",
     )
 
+    scene_count = count_scenes(tile_id=tile_id, year=year, region=region)
+    logger.info(f"Scene count (tier 1) for tile/year: {scene_count}")
+
     year_int = int(year)
     search_year = year
-    # If we're in the LS7 era, use a buffered window of data
-    if year_int <= 2012:
-        year_start = year_int - ls7_buffer_years
-        year_end = year_int + ls7_buffer_years
-        search_year = f"{year_start}/{year_end}"
-        typer.echo(
-            f"Using {ls7_buffer_years}-year buffered window for LS7 era: {search_year}"
+    search_kwargs = {"query": {"landsat:collection_category": {"in": ["T1"]}}}
+
+    min_scenes_threshold = (
+        20  # 20 should be enough. Otherwise add tier 2 and buffered window for LS7 era.
+    )
+    if scene_count <= min_scenes_threshold:
+        logger.info(
+            f"Scene count ({scene_count}) is less than {min_scenes_threshold}, using buffered search parameters to try to get more scenes."
         )
 
-    # For now, if we're in the Pacific, use both T1 and T2 data
-    # This may be necessary in other places too
-    search_kwargs = {"query": {"landsat:collection_category": {"in": ["T1"]}}}
-    if region == "pacific":
+        # If we're in the LS7 era, use a buffered window of data
         if year_int <= 2012:
-            # Searching for nothing gives us everything
-            typer.echo("Using both T1 and T2 data for Pacific for LS7 era")
-            search_kwargs = {}
+            year_start = year_int - ls7_buffer_years
+            year_end = year_int + ls7_buffer_years
+            search_year = f"{year_start}/{year_end}"
+            typer.echo(
+                f"Using {ls7_buffer_years}-year buffered window for LS7 era: {search_year}"
+            )
+
+        # For now, if we're in the Pacific, use both T1 and T2 data
+        # This may be necessary in other places too
+        if region == "pacific":
+            if year_int <= 2012:
+                # Searching for nothing gives us everything
+                typer.echo("Using both T1 and T2 data for Pacific for LS7 era")
+                search_kwargs = {}
+    else:
+        logger.info(
+            f"Scene count ({scene_count}) is greater than {min_scenes_threshold}, using default search parameters."
+        )
 
     # Set up variables and check
     tile_index = tuple(map(int, tile_id.split("_")))
