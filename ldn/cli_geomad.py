@@ -54,8 +54,12 @@ def count_scenes(
         ..., help="Region tile is in."
     ),
     year: str = typer.Option(..., help="Year to count scenes for."),
+    include_t2: bool = typer.Option(
+        False,
+        help="If True, include tier 2 scenes in the count. If False, only count tier 1 scenes. Defaults to False.",
+    ),
 ) -> int:
-    """Count (tier 1) scenes per tile and year. Precursor product to geomad creation."""
+    """Count (tier 1 or all) scenes per tile and year. Precursor product to geomad creation."""
 
     # Set up variables and check
     tile_index = tuple(map(int, tile_id.split("_")))
@@ -63,16 +67,20 @@ def count_scenes(
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_index)
 
+    query = {} if include_t2 else {"landsat:collection_category": {"in": ["T1"]}}
+
     # Searcher finds STAC Items
     searcher = PystacSearcher(
         catalog=USGS_CATALOG,
         collections=[USGS_COLLECTION],
         datetime=year,
-        query={"landsat:collection_category": {"in": ["T1"]}},
+        query=query,
     )
 
+    log_t2 = "(T1 and T2)" if include_t2 else "(T1 not including T2)"
+
     items = searcher.search(geobox)
-    logger.info(f"Found {len(items)} tier 1 LS items for this tile/year")
+    logger.info(f"Found {len(items)} {log_t2} LS items for this tile/year")
 
     # Loader loads the data from STAC Items.
     loader = OdcLoader(
@@ -85,7 +93,7 @@ def count_scenes(
     items_grouped = loader.load(items, geobox)
     count = len(items_grouped.time.values)
     logger.info(
-        f"Loaded {count} tier 1 LS items for this tile/year (grouped by solar_day)"
+        f"Loaded {count} {log_t2} LS items for this tile/year (grouped by solar_day)"
     )
 
     return count
@@ -149,41 +157,52 @@ def run(
         f"chunk={xy_chunk_size} geomad_threads={geomad_threads}",
     )
 
-    scene_count = count_scenes(tile_id=tile_id, year=year, region=region)
-    logger.info(f"Scene count (tier 1) for tile/year: {scene_count}")
-
     year_int = int(year)
     search_year = year
     search_kwargs = {"query": {"landsat:collection_category": {"in": ["T1"]}}}
 
-    min_scenes_threshold = (
-        20  # 20 should be enough. Otherwise add tier 2 and buffered window for LS7 era.
+    min_scenes_threshold = 20
+
+    scene_count_without_t2 = count_scenes(
+        tile_id=tile_id, year=year, region=region, include_t2=False
     )
-    if scene_count <= min_scenes_threshold:
+    logger.info(f"Scene count (tier 1) for tile/year: {scene_count_without_t2}")
+
+    if scene_count_without_t2 >= min_scenes_threshold:
         logger.info(
-            f"Scene count ({scene_count}) is less than {min_scenes_threshold}, using buffered search parameters to try to get more scenes."
+            f"Scene count ({scene_count_without_t2}) is sufficient with T1 only."
         )
+        # search_kwargs already set to T1 only, search_year already set to year
 
-        # If we're in the LS7 era, use a buffered window of data
-        if year_int <= 2012:
-            year_start = year_int - ls7_buffer_years
-            year_end = year_int + ls7_buffer_years
-            search_year = f"{year_start}/{year_end}"
-            typer.echo(
-                f"Using {ls7_buffer_years}-year buffered window for LS7 era: {search_year}"
-            )
-
-        # For now, if we're in the Pacific, use both T1 and T2 data
-        # This may be necessary in other places too
-        if region == "pacific":
-            if year_int <= 2012:
-                # Searching for nothing gives us everything
-                typer.echo("Using both T1 and T2 data for Pacific for LS7 era")
-                search_kwargs = {}
     else:
         logger.info(
-            f"Scene count ({scene_count}) is greater than {min_scenes_threshold}, using default search parameters."
+            f"Scene count ({scene_count_without_t2}) is below {min_scenes_threshold}, trying with T2 too."
         )
+        scene_count_with_t2 = count_scenes(
+            tile_id=tile_id, year=year, region=region, include_t2=True
+        )
+
+        if scene_count_with_t2 >= min_scenes_threshold:
+            logger.info(
+                f"Scene count with T2 ({scene_count_with_t2}) is sufficient, using T1 and T2."
+            )
+            search_kwargs = {}  # Include T2
+
+        else:
+            logger.info(
+                f"Scene count with T2 ({scene_count_with_t2}) is still below {min_scenes_threshold}. Adding LS7 buffered temporal search as well as T1 and T2 data."
+            )
+            search_kwargs = {}  # Include T2
+
+            if year_int <= 2012:
+                year_start = year_int - ls7_buffer_years
+                year_end = year_int + ls7_buffer_years
+                search_year = f"{year_start}/{year_end}"
+                typer.echo(
+                    f"Using {ls7_buffer_years}-year buffered temporal search for LS7 era: {search_year}"
+                )
+            else:
+                logger.info("Not in LS7 era so not using buffered temporal search.")
 
     # Set up variables and check
     tile_index = tuple(map(int, tile_id.split("_")))
