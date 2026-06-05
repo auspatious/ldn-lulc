@@ -784,7 +784,6 @@ def run_classify_task(
     region: Literal["pacific", "non-pacific"],
     output_bucket: str,
     output_prefix: str,
-    geomad_prefix: str,
     model_path: str,
     xy_chunk_size: int,
     asset_url_prefix: str | None,
@@ -792,6 +791,9 @@ def run_classify_task(
     overwrite: Annotated[bool, typer.Option()],
     probability_threshold: float,
     nodata_value: int,
+    memory_limit: str,
+    n_workers: int,
+    threads_per_worker: int,
 ) -> None:
     """Run LULC prediction for a single tile and year, writing results to S3.
 
@@ -806,7 +808,6 @@ def run_classify_task(
         region: Grid region, either "pacific" or "non-pacific".
         output_bucket: S3 bucket for output COGs, STAC metadata, and GeoMAD source data.
         output_prefix: Output prefix for paths (e.g. "dep" or "ci").
-        geomad_prefix: Dataset prefix for the GeoMAD geoparquet (e.g. "dep_ls_geomad").
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
         asset_url_prefix: Optional URL prefix for STAC asset hrefs.
@@ -814,6 +815,9 @@ def run_classify_task(
         overwrite: If True, overwrite existing output.
         probability_threshold: Confidence threshold (0-100) for the binary mask.
         nodata_value: Integer nodata value for output bands.
+        memory_limit: Per-worker Dask memory limit.
+        n_workers: Number of Dask workers.
+        threads_per_worker: Number of threads per Dask worker.
     """
     logger.info(
         f"Starting processing. Tile ID: {tile_id}, Year: {datetime}, "
@@ -885,6 +889,11 @@ def run_classify_task(
         "Either item does not exist or overwrite is True, proceeding with processing."
     )
 
+    logger.info(
+        f"Dask config: n_workers={n_workers}, threads_per_worker={threads_per_worker}, "
+        f"memory_limit={memory_limit}, xy_chunk_size={xy_chunk_size}"
+    )
+
     searcher = StacGeoparquetSearcher(
         stac_geoparquet_url=geomad_stac_geoparquet_url,
         datetime=datetime,
@@ -908,9 +917,14 @@ def run_classify_task(
 
     stac_creator = StacCreator(itempath=itempath, with_raster=True)
 
-    dask_client = DaskClient(n_workers=4, threads_per_worker=16, memory_limit="12GB")
+    dask_client = DaskClient(
+        n_workers=n_workers,
+        threads_per_worker=threads_per_worker,
+        memory_limit=memory_limit,
+    )
+    logger.info("Started dask client")
+
     try:
-        logger.info("Started dask client")
         paths = Task(
             itempath=itempath,
             id=tile_id_tuple,

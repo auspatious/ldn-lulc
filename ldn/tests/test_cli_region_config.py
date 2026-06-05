@@ -173,7 +173,6 @@ class TestClassifyRegionConfig:
         kwargs = mock_run.call_args[1]
         assert kwargs["output_bucket"] == "custom-bucket"
         assert kwargs["output_prefix"] == "customorg"
-        assert kwargs["geomad_prefix"] == "customorg_ls_geomad"
 
     @patch("ldn.cli_classify.run_classify_task")
     def test_product_owner_overrides_in_classify(self, mock_run):
@@ -199,7 +198,6 @@ class TestClassifyRegionConfig:
         assert result.exit_code == 0, result.output
         kwargs = mock_run.call_args[1]
         assert kwargs["output_prefix"] == "override"
-        assert kwargs["geomad_prefix"] == "override_ls_geomad"
 
 
 class TestIndexToStacGeoparquetRegionConfig:
