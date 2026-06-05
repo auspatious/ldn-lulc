@@ -1,6 +1,8 @@
 import logging
+import sys
 
 import boto3
+from dask.distributed import KilledWorker
 from dep_tools.namers import S3ItemPath
 from dep_tools.aws import object_exists
 from dep_tools.searchers import PystacSearcher
@@ -22,6 +24,7 @@ from ldn.geomad import (
     USGS_CATALOG,
     USGS_COLLECTION,
     LANDSAT_BANDS,
+    InsufficientScenesError,
 )
 import typer
 
@@ -30,7 +33,6 @@ from ldn.utils import (
     AWS_REGION,
     GEOMAD_DATASET_ID,
     SENSOR,
-    LdnError,
     PACIFIC_BUCKET,
     NON_PACIFIC_BUCKET,
     PACIFIC_OWNER,
@@ -41,6 +43,9 @@ from ldn.utils import (
 
 geomad_app = typer.Typer()
 logger = logging.getLogger(__name__)
+
+EXIT_OOM = 42  # KilledWorker — retry with more resources
+EXIT_SKIP = 43  # too few scenes / no items — expected, don't retry
 
 
 @geomad_app.command()
@@ -247,12 +252,22 @@ def run(
                 stac_creator=stac_creator,
             ).run()
             typer.echo(f"Wrote {len(paths)} files...")
+
     except EmptyCollectionError:
         typer.echo("No items found for this tile")
-        raise LdnError("No items found for this tile")
+        sys.exit(EXIT_SKIP)
+
+    except InsufficientScenesError as e:
+        typer.echo(f"Failed to process with error: {e}")
+        sys.exit(EXIT_SKIP)
+
+    except KilledWorker as e:
+        typer.echo(f"Failed to process with error: {e}")
+        sys.exit(EXIT_OOM)
+
     except Exception as e:
         typer.echo(f"Failed to process with error: {e}")
-        raise LdnError("Failed to process tile") from e
+        raise  # let it exit 1 naturally with full traceback
 
     typer.echo(f"Finished writing to {stac_document}")
 

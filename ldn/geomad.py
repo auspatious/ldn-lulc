@@ -340,6 +340,10 @@ def mask_nodata_clouds_saturated(
     return ds
 
 
+class InsufficientScenesError(LdnError):
+    """Raised when there are too few timesteps to process."""
+
+
 class GeoMADProcessor(Processor):
     def __init__(
         self,
@@ -369,7 +373,7 @@ class GeoMADProcessor(Processor):
 
     def process(self, ds: Dataset) -> Dataset:
         if ds.time.size < self.min_timesteps:
-            raise LdnError(
+            raise InsufficientScenesError(
                 f"{ds.time.size} is less than {self.min_timesteps} timesteps"
             )
 

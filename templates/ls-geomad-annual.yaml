@@ -6,12 +6,15 @@ metadata:
 spec:
   entrypoint: workflow-entrypoint
   serviceAccountName: public-bucket-writer
-  ttlStrategy:
-    secondsAfterCompletion: 300
+  # TODO: Reenable
+  # ttlStrategy:
+  #   secondsAfterCompletion: 300
   podGC:
     strategy: OnWorkflowCompletion
     deleteDelayDuration: 600s
-  parallelism: 50
+  # TODO: Reenable
+  # parallelism: 50
+  parallelism: 5
   podMetadata:
     labels:
       app: ls-geomad
@@ -80,8 +83,8 @@ spec:
             # provision a small node first (c6.xlarge/large), then process geomad can't fit
             # and has to wait for another node to come up. Not critical, just saves a few minutes
             # of waiting between tasks.
-            memory: 24Gi
-            cpu: 14
+            memory: 16Gi
+            cpu: 10
         command: [sh, -c]
         args:
           - |
@@ -104,8 +107,8 @@ spec:
       retryStrategy:
         limit: "2"
         retryPolicy: OnFailure
-        # When pod fails because < 3 scenes are found code is 1. This would prevent retries of other errors too.
-        expression: "asInt(lastRetry.exitCode) != 1"
+        # Only retry on killer worker or OOM errors
+        expression: "asInt(lastRetry.exitCode) == 42 || (asInt(lastRetry.exitCode) == 143)"
       # Pod memory needed = (n_workers * memory_limit) + scheduler_overhead + main_process_overhead
       # Pod CPU needed = (n_workers * threads_per_worker) + scheduler_threads
       podSpecPatch: |
