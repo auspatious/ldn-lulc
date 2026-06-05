@@ -784,7 +784,6 @@ def run_classify_task(
     region: Literal["pacific", "non-pacific"],
     output_bucket: str,
     output_prefix: str,
-    geomad_prefix: str,
     model_path: str,
     xy_chunk_size: int,
     asset_url_prefix: str | None,
@@ -806,7 +805,6 @@ def run_classify_task(
         region: Grid region, either "pacific" or "non-pacific".
         output_bucket: S3 bucket for output COGs, STAC metadata, and GeoMAD source data.
         output_prefix: Output prefix for paths (e.g. "dep" or "ci").
-        geomad_prefix: Dataset prefix for the GeoMAD geoparquet (e.g. "dep_ls_geomad").
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
         asset_url_prefix: Optional URL prefix for STAC asset hrefs.

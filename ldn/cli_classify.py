@@ -6,7 +6,6 @@ import typer
 from ldn.classify import run_classify_task
 from ldn.utils import (
     AWS_REGION,
-    GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     MODEL_VERSION,
     LdnError,
@@ -16,7 +15,6 @@ from ldn.utils import (
     PACIFIC_OWNER,
     PREDICTION_VERSION,
     bucket_for_region,
-    dataset_prefix,
     owner_for_region,
 )
 
@@ -85,9 +83,9 @@ def run(
 
     # Resolve bucket and prefix based on region
     output_bucket = bucket_for_region(region, bucket_pacific, bucket_non_pacific)
-    owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
-    output_prefix = owner
-    geomad_prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
+    output_prefix = owner_for_region(
+        region, owner_pacific, owner_non_pacific, product_owner
+    )
 
     run_classify_task(
         tile_id,
@@ -97,7 +95,6 @@ def run(
         region=region,
         output_bucket=output_bucket,
         output_prefix=output_prefix,
-        geomad_prefix=geomad_prefix,
         model_path=model_path,
         xy_chunk_size=xy_chunk_size,
         asset_url_prefix=asset_url_prefix,
