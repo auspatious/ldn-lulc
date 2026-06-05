@@ -428,8 +428,6 @@ def _build_mosaic_for_year(year: str, features: list[dict]) -> MosaicJSON:
         if not dt_str:
             return False
         feat_year = int(dt_str[:4])
-        if int_year <= 2012:
-            return abs(feat_year - int_year) <= 1
         return feat_year == int_year
 
     year_features = [f for f in features if _matches_year(f)]
