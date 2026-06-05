@@ -1,5 +1,5 @@
 import logging
-from typing import Literal
+from typing import Annotated, Literal
 
 import typer
 
@@ -57,10 +57,6 @@ def run(
         f"https://s3.{AWS_REGION}.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/pacific/2020/lulc_random_forest_model_pacific_2020.joblib",
         help="Model to use for prediction.",
     ),
-    xy_chunk_size: int = typer.Option(
-        1024,
-        help="Chunk size in pixels for x and y dimensions when predicting. Larger chunk sizes may be faster but use more memory.",
-    ),
     asset_url_prefix: str | None = typer.Option(None, help="Prefix for asset URLs."),
     decimated: bool = typer.Option(
         False,
@@ -77,6 +73,19 @@ def run(
         255,
         help="Value to use for NoData pixels in the output. Must be an integer between 0 and 255.",
     ),
+    memory_limit: Annotated[
+        str, typer.Option(help="Per-worker Dask memory limit.")
+    ] = "10GB",
+    n_workers: Annotated[int, typer.Option(help="Number of Dask workers.")] = 2,
+    threads_per_worker: Annotated[
+        int, typer.Option(help="Threads per Dask worker.")
+    ] = 4,
+    xy_chunk_size: Annotated[
+        int,
+        typer.Option(
+            help="Chunk size in pixels for x and y dimensions when predicting. Larger chunk sizes may be faster but use more memory."
+        ),
+    ] = 1024,
 ) -> None:
     if int(year) < 2000 or int(year) > 2025:
         raise LdnError("Year must be between 2000 and 2025.")
@@ -102,4 +111,7 @@ def run(
         overwrite=overwrite,
         probability_threshold=probability_threshold,
         nodata_value=nodata_value,
+        memory_limit=memory_limit,
+        n_workers=n_workers,
+        threads_per_worker=threads_per_worker,
     )

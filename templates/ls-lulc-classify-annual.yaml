@@ -138,3 +138,11 @@ spec:
           # - "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/0-0-4/pacific/2020/lulc_random_forest_model_pacific_2020.joblib"
           - "{{ workflow.parameters.decimated }}"
           - "{{ workflow.parameters.overwrite }}"
+          - --memory-limit
+          - "10GB"
+          - --n-workers
+          - "2"
+          - --threads-per-worker
+          - "4"
+          - --xy-chunk-size
+          - "1024"
