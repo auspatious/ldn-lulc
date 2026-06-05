@@ -73,8 +73,8 @@ spec:
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         # TODO: Reenable IfNotPresent once image is stable
-        # imagePullPolicy: Always
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
+        # imagePullPolicy: IfNotPresent
         resources:
           requests:
             # Requesting a lot of resources for this simple task
@@ -125,8 +125,8 @@ spec:
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         # TODO: Reenable IfNotPresent once image is stable
-        # imagePullPolicy: Always
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
+        # imagePullPolicy: IfNotPresent
         command: [ldn]
         args:
           - geomad

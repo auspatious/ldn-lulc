@@ -72,6 +72,7 @@ def count_scenes(
         collections=[USGS_COLLECTION],
         datetime=year,
         query=query,
+        raise_empty_collection_error=False,  # Don't raise an error if no scenes found, just return count of 0
     )
 
     items = searcher.search(geobox)
