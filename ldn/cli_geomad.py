@@ -56,20 +56,17 @@ def count_scenes(
     year: str = typer.Option(..., help="Year to count scenes for."),
     include_t2: bool = typer.Option(
         False,
-        help="If True, include tier 2 scenes in the count. If False, only count tier 1 scenes. Defaults to False.",
+        help="If True, include tier 2 scenes in the count. Defaults to False (just tier 1).",
     ),
 ) -> int:
-    """Count (tier 1 or all) scenes per tile and year. Precursor product to geomad creation."""
+    """Count (tier 1 or all) scenes per tile and year."""
 
-    # Set up variables and check
     tile_index = tuple(map(int, tile_id.split("_")))
-
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_index)
 
     query = {} if include_t2 else {"landsat:collection_category": {"in": ["T1"]}}
 
-    # Searcher finds STAC Items
     searcher = PystacSearcher(
         catalog=USGS_CATALOG,
         collections=[USGS_COLLECTION],
@@ -77,23 +74,14 @@ def count_scenes(
         query=query,
     )
 
-    log_t2 = "(T1 and T2)" if include_t2 else "(T1 not including T2)"
-
     items = searcher.search(geobox)
-    logger.info(f"Found {len(items)} {log_t2} LS items for this tile/year")
 
-    # Loader loads the data from STAC Items.
-    loader = OdcLoader(
-        bands=["red"],  # Just need one band to count scenes.
-        chunks={"x": 256, "y": 256, "time": 1},
-        groupby="solar_day",
-        fail_on_error=False,  # We don't control the Landsat data so it may have issues, but we still want to load what we can.
-    )
+    dates = {item.datetime.date() for item in items}
+    count = len(dates)
 
-    items_grouped = loader.load(items, geobox)
-    count = len(items_grouped.time.values)
+    log_t2 = "(T1 and T2)" if include_t2 else "(T1 only)"
     logger.info(
-        f"Loaded {count} {log_t2} LS items for this tile/year (grouped by solar_day)"
+        f"Found {count} {log_t2} scenes for this tile/year (grouped by solar_day)"
     )
 
     return count
