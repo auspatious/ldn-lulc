@@ -14,7 +14,7 @@ from odc.geo import GeoBox
 import numpy as np
 from odc.algo import mask_cleanup
 from xarray import Dataset, DataArray
-from ldn.utils import LdnError
+from ldn.utils import LS7_YEAR_THRESHOLD, LdnError
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +50,11 @@ def http_to_s3_url(http_url):
 
 
 def set_stac_properties(input_xr: Dataset, output_xr: Dataset) -> Dataset:
-    """Set STAC temporal properties on the output dataset.
+    f"""Set STAC temporal properties on the output dataset.
 
     The datetime fields represent the nominal target year (the year the
     GeoMAD product represents), not the full observation window. For LS7-era
-    products (<=2012) that use a multi-year buffer, the actual observation window is
+    products (<={LS7_YEAR_THRESHOLD}) that use a multi-year buffer, the actual observation window is
     stored in custom properties for provenance.
     """
     start_year = np.datetime64(input_xr.time.min().values, "Y")

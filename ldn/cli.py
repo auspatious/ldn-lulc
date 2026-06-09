@@ -15,6 +15,8 @@ from pystac import ItemCollection
 from rustac import search_sync
 from shapely.geometry import mapping, shape
 
+import asyncio
+
 from ldn.grids import get_grid_tiles
 import typer
 
@@ -292,33 +294,39 @@ def _find_stac_items_s3(
     return matches
 
 
-# TODO: Add chunking/streaming to prevent loading too much data into memory at once.
-def _load_stac_docs(
+async def _load_stac_docs_async(
     bucket: str,
     keys: list[str],
+    concurrency: int = 64,
 ) -> list[dict]:
-    """Load STAC item JSON documents from S3 into memory.
+    """Load STAC item JSON documents from S3 concurrently.
 
     Args:
         bucket: S3 bucket name.
         keys: S3 object keys to load.
+        concurrency: Max simultaneous S3 requests.
 
     Returns:
-        List of parsed STAC item dictionaries.
+        List of parsed STAC item dictionaries, in the same order as keys.
     """
     store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION)
-    docs: list[dict] = []
+    semaphore = asyncio.Semaphore(concurrency)
 
-    for key in keys:
-        raw = obstore.get(store, key)
-        payload = raw.bytes()
-        if hasattr(payload, "to_bytes"):
-            payload = payload.to_bytes()
-        elif not isinstance(payload, (bytes, bytearray)):
-            payload = bytes(payload)
-        docs.append(json.loads(payload.decode("utf-8")))
+    async def fetch(key: str) -> dict:
+        async with semaphore:
+            raw = await obstore.get_async(store, key)
+            payload = raw.bytes()
+            if hasattr(payload, "to_bytes"):
+                payload = payload.to_bytes()
+            elif not isinstance(payload, (bytes, bytearray)):
+                payload = bytes(payload)
+            return json.loads(payload.decode("utf-8"))
 
-    return docs
+    return await asyncio.gather(*[fetch(key) for key in keys])
+
+
+def _load_stac_docs(bucket: str, keys: list[str]) -> list[dict]:
+    return asyncio.run(_load_stac_docs_async(bucket, keys))
 
 
 @app.command()
@@ -388,7 +396,7 @@ def _run_index(bucket: str, prefix: str, version: str) -> None:
         )
         return
 
-    logger.info("Loading STAC item documents into memory")
+    logger.info("Loading STAC items into memory")
     docs = _load_stac_docs(bucket, keys)
     logger.info(f"Loaded {len(docs)} STAC documents")
 
@@ -428,8 +436,6 @@ def _build_mosaic_for_year(year: str, features: list[dict]) -> MosaicJSON:
         if not dt_str:
             return False
         feat_year = int(dt_str[:4])
-        if int_year <= 2012:
-            return abs(feat_year - int_year) <= 1
         return feat_year == int_year
 
     year_features = [f for f in features if _matches_year(f)]

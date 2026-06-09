@@ -154,6 +154,7 @@ GEOMAD_DATASET_ID = "geomad"
 PREDICTION_DATASET_ID = "lulc_prediction"
 AWS_REGION = "us-west-2"
 
+LS7_YEAR_THRESHOLD = 2012
 training_data_year = "2020"
 
 class_attr = "lulc"
