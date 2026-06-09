@@ -64,7 +64,7 @@ def get_write_client(session: boto3.Session) -> BaseClient:
 
 def _session_credentials(session: boto3.Session) -> dict:
     """Extract resolved credentials from a boto3 session as a plain dict."""
-    creds = session.get_credentials().resolve()
+    creds = session.get_credentials().get_frozen_credentials()
     return {
         "access_key_id": creds.access_key,
         "secret_access_key": creds.secret_key,
