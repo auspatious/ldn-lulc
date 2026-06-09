@@ -39,6 +39,7 @@ from ldn.utils import (
     NON_PACIFIC_OWNER,
     bucket_for_region,
     owner_for_region,
+    LS7_YEAR_THRESHOLD,
 )
 
 geomad_app = typer.Typer()
@@ -81,9 +82,7 @@ def count_scenes(
     count = len(dates)
 
     log_t2 = "(T1 and T2)" if include_t2 else "(T1 only)"
-    logger.info(
-        f"Found {count} {log_t2} scenes for this tile/year (grouped by solar_day)"
-    )
+    logger.info(f"Found {count} {log_t2} scenes for this tile/year (grouped by day)")
 
     return count
 
@@ -120,7 +119,7 @@ def run(
     ls7_buffer_years: Annotated[
         int,
         typer.Option(
-            help="Half-width of the temporal buffer for LS7 era (<=2012). E.g. 1 searches year-1 to year+1."
+            help=f"Half-width of the temporal buffer for LS7 era (<={LS7_YEAR_THRESHOLD}). E.g. 1 searches year-1 to year+1."
         ),
     ] = 1,
     all_bands: Annotated[bool, typer.Option()] = True,
@@ -130,13 +129,13 @@ def run(
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
 ) -> None:
-    """Run GeoMAD processing on a single tile for a year.
+    f"""Run GeoMAD processing on a single tile for a year.
 
     Searches USGS STAC for Landsat scenes covering the given tile and year,
     applies cloud masking, computes the geometric median and median absolute
     deviations (GeoMAD), and writes COG outputs to S3.
 
-    For years in the Landsat 7 era (<=2012), a buffered temporal window
+    For years in the Landsat 7 era (<={LS7_YEAR_THRESHOLD}), a buffered temporal window
     controlled by --ls7-buffer-years is used to gather enough clear
     observations. Pacific tiles may additionally include Tier 2 data.
     """
@@ -183,7 +182,7 @@ def run(
             )
             search_kwargs = {}  # Include T2
 
-            if year_int <= 2012:
+            if year_int <= LS7_YEAR_THRESHOLD:
                 year_start = year_int - ls7_buffer_years
                 year_end = year_int + ls7_buffer_years
                 search_year = f"{year_start}/{year_end}"

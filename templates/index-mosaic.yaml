@@ -33,8 +33,8 @@ spec:
         value: "latest"
       - name: dataset
         # "all", "geomad", or "prediction"
-        # value: "geomad"
-        value: "prediction"
+        value: "geomad"
+        # value: "prediction"
       - name: region
         # "all", "pacific", or "non-pacific"
         value: "pacific"
