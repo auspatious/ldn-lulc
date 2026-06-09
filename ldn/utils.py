@@ -104,49 +104,26 @@ PACIFIC_TRAINING_TILES = [
     ("050_015", "pacific", {"New Caledonia": "NCL"}),
 ]
 
-# TEST_TILES = [
-#     ("058_043", "pacific", {"Kiribati": "KIR"}),
-#     ("063_020", "pacific", {"Fiji": "FJI"}),
-#     ("066_022", "pacific", {"Fiji": "FJI"}),
-#     ("119_126", "non-pacific", {"Belize": "BLZ"}),
-#     ("152_110", "non-pacific", {"Suriname": "SUR"}),
-#     ("185_125", "non-pacific", {"Cabo Verde": "CPV"}),  # Cape?
-#     ("251_088", "non-pacific", {"Comoros": "COM"}),
-#     ("312_105", "non-pacific", {"Singapore": "SGP"}),
-#     ("312_106", "non-pacific", {"Singapore": "SGP"}),
-#     ("089_016", "pacific", {"Cook Islands": "COK"}),
-# ]
-
-# TEST_TILES_PACIFIC = [
-#     # Already ran a tile for these (in TEST_TILES):
-#     # Cook Islands
-#     # Fiji
-#     # Kiribati
-#     # New ones to run:
-#     # Selecting the main island of each country.
-#     ("051_052", "pacific", {"Marshall Islands": "MHL"}),  # Kwajalein Atoll
-#     ("040_049", "pacific", {"Micronesia": "FSM"}),  # Pohnpei
-#     ("050_041", "pacific", {"Nauru": "NRU"}),
-#     ("077_019", "pacific", {"Niue": "NIU"}),
-#     ("013_050", "pacific", {"Palau": "PLW"}),
-#     ("028_030", "pacific", {"Papua New Guinea": "PNG"}),
-#     ("075_025", "pacific", {"Samoa": "WSM"}),
-#     ("042_030", "pacific", {"Solomon Islands": "SLB"}),
-#     ("071_016", "pacific", {"Tonga": "TON"}),
-#     ("065_031", "pacific", {"Tuvalu": "TUV"}),
-#     ("052_021", "pacific", {"Vanuatu": "VUT"}),
-# ]
 
 GEOMAD_VERSION = "0-2-1"
 PREDICTION_VERSION = "0-0-4"
 MODEL_VERSION = "0-0-4"
 TRAINING_DATA_VERSION = "0-0-4"
 
-# Mosaic source configuration per region
-PACIFIC_BUCKET = "dep-public-staging"
-PACIFIC_OWNER = "dep"
+# TODO: Do we even need separate buckets for pacific vs non-pacific?
 
-NON_PACIFIC_BUCKET = "data.ldn.auspatious.com"
+# aws s3 cp test.txt s3://us-west-2.opendata.source.coop/auspatious/geomad-sids/test.txt
+# aws s3 rm s3://us-west-2.opendata.source.coop/auspatious/geomad-sids/test.txt
+GEOMAD_PREFIX = "auspatious/geomad-sids"  # For source.coop.
+
+# Mosaic source configuration per region
+# PACIFIC_BUCKET = "dep-public-staging"
+PACIFIC_BUCKET = "us-west-2.opendata.source.coop"  # TODO: Just call this bucket. Remove non-pacific bucket.
+PACIFIC_OWNER = "dep"
+GEOMAD_PUBLIC_URL = "https://data.source.coop"  # public read URL for STAC hrefs
+# GEOMAD_PUBLIC_URL = None # For non-Source.Coop buckets.
+# NON_PACIFIC_BUCKET = "data.ldn.auspatious.com" # TODO: Remove.
+NON_PACIFIC_BUCKET = "us-west-2.opendata.source.coop"  # TODO: Remove.
 NON_PACIFIC_OWNER = "ci"
 
 SENSOR = "ls"

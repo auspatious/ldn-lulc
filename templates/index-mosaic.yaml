@@ -54,7 +54,8 @@ spec:
       activeDeadlineSeconds: 900 # 15 mins
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
+        # imagePullPolicy: IfNotPresent
         resources:
           requests:
             memory: 2Gi
@@ -71,7 +72,8 @@ spec:
       activeDeadlineSeconds: 900 # 15 mins
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
+        # imagePullPolicy: IfNotPresent
         resources:
           requests:
             memory: 2Gi

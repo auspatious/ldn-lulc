@@ -26,6 +26,7 @@ from ldn.cli_classify import classify_app
 from ldn.cli_geomad import geomad_app
 from ldn.utils import (
     AWS_REGION,
+    GEOMAD_PREFIX,
     GEOMAD_VERSION,
     GEOMAD_DATASET_ID,
     PREDICTION_DATASET_ID,
@@ -41,6 +42,11 @@ from ldn.utils import (
     dataset_prefix,
 )
 from ldn.training_data import cli_training_app
+from ldn.aws_credentials import (
+    get_write_session,
+    write_credentials_as_env,
+    make_obstore_s3,
+)
 
 app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -126,6 +132,8 @@ def _find_existing_tasks(
     for combo_bucket, combo_owner in region_combos:
         full_prefix = dataset_prefix(combo_owner, dataset_id)
         s3_prefix = f"{full_prefix}/{version}/"
+        if GEOMAD_PREFIX:
+            s3_prefix = f"{GEOMAD_PREFIX}/{s3_prefix}"
         paginator = client.get_paginator("list_objects_v2")
         key_set: set[str] = set()
         for page in paginator.paginate(Bucket=combo_bucket, Prefix=s3_prefix):
@@ -148,6 +156,9 @@ def _find_existing_tasks(
         bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
         full_path_prefix = _full_path_prefix_for_bucket(bucket)
+
+        if GEOMAD_PREFIX:
+            full_path_prefix = f"{full_path_prefix}/{GEOMAD_PREFIX}"
 
         itempath = S3ItemPath(
             prefix=owner,
@@ -264,6 +275,7 @@ def print_tasks(
     return
 
 
+# TODO: Does this overlap with find_existing_tasks?
 def _find_stac_items_s3(
     bucket: str,
     prefix: str,
@@ -384,6 +396,8 @@ def index_to_stac_geoparquet(
 def _run_index(bucket: str, prefix: str, version: str) -> None:
     """Run the STAC-Geoparquet indexing for a single bucket/prefix."""
     full_prefix = f"{prefix}/{version}"
+    if GEOMAD_PREFIX:  # Source.Coop prefix.
+        full_prefix = f"{GEOMAD_PREFIX}/{full_prefix}"
     parquet_key = f"{full_prefix}/{prefix}.parquet"
 
     logger.info(f"Listing STAC items under s3://{bucket}/{full_prefix}")
@@ -401,7 +415,9 @@ def _run_index(bucket: str, prefix: str, version: str) -> None:
     logger.info(f"Loaded {len(docs)} STAC documents")
 
     logger.info(f"Writing STAC-Geoparquet to s3://{bucket}/{parquet_key}")
-    store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION)
+
+    write_session = get_write_session()
+    store = make_obstore_s3(bucket, write_session)
     write_sync(parquet_key, docs, store=store)
 
     logger.info(f"Wrote index with {len(docs)} items to s3://{bucket}/{parquet_key}")
@@ -567,6 +583,7 @@ def make_mosaics(
     mosaic_targets: list[tuple[str, str, str, str]] = []
     for r in regions:
         bucket = bucket_for_region(r, bucket_pacific, bucket_non_pacific)
+        # TODO: add prefix_for_region.
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
         # Always use S3 path-style URL to bypass CDN caching
         base_url = f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
@@ -580,6 +597,8 @@ def make_mosaics(
             output_path = f"s3://{bucket}/{prefix}/{ver}/mosaics/"
             parquet_url = f"{base_url}/{prefix}/{ver}/{prefix}.parquet"
             mosaic_targets.append((f"{d} ({r})", d, parquet_url, output_path))
+
+    write_session = get_write_session()
 
     for display_name, dataset_name, stac_geoparquet_url, output_path in mosaic_targets:
         logger.info(f"Loading index for '{display_name}' from {stac_geoparquet_url}")
@@ -614,8 +633,9 @@ def make_mosaics(
             logger.info(f"  {_year} built successfully.")
             out_path = f"{output_path}{dataset_name}_{_year}_mosaic.json"
 
-            with MosaicBackend(out_path, mosaic_def=mosaic) as m:
-                m.write(overwrite=True)
+            with write_credentials_as_env(write_session):
+                with MosaicBackend(out_path, mosaic_def=mosaic) as m:
+                    m.write(overwrite=True)
 
             logger.info(f"  {_year} written to {out_path}")
 

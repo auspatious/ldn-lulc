@@ -20,7 +20,6 @@ from dep_tools.searchers import Searcher
 from dep_tools.stac_utils import StacCreator
 from dep_tools.task import AwsStacTask as Task
 from geopandas import GeoDataFrame
-from odc.geo.geom import Geometry
 from joblib import load as joblib_load
 from sklearn.ensemble import RandomForestClassifier
 from odc.geo.geobox import GeoBox
@@ -38,7 +37,7 @@ from shapely.geometry import box
 from odc.geo.geom import box as odc_box
 
 
-from ldn.grids import get_gadm, get_gridspec
+from ldn.grids import get_gridspec
 from ldn.utils import (
     GEOMAD_VERSION,
     PREDICTION_DATASET_ID,
@@ -47,6 +46,7 @@ from ldn.utils import (
     get_analysis_epsg,
     get_geomad_stac_geoparquet_url,
     get_geomad_item_id,
+    wgs84,
 )
 
 logger = logging.getLogger(__name__)
@@ -136,8 +136,6 @@ GEOMAD_BANDS = [
 DEM_CATALOG = "https://planetarycomputer.microsoft.com/api/stac/v1/"
 DEM_COLLECTION = "cop-dem-glo-30"
 
-wgs84 = "EPSG:4326"
-
 
 class StacGeoparquetSearcher(Searcher):
     """Search STAC items in a STAC-Geoparquet file using rustac.
@@ -179,6 +177,8 @@ class StacGeoparquetSearcher(Searcher):
 
         if len(items) == 0:
             raise LdnError("No GeoMAD items found")
+
+        # TODO: Should len(items) == 1??
 
         logger.info(f"Found {len(items)} GeoMAD items")
         return ItemCollection(items)
@@ -868,6 +868,7 @@ def run_classify_task(
             f"https://s3.{aws_region_name}.amazonaws.com/{output_bucket}/"
         )
 
+    # TODO: Use PrefixedS3Path for Source.Coop (like geomad).
     itempath = S3ItemPath(
         prefix=output_prefix,
         bucket=output_bucket,
@@ -948,99 +949,3 @@ def run_classify_task(
         f"Completed processing. Wrote {len(paths)} items to"
         f" {itempath.stac_path(tile_id_tuple, absolute=True)}"
     )
-
-
-# get_tile_year_geomad_dem_indices and get_buffered_country are used by the notebooks.
-# get_tile_year_geomad_dem_indices uses a lot of the code in search_and_load_geomad_indices_dem, but the training data notebook needs the extra country clipping so they are separate functions.
-def get_tile_year_geomad_dem_indices(
-    tile_id: str,
-    year: str,
-    region: Literal["pacific", "non-pacific"],
-    country_wgs84_buffered: GeoDataFrame,
-    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
-    product_owner: str | None,
-    version_geomad: str | None = None,
-) -> xr.Dataset:
-    """Load GeoMAD + DEM features for a tile, clipped to buffered country.
-
-    Delegates to search_and_load_geomad_indices_dem for the shared search/load/scale/
-    indices/DEM logic, then clips to the intersection of the tile extent
-    and the buffered country geometry.
-
-    Args:
-        tile_id: Grid tile identifier (e.g. "058_043").
-        year: Temporal filter used for GeoMAD item search (e.g. "2020").
-        region: Grid region, either "pacific" or "non-pacific".
-        country_wgs84_buffered: Buffered country geometry in WGS84.
-        analysis_crs: Projected CRS string (e.g. "EPSG:3832").
-        product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
-        version_geomad: Optional GeoMAD version override.
-
-    Returns:
-        Dataset with GeoMAD bands, spectral indices, elevation, slope,
-        and aspect, clipped to the tile-country intersection.
-    """
-    merged = search_and_load_geomad_indices_dem(
-        tile_id=tile_id,
-        year=year,
-        region=region,
-        analysis_crs=analysis_crs,
-        geopolygon=country_wgs84_buffered,
-        product_owner=product_owner,
-        version_geomad=version_geomad,
-    )
-
-    # Clip to intersection of tile extent and buffered country
-    country_prj = country_wgs84_buffered.to_crs(merged.odc.geobox.crs)
-    tile_extent = merged.odc.geobox.extent
-    country_union = country_prj.union_all()
-    intersection = tile_extent.geom.intersection(country_union)
-    clip_geom = Geometry(
-        intersection,
-        crs=merged.odc.geobox.crs,
-    )
-    merged = merged.odc.crop(clip_geom, apply_mask=True, all_touched=True)
-
-    logger.info(f"Merged GeoMAD/DEM shape (after country clip): {merged.dims}")
-    return merged
-
-
-# Dep tools utils have mask_to_gadm() which would be helpful, but I want to buffer gadm before masking.
-def get_buffered_country(
-    country_of_interest: dict[str, str],
-    wgs84: str,
-    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
-) -> GeoDataFrame:
-    """Fetch and buffer a country geometry for analysis (antimeridian-fixed).
-
-    Retrieves country geometry from GADM, applies country-specific clipping for
-    known edge cases (for example antimeridian handling for Fiji), buffers in
-    the analysis CRS, and returns the result in WGS84.
-
-    Args:
-        country_of_interest: Mapping of country name to country code (single-item
-            dictionary expected).
-        wgs84: CRS string for output coordinates (EPSG:4326).
-        analysis_crs: Projected CRS string used for buffering in meters.
-
-    Returns:
-        A GeoDataFrame containing buffered country geometry in `wgs84`.
-    """
-    buffer_m = 100
-
-    country_gadm = get_gadm(countries=country_of_interest)
-
-    country_gadm = GeoDataFrame(
-        geometry=country_gadm.to_crs(analysis_crs).buffer(buffer_m).to_crs(wgs84),
-        crs=wgs84,
-    )
-    # Do antimeridian fix. Needed for Fiji.
-    rows = []
-    for geom in country_gadm.geometry:
-        fixed = _fix_geometry(geom)
-        if fixed.geom_type == "MultiPolygon":
-            rows.extend(fixed.geoms)  # one row per polygon (east/west of AM)
-        else:
-            rows.append(fixed)
-
-    return GeoDataFrame(geometry=rows, crs=wgs84)

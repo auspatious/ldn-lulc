@@ -4,7 +4,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
-from ldn.utils import LdnError
+from ldn.utils import LdnError, wgs84
 
 logger = logging.getLogger(__name__)
 
@@ -262,7 +262,7 @@ def random_sampling(
     gdf = gdf.drop(["latitude", "longitude"], axis=1)
 
     if crs is not None and gdf.crs is not None and gdf.crs.to_epsg() != 4326:
-        gdf = gdf.to_crs("EPSG:4326")
+        gdf = gdf.to_crs(wgs84)
 
     if out_fname is not None:
         gdf.to_file(out_fname)

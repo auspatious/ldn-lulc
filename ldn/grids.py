@@ -18,7 +18,7 @@ from dep_tools.grids import (
     grid as dep_grid,
     COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES,
 )
-from ldn.utils import NON_DEP_COUNTRIES
+from ldn.utils import NON_DEP_COUNTRIES, wgs84
 
 EPSG_CODE = 6933  # NSIDC EASE-Grid 2.0 Global
 logger = logging.getLogger(__name__)
@@ -184,13 +184,13 @@ def get_grid_tiles(
                     list(tile[0]) + [f"{tile[0][0]}_{tile[0][1]}"] for tile in tiles
                 ]
                 geobox_extents = [
-                    fix_polygon(gb.extent.to_crs("epsg:4326")) for gb in geoboxes
+                    fix_polygon(gb.extent.to_crs(wgs84)) for gb in geoboxes
                 ]  # Fix antimeridian crossing geoms.
                 labels_df = pd.DataFrame(
                     geobox_labels, columns=["x_index", "y_index", "label"]
                 )
                 extents_gdf = gpd.GeoDataFrame(
-                    labels_df, geometry=geobox_extents, crs="epsg:4326"
+                    labels_df, geometry=geobox_extents, crs=wgs84
                 )
                 extents_gdf["region"] = region
                 all_polys.append(extents_gdf)
@@ -241,7 +241,7 @@ def get_grid_tiles(
     if all_tiles_df.empty:
         raise LdnError("No tiles found for the requested grids and countries.")
 
-    all_tiles_gdf = gpd.GeoDataFrame(all_tiles_df, geometry="geometry", crs="epsg:4326")
+    all_tiles_gdf = gpd.GeoDataFrame(all_tiles_df, geometry="geometry", crs=wgs84)
 
     if grids == "all" and (overwrite or not geojson_path_all.exists()):
         logger.info(

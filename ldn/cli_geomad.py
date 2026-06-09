@@ -9,6 +9,7 @@ from dep_tools.searchers import PystacSearcher
 from dep_tools.loaders import OdcLoader
 from typing_extensions import Annotated
 from dep_tools.stac_utils import StacCreator
+from dep_tools.writers import AwsStacWriter
 from ldn.geomad import AwsStacTask as Task
 from dep_tools.writers import AwsDsCogWriter
 from odc.stac import configure_s3_access
@@ -16,6 +17,7 @@ from typing import Literal
 
 from dep_tools.exceptions import EmptyCollectionError
 from dask.distributed import Client as DaskClient
+from dep_tools.utils import join_path_or_url
 
 from ldn.geomad import (
     GeoMADProcessor,
@@ -32,6 +34,8 @@ from ldn.grids import get_gridspec
 from ldn.utils import (
     AWS_REGION,
     GEOMAD_DATASET_ID,
+    GEOMAD_PREFIX,
+    GEOMAD_PUBLIC_URL,
     SENSOR,
     PACIFIC_BUCKET,
     NON_PACIFIC_BUCKET,
@@ -41,6 +45,8 @@ from ldn.utils import (
     owner_for_region,
     LS7_YEAR_THRESHOLD,
 )
+
+from ldn.aws_credentials import get_write_client, make_write_function, get_write_session
 
 geomad_app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -85,6 +91,26 @@ def count_scenes(
     logger.info(f"Found {count} {log_t2} scenes for this tile/year (grouped by day)")
 
     return count
+
+
+# This is needed to support Source.Coop prefix.
+# TODO: Move this somewhere it can be used in classify too.
+class PrefixedS3ItemPath(S3ItemPath):
+    def __init__(self, key_prefix: str | None = None, **kwargs):
+        super().__init__(**kwargs)
+        self.key_prefix = key_prefix.strip("/") if key_prefix else None
+
+    def path(self, item_id, asset_name=None, ext=".tif", absolute=False) -> str:
+        relative_path = super().path(
+            item_id, asset_name=asset_name, ext=ext, absolute=False
+        )
+        if self.key_prefix:
+            relative_path = f"{self.key_prefix}/{relative_path}"
+        return (
+            join_path_or_url(self.full_path_prefix, relative_path)
+            if absolute and self.full_path_prefix is not None
+            else relative_path
+        )
 
 
 @geomad_app.command()
@@ -205,7 +231,10 @@ def run(
     # TODO: Handle different bucket formats more robustly. For now we support:
     # "data.ldn.auspatious.com" to "https://data.ldn.auspatious.com"
     # "dep-public-staging" to "https://dep-public-staging.s3.us-west-2.amazonaws.com"
-    if bucket.startswith("https://"):
+    # "https://data.source.coop" to "https://data.source.coop"
+    if GEOMAD_PUBLIC_URL:
+        full_path_prefix = GEOMAD_PUBLIC_URL
+    elif bucket.startswith("https://"):
         full_path_prefix = bucket
     elif "." in bucket:
         full_path_prefix = f"https://{bucket}"
@@ -215,27 +244,37 @@ def run(
     if decimated:
         typer.echo("Warning, using decimated (low resolution) for testing purposes.")
         geobox = geobox.zoom_out(10)
+        # geobox = geobox.zoom_out(100) # For faster testing.
 
     # Configure for dask and reading data
     _ = configure_s3_access(requester_pays=True)
     # Configure for checking item existence
-    client = boto3.client("s3")
+    client = boto3.client("s3")  # Only needed for non-Source.Coop.
 
     # Check if we've done this tile before
-    itempath = S3ItemPath(
+    itempath = PrefixedS3ItemPath(
+        key_prefix=GEOMAD_PREFIX,
         prefix=owner,
-        bucket=bucket,
+        bucket=bucket,  # S3 bucket for writes
         sensor=SENSOR,
         dataset_id=GEOMAD_DATASET_ID,
         version=version,
         time=year,
-        full_path_prefix=full_path_prefix,
+        full_path_prefix=full_path_prefix,  # public URL for STAC hrefs + rasterio reads
     )
     stac_document = itempath.stac_path(tile_index, absolute=True)
     stac_key = itempath.stac_path(tile_index, absolute=False)
 
+    write_session = get_write_session()
+    write_client = get_write_client(write_session)
+
+    # TODO: Now this only works for Source.Coop write credentials.
+    # check_client = write_client if writing_to_source_coop else client
+    check_client = write_client if GEOMAD_PREFIX else client
+
     # If we don't want to overwrite, and the destination file already exists, skip it
-    if not overwrite and object_exists(bucket, stac_key, client=client):
+    # Use the write client to check if the item already exists at the destination, since it may have different credentials.
+    if not overwrite and object_exists(bucket, stac_key, client=check_client):
         typer.echo(f"Item already exists at {stac_document}, skipping.")
         return
     else:
@@ -272,8 +311,16 @@ def run(
         **load_kwargs,
     )
 
-    # AWS Writer, to write results
-    writer = AwsDsCogWriter(itempath, write_multithreaded=True)
+    writer = AwsDsCogWriter(
+        itempath,
+        write_multithreaded=True,
+        write_function=make_write_function(write_session),
+    )
+
+    stac_writer = AwsStacWriter(
+        itempath,
+        client=write_client,
+    )
 
     # Metadata creator
     stac_creator = StacCreator(
@@ -316,6 +363,7 @@ def run(
                 processor=processor,
                 writer=writer,
                 stac_creator=stac_creator,
+                stac_writer=stac_writer,
             ).run()
             typer.echo(f"Wrote {len(paths)} files...")
 

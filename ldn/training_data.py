@@ -32,8 +32,8 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
-from ldn.classify import get_tile_year_geomad_dem_indices, get_buffered_country
-from ldn.grids import get_gridspec
+from ldn.classify import search_and_load_geomad_indices_dem
+from ldn.grids import get_gadm, get_gridspec
 from ldn.random_sampling import random_sampling
 from ldn.typology import world_cover_map, cci_lc_map, io_map
 from ldn.utils import (
@@ -45,6 +45,8 @@ from ldn.utils import (
     wgs84,
 )
 from notebooks.src.Compare_LULC_func import standardise_class
+
+from dep_tools.utils import _fix_geometry
 
 logger = logging.getLogger(__name__)
 
@@ -575,6 +577,99 @@ def _upload_dataframe_csv_to_s3(df, bucket: str, path: str) -> str:
     return f"s3://{bucket}/{key}"
 
 
+# Dep tools utils have mask_to_gadm() which would be helpful, but I want to buffer gadm before masking.
+def get_buffered_country(
+    country_of_interest: dict[str, str],
+    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
+) -> gpd.GeoDataFrame:
+    """Fetch and buffer a country geometry for analysis (antimeridian-fixed).
+
+    Retrieves country geometry from GADM, applies country-specific clipping for
+    known edge cases (for example antimeridian handling for Fiji), buffers in
+    the analysis CRS, and returns the result in WGS84.
+
+    Args:
+        country_of_interest: Mapping of country name to country code (single-item
+            dictionary expected).
+        analysis_crs: Projected CRS string used for buffering in meters.
+
+    Returns:
+        A GeoDataFrame containing buffered country geometry in `wgs84`.
+    """
+    buffer_m = 100
+
+    country_gadm = get_gadm(countries=country_of_interest)
+
+    country_gadm = gpd.GeoDataFrame(
+        geometry=country_gadm.to_crs(analysis_crs).buffer(buffer_m).to_crs(wgs84),
+        crs=wgs84,
+    )
+    # Do antimeridian fix. Needed for Fiji.
+    rows = []
+    for geom in country_gadm.geometry:
+        fixed = _fix_geometry(geom)
+        if fixed.geom_type == "MultiPolygon":
+            rows.extend(fixed.geoms)  # one row per polygon (east/west of AM)
+        else:
+            rows.append(fixed)
+
+    return gpd.GeoDataFrame(geometry=rows, crs=wgs84)
+
+
+# get_tile_year_geomad_dem_indices uses a lot of the code in search_and_load_geomad_indices_dem, but the training data notebook needs the extra country clipping so they are separate functions.
+def get_tile_year_geomad_dem_indices(
+    tile_id: str,
+    year: str,
+    region: Literal["pacific", "non-pacific"],
+    country_wgs84_buffered: gpd.GeoDataFrame,
+    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
+    product_owner: str | None,
+    version_geomad: str | None = None,
+) -> xr.Dataset:
+    """Load GeoMAD + DEM features for a tile, clipped to buffered country.
+
+    Delegates to search_and_load_geomad_indices_dem for the shared search/load/scale/
+    indices/DEM logic, then clips to the intersection of the tile extent
+    and the buffered country geometry.
+
+    Args:
+        tile_id: Grid tile identifier (e.g. "058_043").
+        year: Temporal filter used for GeoMAD item search (e.g. "2020").
+        region: Grid region, either "pacific" or "non-pacific".
+        country_wgs84_buffered: Buffered country geometry in WGS84.
+        analysis_crs: Projected CRS string (e.g. "EPSG:3832").
+        product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
+        version_geomad: Optional GeoMAD version override.
+
+    Returns:
+        Dataset with GeoMAD bands, spectral indices, elevation, slope,
+        and aspect, clipped to the tile-country intersection.
+    """
+    merged = search_and_load_geomad_indices_dem(
+        tile_id=tile_id,
+        year=year,
+        region=region,
+        analysis_crs=analysis_crs,
+        geopolygon=country_wgs84_buffered,
+        product_owner=product_owner,
+        version_geomad=version_geomad,
+    )
+
+    # Clip to intersection of tile extent and buffered country
+    country_prj = country_wgs84_buffered.to_crs(merged.odc.geobox.crs)
+    tile_extent = merged.odc.geobox.extent
+    country_union = country_prj.union_all()
+    intersection = tile_extent.geom.intersection(country_union)
+    clip_geom = Geometry(
+        intersection,
+        crs=merged.odc.geobox.crs,
+    )
+    merged = merged.odc.crop(clip_geom, apply_mask=True, all_touched=True)
+
+    logger.info(f"Merged GeoMAD/DEM shape (after country clip): {merged.dims}")
+    return merged
+
+
 def make_training_data(
     tile_id: str,
     year: str,
@@ -610,9 +705,7 @@ def make_training_data(
     analysis_crs = get_analysis_epsg(region)
 
     # 1. Get buffered country boundary
-    country_wgs84_buffered = get_buffered_country(
-        country_of_interest, wgs84, analysis_crs
-    )
+    country_wgs84_buffered = get_buffered_country(country_of_interest, analysis_crs)
 
     # 1b. Clip country geometry to this tile's footprint before any data loading.
     # Critical for countries like Kiribati that span huge parts of the Pacific —

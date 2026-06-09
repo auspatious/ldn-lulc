@@ -161,3 +161,7 @@ make-mosaics-prediction:
 	ldn make-mosaics \
 	--dataset prediction \
 	--region "all"
+
+# TODO: Write both regions geomad to the same bucket.
+
+# TODO: update index and mosaic commands to be able to write to Source.Coop.

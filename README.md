@@ -166,3 +166,17 @@ poetry run uvicorn visualisation.app:app --host 0.0.0.0 --port 8081 --reload
 ### Current deployment
 
 https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
+
+
+## Source.Coop
+
+Data product: https://source.coop/auspatious/geomad-sids
+
+Info here: https://github.com/auspatious/ldn-lulc/Source.Coop_README.md
+
+Writing to this requires these env vars set:
+```bash
+export AWS_WRITE_ACCESS_KEY_ID="..."
+export AWS_WRITE_SECRET_ACCESS_KEY="..."
+export AWS_WRITE_SESSION_TOKEN="..."
+```

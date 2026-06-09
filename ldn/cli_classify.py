@@ -92,6 +92,7 @@ def run(
 
     # Resolve bucket and prefix based on region
     output_bucket = bucket_for_region(region, bucket_pacific, bucket_non_pacific)
+    # TODO: Add GEOMAD_PREFIX here for source.coop?
     output_prefix = owner_for_region(
         region, owner_pacific, owner_non_pacific, product_owner
     )
