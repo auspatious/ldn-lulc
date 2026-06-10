@@ -118,7 +118,7 @@ def run(
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
-    bucket: Annotated[str, typer.Option(help="S3 bucket for Pacific data.")] = BUCKET,
+    bucket: Annotated[str, typer.Option(help="S3 bucket for data.")] = BUCKET,
     owner_pacific: Annotated[
         str,
         typer.Option(help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."),

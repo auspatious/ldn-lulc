@@ -154,13 +154,11 @@ index-predictions:
 # 4. Visualisation
 make-mosaics-geomad:
 	ldn make-mosaics \
-	--dataset geomad \
-	--region "all";
+	--dataset geomad;
 
 make-mosaics-prediction:
 	ldn make-mosaics \
-	--dataset prediction \
-	--region "all";
+	--dataset prediction;
 
 # TODO: Write both regions geomad to the same bucket.
 
@@ -178,18 +176,23 @@ geomad-source-coop-test:
     	--region pacific \
     	--year 2025 \
     	--version $(SOURCE_TEST_VERSION) \
-		--no-decimated;
+		--decimated;
+geomad-source-coop-test-np:
+	poetry run ldn geomad run \
+		--tile-id 334_092 \
+    	--region non-pacific \
+    	--year 2025 \
+    	--version $(SOURCE_TEST_VERSION) \
+		--decimated;
 
 index-geomad-source-coop-test:
 	ldn index-to-stac-geoparquet \
 	--dataset "geomad" \
-	--region "pacific" \
 	--version-geomad $(SOURCE_TEST_VERSION);
 
 mosaic-geomad-source-coop-test:
 	ldn make-mosaics \
 	--dataset geomad \
-	--region "pacific" \
 	--version-geomad $(SOURCE_TEST_VERSION);
 
 classify-source-coop-test:
@@ -206,14 +209,12 @@ classify-source-coop-test:
 index-prediction-source-coop-test:
 	ldn index-to-stac-geoparquet \
 	--dataset "prediction" \
-	--region "pacific" \
 	--version-geomad $(SOURCE_TEST_VERSION) \
 	--version-prediction $(SOURCE_TEST_VERSION_P);
 
 mosaic-prediction-source-coop-test:
 	ldn make-mosaics \
 	--dataset prediction \
-	--region "pacific" \
 	--version-geomad $(SOURCE_TEST_VERSION) \
 	--version-prediction $(SOURCE_TEST_VERSION_P);
 

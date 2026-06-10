@@ -195,7 +195,7 @@ def print_tasks(
     version_prediction: Annotated[
         str, typer.Option(help="Version string for prediction dataset.")
     ] = PREDICTION_VERSION,
-    bucket: Annotated[str, typer.Option(help="S3 bucket for Pacific data.")] = BUCKET,
+    bucket: Annotated[str, typer.Option(help="S3 bucket for data.")] = BUCKET,
     owner_pacific: Annotated[
         str,
         typer.Option(help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."),
@@ -345,11 +345,11 @@ def _load_stac_docs(bucket: str, keys: list[str]) -> list[dict]:
 
 @app.command()
 def index_to_stac_geoparquet(
-    dataset: Literal["all", "geomad", "prediction"] = typer.Option(
-        ..., help="Dataset type to index: 'all', 'geomad', or 'prediction'."
+    dataset: Literal["geomad", "prediction"] = typer.Option(
+        ..., help="Dataset type to index: 'geomad', or 'prediction'."
     ),
     region: Literal["all", "pacific", "non-pacific"] = typer.Option(
-        ..., help="Region to index: 'all', 'pacific', or 'non-pacific'."
+        "all", help="Region to index: 'all', 'pacific', or 'non-pacific'."
     ),
     version_geomad: str = typer.Option(
         GEOMAD_VERSION, help="Version string for GeoMAD dataset."
@@ -357,7 +357,7 @@ def index_to_stac_geoparquet(
     version_prediction: str = typer.Option(
         PREDICTION_VERSION, help="Version string for prediction dataset."
     ),
-    bucket: str = typer.Option(BUCKET, help="S3 bucket for Pacific data."),
+    bucket: str = typer.Option(BUCKET, help="S3 bucket data."),
     owner_pacific: str = typer.Option(
         PACIFIC_OWNER, help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."
     ),
@@ -369,62 +369,75 @@ def index_to_stac_geoparquet(
         None, help="Override the region-derived owner prefix."
     ),
 ) -> None:
-    """Build STAC-Geoparquet indexes from STAC items for given dataset(s) and region(s)."""
-    targets: list[tuple[str, str, str]] = []
+    """Build STAC-Geoparquet indexes from STAC items for given dataset and region(s)."""
+    regions: list[Literal["pacific", "non-pacific"]] = (
+        ["pacific", "non-pacific"] if region == "all" else [region]
+    )
 
-    regions: list[Literal["pacific", "non-pacific"]]
-    if region == "all":
-        regions = ["pacific", "non-pacific"]
-    else:
-        regions = [region]
-    datasets = ["geomad", "prediction"] if dataset == "all" else [dataset]
+    dataset_id = GEOMAD_DATASET_ID if dataset == "geomad" else PREDICTION_DATASET_ID
+    source_coop_prefix = (
+        SOURCE_COOP_PREFIX_GEOMAD
+        if dataset == "geomad"
+        else SOURCE_COOP_PREFIX_PREDICTION
+    )
+    version = version_geomad if dataset == "geomad" else version_prediction
 
+    targets: list[tuple[str, str]] = []
     for r in regions:
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
-        for d in datasets:
-            if d == GEOMAD_DATASET_ID:
-                prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
-                version = version_geomad
-            else:
-                prefix = dataset_prefix(owner, PREDICTION_DATASET_ID)
-                version = version_prediction
-            targets.append((bucket, prefix, version))
-
-    for target_bucket, target_prefix, target_version in targets:
-        _run_index(target_bucket, target_prefix, target_version)
-
-
-def _run_index(bucket: str, prefix: str, version: str) -> None:
-    """Run the STAC-Geoparquet indexing for a single bucket/prefix."""
-    full_prefix = f"{prefix}/{version}"
-    if SOURCE_COOP_PUBLIC_URL:  # Source.Coop prefix.
-        if GEOMAD_DATASET_ID in prefix:
-            full_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{full_prefix}"
-        elif PREDICTION_DATASET_ID in prefix:
-            full_prefix = f"{SOURCE_COOP_PREFIX_PREDICTION}/{full_prefix}"
-    parquet_key = f"{full_prefix}/{prefix}.parquet"
-
-    logger.info(f"Listing STAC items under s3://{bucket}/{full_prefix}")
-    keys = _find_stac_items_s3(bucket, full_prefix)
-    logger.info(f"Found {len(keys)} STAC items")
-
-    if len(keys) == 0:
-        logger.warning(
-            f"No STAC items found under s3://{bucket}/{full_prefix}, skipping."
+        short_prefix = dataset_prefix(owner, dataset_id)
+        full_prefix = (
+            f"{source_coop_prefix}/{short_prefix}/{version}"
+            if SOURCE_COOP_PUBLIC_URL
+            else f"{short_prefix}/{version}"
         )
+        targets.append((full_prefix, short_prefix))
+
+    combined_short = f"{SENSOR}_{dataset_id}"
+    parquet_key = (
+        f"{source_coop_prefix}/{combined_short}/{version}/{combined_short}.parquet"
+    )
+
+    _run_index(bucket, targets, parquet_key)
+
+
+def _run_index(
+    bucket: str,
+    targets: list[tuple[str, str]],
+    parquet_key: str,
+) -> None:
+    """Find all STAC items across all targets and write a single combined Geoparquet."""
+    all_docs: list = []
+
+    for full_prefix, short_prefix in targets:
+        logger.info(f"Listing STAC items under s3://{bucket}/{full_prefix}")
+        keys = _find_stac_items_s3(bucket, full_prefix)
+        logger.info(f"Found {len(keys)} STAC items under {short_prefix}")
+
+        if not keys:
+            logger.warning(
+                f"No STAC items found under s3://{bucket}/{full_prefix}, skipping."
+            )
+            continue
+
+        logger.info(f"Loading STAC items from {short_prefix}")
+        docs = _load_stac_docs(bucket, keys)
+        logger.info(f"Loaded {len(docs)} STAC documents from {short_prefix}")
+        all_docs.extend(docs)
+
+    if not all_docs:
+        logger.warning("No STAC items found across any targets, skipping write.")
         return
 
-    logger.info("Loading STAC items into memory")
-    docs = _load_stac_docs(bucket, keys)
-    logger.info(f"Loaded {len(docs)} STAC documents")
-
-    logger.info(f"Writing STAC-Geoparquet to s3://{bucket}/{parquet_key}")
-
+    logger.info(
+        f"Writing combined STAC-Geoparquet ({len(all_docs)} items) "
+        f"to s3://{bucket}/{parquet_key}"
+    )
     write_session = get_write_session()
     store = make_obstore_s3(bucket, write_session)
-    write_sync(parquet_key, docs, store=store)
+    write_sync(parquet_key, all_docs, store=store)
 
-    logger.info(f"Wrote index with {len(docs)} items to s3://{bucket}/{parquet_key}")
+    logger.info(f"Done. Wrote {len(all_docs)} items to s3://{bucket}/{parquet_key}")
 
 
 def _stac_self_link(feature: dict) -> str:
@@ -520,17 +533,11 @@ def _extract_years(features: list[dict]) -> list[str]:
 @app.command()
 def make_mosaics(
     dataset: Annotated[
-        Literal["all", "geomad", "prediction"],
+        Literal["geomad", "prediction"],
         typer.Option(
-            help="Which dataset to build mosaics for: 'all', 'geomad', or 'prediction'."
+            help="Which dataset to build mosaics for: 'geomad' or 'prediction'."
         ),
     ],
-    region: Annotated[
-        Literal["all", "pacific", "non-pacific"],
-        typer.Option(
-            help="Region to build mosaics for. 'all' builds both pacific and non-pacific."
-        ),
-    ] = "all",
     years: Annotated[
         str | None,
         typer.Option(
@@ -546,18 +553,10 @@ def make_mosaics(
         typer.Option(help="Version string for prediction dataset."),
     ] = PREDICTION_VERSION,
     bucket: str = typer.Option(BUCKET, help="S3 bucket for data."),
-    product_owner: Annotated[
-        str | None,
-        typer.Option(help="Override the region-derived owner prefix."),
-    ] = None,
 ) -> None:
-    """Make mosaic.jsons per year for GeoMedian and Prediction results from their respective STAC-Geoparquet files.
+    """Make mosaic.jsons per year from the combined STAC-Geoparquet index."""
+    logger.info(f"Making mosaics for dataset '{dataset}'")
 
-    Years are auto-detected from the STAC-Geoparquet index unless --years is provided.
-    """
-    logger.info(f"Making mosaics for dataset '{dataset}', region '{region}'")
-
-    # Parse --years if provided
     requested_years: list[str] | None = None
     if years is not None:
         if "-" in years and "," not in years:
@@ -566,87 +565,61 @@ def make_mosaics(
         else:
             requested_years = [y.strip() for y in years.split(",")]
 
-    DATASET_CONFIG = {
-        GEOMAD_DATASET_ID: {
-            "version": version_geomad,
-            "source_coop_prefix": SOURCE_COOP_PREFIX_GEOMAD,
-        },
-        PREDICTION_DATASET_ID: {
-            "version": version_prediction,
-            "source_coop_prefix": SOURCE_COOP_PREFIX_PREDICTION,
-        },
-    }
+    dataset_id = GEOMAD_DATASET_ID if dataset == "geomad" else PREDICTION_DATASET_ID
+    source_coop_prefix = (
+        SOURCE_COOP_PREFIX_GEOMAD
+        if dataset == "geomad"
+        else SOURCE_COOP_PREFIX_PREDICTION
+    )
+    version = version_geomad if dataset == "geomad" else version_prediction
 
-    dataset_name_to_id = {
-        "geomad": GEOMAD_DATASET_ID,
-        "prediction": PREDICTION_DATASET_ID,
-    }
+    combined_short = f"{SENSOR}_{dataset_id}"
 
-    regions = ["pacific", "non-pacific"] if region == "all" else [region]
-    datasets_list = (
-        [GEOMAD_DATASET_ID, PREDICTION_DATASET_ID]
-        if dataset == "all"
-        else [dataset_name_to_id[dataset]]
+    if SOURCE_COOP_PUBLIC_URL:
+        read_url = f"{SOURCE_COOP_PUBLIC_URL}/{source_coop_prefix}"
+        output_path = (
+            f"s3://{bucket}/{source_coop_prefix}/{combined_short}/{version}/mosaics/"
+        )
+    else:
+        read_url = f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
+        output_path = f"s3://{bucket}/{combined_short}/{version}/mosaics/"
+
+    parquet_url = f"{read_url}/{combined_short}/{version}/{combined_short}.parquet"
+
+    logger.info(f"Loading combined index from {parquet_url}")
+    features = _load_all_features(parquet_url)
+
+    if not features:
+        logger.warning("No features found, skipping.")
+        return
+
+    available_years = _extract_years(features)
+    logger.info(
+        f"Found {len(features)} features across {len(available_years)} years: {available_years}"
     )
 
-    mosaic_targets: list[tuple[str, str, str, str]] = []
-    for r in regions:
-        owner = owner_for_region(r, product_owner=product_owner)
-        for d in datasets_list:
-            cfg = DATASET_CONFIG[d]
-            prefix = dataset_prefix(owner, d)
-            ver = cfg["version"]
-            sc_prefix = cfg["source_coop_prefix"]
+    if requested_years is not None:
+        missing = [y for y in requested_years if y not in available_years]
+        if missing:
+            logger.warning(f"Requested years not in index: {missing}")
+        years_list = [y for y in requested_years if y in available_years]
+        if not years_list:
+            logger.warning("No requested years match available data, skipping.")
+            return
+    else:
+        years_list = available_years
 
-            if SOURCE_COOP_PUBLIC_URL:
-                read_url = f"{SOURCE_COOP_PUBLIC_URL}/{sc_prefix}"
-                output_path = f"s3://{bucket}/{sc_prefix}/{prefix}/{ver}/mosaics/"
-            else:
-                read_url = f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
-                output_path = f"s3://{bucket}/{prefix}/{ver}/mosaics/"
+    write_session = get_write_session()
 
-            parquet_url = f"{read_url}/{prefix}/{ver}/{prefix}.parquet"
-            mosaic_targets.append((f"{d} ({r})", d, parquet_url, output_path))
+    for _year in years_list:
+        mosaic = _build_mosaic_for_year(_year, features)
+        out_path = f"{output_path}{combined_short}_{_year}_mosaic.json"
+        logger.info(f"  {_year} built successfully, writing to {out_path}")
 
-    write_session = get_write_session()  # For Source.Coop credentials
+        with write_credentials_as_env(write_session):
+            with MosaicBackend(out_path, mosaic_def=mosaic) as m:
+                m.write(overwrite=True)
 
-    for display_name, dataset_name, stac_geoparquet_url, output_path in mosaic_targets:
-        logger.info(f"Loading index for '{display_name}' from {stac_geoparquet_url}")
-        features = _load_all_features(stac_geoparquet_url)
-
-        if not features:
-            logger.warning(f"No features found for '{display_name}', skipping.")
-            continue
-
-        available_years = _extract_years(features)
-        logger.info(
-            f"Found {len(features)} features across {len(available_years)} years: {available_years}"
-        )
-
-        if requested_years is not None:
-            missing = [y for y in requested_years if y not in available_years]
-            if missing:
-                logger.warning(
-                    f"Requested years not in index for '{display_name}': {missing}"
-                )
-            years_list = [y for y in requested_years if y in available_years]
-            if not years_list:
-                logger.warning(
-                    f"No requested years match available data for '{display_name}', skipping."
-                )
-                continue
-        else:
-            years_list = available_years
-
-        for _year in years_list:
-            mosaic = _build_mosaic_for_year(_year, features)
-            logger.info(f"  {_year} built successfully.")
-            out_path = f"{output_path}{dataset_name}_{_year}_mosaic.json"
-
-            with write_credentials_as_env(write_session):
-                with MosaicBackend(out_path, mosaic_def=mosaic) as m:
-                    m.write(overwrite=True)
-
-            logger.info(f"  {_year} written to {out_path}")
+        logger.info(f"  {_year} written.")
 
     logger.info("Finished writing mosaics.")

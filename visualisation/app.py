@@ -30,10 +30,9 @@ GEOMAD_VERSION = "0-2-1-test"
 PREDICTION_VERSION = "0-0-4-test"
 
 GEOMAD_MOSAIC_BASE = (
-    f"https://source.coop/auspatious/geomad-sids/dep_ls_geomad/{GEOMAD_VERSION}/mosaics"
+    f"https://source.coop/auspatious/geomad-sids/ls_geomad/{GEOMAD_VERSION}/mosaics"
 )
-PREDICTION_MOSAIC_BASE = f"https://source.coop/auspatious/lulc-sids/dep_ls_lulc_prediction/{PREDICTION_VERSION}/mosaics"
-
+PREDICTION_MOSAIC_BASE = f"https://source.coop/auspatious/lulc-sids/ls_lulc_prediction/{PREDICTION_VERSION}/mosaics"
 
 logger = logging.getLogger(__name__)
 

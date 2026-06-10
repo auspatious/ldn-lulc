@@ -32,12 +32,12 @@ spec:
       - name: image-tag
         value: "latest"
       - name: dataset
-        # "all", "geomad", or "prediction"
+        # "geomad", or "prediction"
         value: "geomad"
         # value: "prediction"
       - name: region
         # "all", "pacific", or "non-pacific"
-        value: "pacific"
+        value: "all"
 
   templates:
     - name: workflow-entrypoint
@@ -99,8 +99,6 @@ spec:
           - make-mosaics
           - --dataset
           - "{{ workflow.parameters.dataset }}"
-          - --region
-          - "{{ workflow.parameters.region }}"
         env:
           - name: AWS_WRITE_ACCESS_KEY_ID
             valueFrom:
