@@ -68,28 +68,27 @@ resource "aws_iam_role_policy_attachment" "basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# S3 read access for mosaic JSONs and COGs
-resource "aws_iam_role_policy" "s3_read" {
-  name = "${var.function_name}-s3-read"
-  role = aws_iam_role.lambda.id
+# TODO: Reenable for non-source.coop bucket (that we own).
+# # S3 read access for mosaic JSONs and COGs
+# resource "aws_iam_role_policy" "s3_read" {
+#   name = "${var.function_name}-s3-read"
+#   role = aws_iam_role.lambda.id
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "s3:GetObject",
-        "s3:ListBucket"
-      ]
-      Resource = [
-        "arn:aws:s3:::${var.s3_bucket_pacific}",
-        "arn:aws:s3:::${var.s3_bucket_pacific}/*",
-        "arn:aws:s3:::${var.s3_bucket_non_pacific}",
-        "arn:aws:s3:::${var.s3_bucket_non_pacific}/*"
-      ]
-    }]
-  })
-}
+#   policy = jsonencode({
+#     Version = "2012-10-17"
+#     Statement = [{
+#       Effect = "Allow"
+#       Action = [
+#         "s3:GetObject",
+#         "s3:ListBucket"
+#       ]
+#       Resource = [
+#         "arn:aws:s3:::${var.s3_bucket}",
+#         "arn:aws:s3:::${var.s3_bucket}/*",
+#       ]
+#     }]
+#   })
+# }
 
 # ── Lambda ─────────────────────────────────────────────────────────────────────
 
@@ -105,27 +104,28 @@ resource "aws_lambda_function" "app" {
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.app.repository_url}@${data.aws_ecr_image.latest.image_digest}"
   architectures = ["arm64"]
-  memory_size   = var.memory_size
-  timeout       = var.timeout
+  memory_size   = 3008
+  timeout       = 60
 
   environment {
     variables = {
+      # GDAL HTTP settings
       GDAL_HTTP_MULTIPLEX                = "YES"
       GDAL_HTTP_MERGE_CONSECUTIVE_RANGES = "YES"
-      GDAL_DISABLE_READDIR_ON_OPEN       = "EMPTY_DIR"
-      VSI_CACHE                          = "TRUE"
-      VSI_CACHE_SIZE                     = "536870912"
-      GDAL_CACHEMAX                      = "512"
-      PYTHONWARNINGS                     = "ignore"
-      PACIFIC_BUCKET                     = var.s3_bucket_pacific
-      NON_PACIFIC_BUCKET                 = var.s3_bucket_non_pacific
-      PACIFIC_OWNER                      = var.owner_pacific
-      NON_PACIFIC_OWNER                  = var.owner_non_pacific
-      GEOMAD_VERSION                     = var.geomad_version
-      PREDICTION_VERSION                 = var.prediction_version
-      SENSOR                             = "ls"
-      GEOMAD_DATASET_ID                  = "geomad"
-      PREDICTION_DATASET_ID              = "lulc_prediction"
+      GDAL_HTTP_MAX_RETRY = "3"
+      GDAL_HTTP_RETRY_DELAY = "1"
+      # VSI caching — avoids re-fetching headers/overviews
+      VSI_CACHE = "TRUE"
+      VSI_CACHE_SIZE = "536870912",  # 512 MB
+      GDAL_CACHEMAX = "512",  # 512 MB raster block cache
+      # Band interleaving optimisation
+      GDAL_BAND_BLOCK_CACHE = "HASHSET"
+      GDAL_DISABLE_READDIR_ON_OPEN = "EMPTY_DIR"
+      # Concurrency — keep connections alive
+      GDAL_HTTP_TCP_KEEPALIVE = "YES"
+      # Mosaic concurrency — parallel reads of assets within a tile
+      MOSAIC_CONCURRENCY = "8"
+      PYTHONWARNINGS = "ignore"
     }
   }
 
