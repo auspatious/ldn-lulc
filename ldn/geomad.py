@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, UTC
 import logging
 from typing import Iterable, Tuple
 
@@ -37,10 +37,6 @@ LANDSAT_OFFSET = -0.2
 qa_bands = {"qa_pixel", "qa_radsat"}
 
 
-def _to_utc_ms_string(dt: np.datetime64) -> str:
-    return str(np.datetime_as_string(dt, unit="ms", timezone="UTC"))
-
-
 def http_to_s3_url(http_url):
     """Convert a USGS HTTP URL to an S3 URL"""
     s3_url = http_url.replace(
@@ -49,8 +45,8 @@ def http_to_s3_url(http_url):
     return s3_url
 
 
-def set_stac_properties(input_xr: Dataset, output_xr: Dataset) -> Dataset:
-    f"""Set STAC temporal properties on the output dataset.
+def _set_stac_properties(input_xr: Dataset, output_xr: Dataset) -> Dataset:
+    f"""Set STAC temporal properties on the output Geomad dataset.
 
     The datetime fields represent the nominal target year (the year the
     GeoMAD product represents), not the full observation window. For LS7-era
@@ -74,7 +70,9 @@ def set_stac_properties(input_xr: Dataset, output_xr: Dataset) -> Dataset:
         start_datetime=start_datetime,
         datetime=midpoint_datetime,
         end_datetime=end_datetime,
-        created=_to_utc_ms_string(np.datetime64(datetime.now())),
+        created=datetime.now(UTC)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z"),
     )
 
     # Record the actual observation window when it differs from the nominal year.
@@ -391,7 +389,7 @@ class GeoMADProcessor(Processor):
             0  # This could hide real values of 0. 9999 is what datacube-compute do.
         )
 
-        return set_stac_properties(data, geomad)
+        return _set_stac_properties(data, geomad)
 
 
 # This is a generic function used be geomad and classify tasks.

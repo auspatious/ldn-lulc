@@ -245,7 +245,7 @@ def run(
 
     if decimated:
         typer.echo("Warning, using decimated (low resolution) for testing purposes.")
-        geobox = geobox.zoom_out(10)
+        geobox = geobox.zoom_out(10)  # TODO: Reenable.
         # geobox = geobox.zoom_out(100) # For faster testing.
 
     # Configure for dask and reading data

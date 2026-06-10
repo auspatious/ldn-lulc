@@ -372,7 +372,11 @@ def index_to_stac_geoparquet(
     """Build STAC-Geoparquet indexes from STAC items for given dataset(s) and region(s)."""
     targets: list[tuple[str, str, str]] = []
 
-    regions = ["pacific", "non-pacific"] if region == "all" else [region]
+    regions: list[Literal["pacific", "non-pacific"]]
+    if region == "all":
+        regions = ["pacific", "non-pacific"]
+    else:
+        regions = [region]
     datasets = ["geomad", "prediction"] if dataset == "all" else [dataset]
 
     for r in regions:
@@ -573,9 +577,16 @@ def make_mosaics(
         },
     }
 
+    dataset_name_to_id = {
+        "geomad": GEOMAD_DATASET_ID,
+        "prediction": PREDICTION_DATASET_ID,
+    }
+
     regions = ["pacific", "non-pacific"] if region == "all" else [region]
     datasets_list = (
-        [GEOMAD_DATASET_ID, PREDICTION_DATASET_ID] if dataset == "all" else [dataset]
+        [GEOMAD_DATASET_ID, PREDICTION_DATASET_ID]
+        if dataset == "all"
+        else [dataset_name_to_id[dataset]]
     )
 
     mosaic_targets: list[tuple[str, str, str, str]] = []

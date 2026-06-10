@@ -9,6 +9,7 @@ import pandas as pd
 import requests
 import typer
 import xarray as xr
+from datetime import UTC, datetime as dt
 import rioxarray  # noqa: F401 for the .rio accessor
 from dask.distributed import Client as DaskClient
 from dep_tools.aws import object_exists
@@ -673,6 +674,7 @@ class LulcProcessor(Processor):
         logger: logging.Logger,
         probability_threshold: float,
         nodata_value: int,
+        year: str,
         **kwargs,
     ):
         """Create a LULC prediction processor.
@@ -688,6 +690,7 @@ class LulcProcessor(Processor):
         self._probability_threshold = probability_threshold
         self._nodata_value = nodata_value
         self._logger = logger
+        self._year = year
 
     def process(self, input_data: xr.Dataset) -> xr.Dataset:
         """Scale GeoMAD, compute indices, load DEM terrain, and predict LULC.
@@ -737,7 +740,7 @@ class LulcProcessor(Processor):
             output[var].odc.nodata = self._nodata_value
             output[var].attrs["_FillValue"] = self._nodata_value
 
-        return output
+        return _set_stac_properties(output, year=self._year)
 
 
 def _load_joblib_model(model_path: str):
@@ -781,6 +784,17 @@ def _load_joblib_model(model_path: str):
     except Exception as e:
         logger.exception(f"Failed to load model from {model}: {e}")
         raise LdnError(f"Failed to load model from {model}") from e
+
+
+def _set_stac_properties(ds: xr.Dataset, year: str) -> xr.Dataset:
+    """Set STAC temporal properties on the output LULC dataset."""
+
+    ds.attrs["stac_properties"] = dict(
+        datetime=f"{year}-06-30T00:00:00Z",
+        created=dt.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+    )
+
+    return ds
 
 
 def run_classify_task(
@@ -860,8 +874,8 @@ def run_classify_task(
 
     if decimated:
         logger.warning("Decimating geobox by 10x")
-        # geobox = geobox.zoom_out(10)
-        geobox = geobox.zoom_out(100)  # Hyper decimated for faster testing
+        geobox = geobox.zoom_out(10)  # TODO: Reenable.
+        # geobox = geobox.zoom_out(100)  # Hyper decimated for faster testing
 
     logger.info("Configuring S3 access")
     configure_s3_access(cloud_defaults=True)
@@ -928,6 +942,7 @@ def run_classify_task(
         nodata_value=nodata_value,
         logger=logger,
         probability_threshold=probability_threshold,
+        year=year,
     )
 
     stac_creator = StacCreator(
