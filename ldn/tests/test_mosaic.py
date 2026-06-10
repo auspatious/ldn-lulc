@@ -96,27 +96,31 @@ def test_build_mosaic_for_year_converts_multipolygon_to_convex_hull():
 # make_mosaics CLI command
 
 
-@patch("ldn.cli.get_write_session")
+@pytest.fixture
+def mock_write_session():
+    with patch("ldn.cli.get_write_session") as mock_get_session:
+        mock_frozen = MagicMock()
+        mock_frozen.access_key = "AKIAIOSFODNN7EXAMPLE"
+        mock_frozen.secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+        mock_frozen.token = None
+
+        mock_creds = MagicMock()
+        mock_creds.get_frozen_credentials.return_value = mock_frozen
+
+        mock_session = MagicMock()
+        mock_session.get_credentials.return_value = mock_creds
+        mock_session.region_name = "us-west-2"
+        mock_get_session.return_value = mock_session
+
+        yield mock_get_session
+
+
 @patch("ldn.cli.MosaicBackend")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
 def test_make_mosaics_geomad_single_year(
-    mock_load, mock_years, mock_backend, mock_get_session
+    mock_load, mock_years, mock_backend, mock_write_session
 ):
-    # Wire up fake credentials
-    mock_frozen = MagicMock()
-    mock_frozen.access_key = "AKIAIOSFODNN7EXAMPLE"
-    mock_frozen.secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-    mock_frozen.token = None
-
-    mock_creds = MagicMock()
-    mock_creds.get_frozen_credentials.return_value = mock_frozen
-
-    mock_session = MagicMock()
-    mock_session.get_credentials.return_value = mock_creds
-    mock_session.region_name = "us-west-2"
-    mock_get_session.return_value = mock_session
-
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
     mock_years.return_value = ["2020"]
@@ -140,14 +144,15 @@ def test_make_mosaics_geomad_single_year(
 
     assert result.exit_code == 0, result.output
     mock_backend.assert_called_once()
-    out_path = mock_backend.call_args[0][0]
-    assert "geomad_2020_mosaic.json" in out_path
+    assert "geomad_2020_mosaic.json" in mock_backend.call_args[0][0]
 
 
 @patch("ldn.cli.MosaicBackend")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-def test_make_mosaics_prediction_single_year(mock_load, mock_years, mock_backend):
+def test_make_mosaics_prediction_single_year(
+    mock_load, mock_years, mock_backend, mock_write_session
+):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
     mock_years.return_value = ["2020"]
@@ -177,7 +182,9 @@ def test_make_mosaics_prediction_single_year(mock_load, mock_years, mock_backend
 @patch("ldn.cli.MosaicBackend")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-def test_make_mosaics_multiple_years(mock_load, mock_years, mock_backend):
+def test_make_mosaics_multiple_years(
+    mock_load, mock_years, mock_backend, mock_write_session
+):
     features = [
         _make_feature("item-1", [103.6, 1.2, 104.0, 1.5], "2020"),
         _make_feature("item-2", [104.0, 1.2, 104.4, 1.5], "2021"),
@@ -212,7 +219,9 @@ def test_make_mosaics_multiple_years(mock_load, mock_years, mock_backend):
 @patch("ldn.cli.MosaicBackend")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-def test_make_mosaics_writes_with_overwrite(mock_load, mock_years, mock_backend):
+def test_make_mosaics_writes_with_overwrite(
+    mock_load, mock_years, mock_backend, mock_write_session
+):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
     mock_years.return_value = ["2020"]
