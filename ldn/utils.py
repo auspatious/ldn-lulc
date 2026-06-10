@@ -109,8 +109,6 @@ PREDICTION_VERSION = "0-0-4"
 MODEL_VERSION = "0-0-4"
 TRAINING_DATA_VERSION = "0-0-4"
 
-# TODO: Do we even need separate buckets for pacific vs non-pacific?
-
 # aws s3 cp test.txt s3://us-west-2.opendata.source.coop/auspatious/geomad-sids/test.txt
 # aws s3 rm s3://us-west-2.opendata.source.coop/auspatious/geomad-sids/test.txt
 # aws s3 rm s3://us-west-2.opendata.source.coop/auspatious/lulc-sids/dep_ls_lulc_prediction/0-0-4-test/ --recursive

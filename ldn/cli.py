@@ -4,7 +4,6 @@ import logging
 import sys
 from typing import Literal
 
-import boto3
 import obstore
 import typer
 from cogeo_mosaic.backends import MosaicBackend
@@ -94,16 +93,15 @@ def _find_existing_tasks(
     Lists all STAC items under each (bucket, owner) prefix and returns
     a set of (id, year) tuples for tasks whose output already exists.
     """
-    client = boto3.client("s3")
+    is_public = bool(SOURCE_COOP_PUBLIC_URL)
 
-    def _full_path_prefix_for_bucket(bucket: str) -> str:
-        """Return the full path prefix URL for a bucket."""
-        if bucket.startswith("https://"):
-            return bucket
-        elif "." in bucket:
-            return f"https://{bucket}"
-        else:
-            return f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
+    def _source_coop_prefix(dataset_id: str) -> str | None:
+        """Return the source.coop path prefix for a dataset, or None."""
+        if dataset_id == GEOMAD_DATASET_ID:
+            return SOURCE_COOP_PREFIX_GEOMAD
+        elif dataset_id == PREDICTION_DATASET_ID:
+            return SOURCE_COOP_PREFIX_PREDICTION
+        return None
 
     # Collect unique (bucket, owner) combos
     region_combos: set[tuple[str, str]] = set()
@@ -119,21 +117,13 @@ def _find_existing_tasks(
     # List all STAC items under each prefix
     existing_keys: dict[str, set[str]] = {}
     for combo_bucket, combo_owner in region_combos:
-        full_prefix = dataset_prefix(combo_owner, dataset_id)
-        s3_prefix = f"{full_prefix}/{version}/"
-        if SOURCE_COOP_PUBLIC_URL:
-            if dataset_id == GEOMAD_DATASET_ID:
-                s3_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{s3_prefix}"
-            elif dataset_id == PREDICTION_DATASET_ID:
-                s3_prefix = f"{SOURCE_COOP_PREFIX_PREDICTION}/{s3_prefix}"
-        paginator = client.get_paginator("list_objects_v2")
-        key_set: set[str] = set()
-        for page in paginator.paginate(Bucket=combo_bucket, Prefix=s3_prefix):
-            for obj in page.get("Contents", []):
-                key = obj["Key"]
-                if key.endswith(".stac-item.json"):
-                    key_set.add(key)
-        existing_keys[f"{combo_bucket}/{combo_owner}"] = key_set
+        s3_prefix = f"{dataset_prefix(combo_owner, dataset_id)}/{version}/"
+        sc_prefix = _source_coop_prefix(dataset_id)
+        if is_public and sc_prefix:
+            s3_prefix = f"{sc_prefix}/{s3_prefix}"
+
+        keys = _find_stac_items_s3(combo_bucket, s3_prefix, public=is_public)
+        existing_keys[f"{combo_bucket}/{combo_owner}"] = set(keys)
 
     total_existing = sum(len(v) for v in existing_keys.values())
     logger.info(
@@ -147,13 +137,11 @@ def _find_existing_tasks(
         tile_index = tuple(map(int, task["id"].split("_")))
         r = task["region"]
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
-        full_path_prefix = _full_path_prefix_for_bucket(BUCKET)
 
-        if SOURCE_COOP_PUBLIC_URL:
-            if dataset_id == GEOMAD_DATASET_ID:
-                full_path_prefix = f"{full_path_prefix}/{SOURCE_COOP_PREFIX_GEOMAD}"
-            elif dataset_id == PREDICTION_DATASET_ID:
-                full_path_prefix = f"{full_path_prefix}/{SOURCE_COOP_PREFIX_PREDICTION}"
+        full_path_prefix = f"https://{BUCKET}.s3.{AWS_REGION}.amazonaws.com"
+        sc_prefix = _source_coop_prefix(dataset_id)
+        if is_public and sc_prefix:
+            full_path_prefix = f"{SOURCE_COOP_PUBLIC_URL}/{sc_prefix}"
 
         itempath = S3ItemPath(
             prefix=owner,
@@ -252,12 +240,12 @@ def print_tasks(
     return
 
 
-# TODO: Does this overlap with find_existing_tasks?
 def _find_stac_items_s3(
     bucket: str,
     prefix: str,
     suffix: str = ".stac-item.json",
     chunk_size: int = 200,
+    public: bool = False,
 ) -> list[str]:
     """List S3 keys ending in suffix under bucket/prefix.
 
@@ -266,11 +254,16 @@ def _find_stac_items_s3(
         prefix: Key prefix to search under.
         suffix: File suffix to match.
         chunk_size: Number of objects per listing page.
+        public: If True, skip signing (for public buckets like source.coop).
 
     Returns:
         List of S3 keys (without the s3://bucket/ prefix) that match.
     """
-    store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION)
+    store = obstore.store.S3Store(
+        bucket=bucket,
+        region=AWS_REGION,
+        skip_signature=public,
+    )
     matches: list[str] = []
     stream = obstore.list(store, prefix=prefix.lstrip("/"), chunk_size=chunk_size)
 
