@@ -1,8 +1,10 @@
 # package for comparing LULC products
 import numpy as np
 import xarray as xr
-from matplotlib.colors import ListedColormap, BoundaryNorm
-from ldn.typology import colors as class_colors, classes_flipped as standard_legend
+from matplotlib.colors import BoundaryNorm, ListedColormap
+
+from ldn.typology import classes_flipped as standard_legend
+from ldn.typology import colors as class_colors
 
 
 def get_standard_legend():
@@ -44,9 +46,7 @@ def standardise_class(DataArray, mapping):
 
 # Given the source and target data, generate the parameters for sankey diagrams
 def load_sankey_params(s_data, t_data, mask, count_limit=10):
-    pairs, counts = np.unique(
-        np.vstack([s_data[mask], t_data[mask]]).T, axis=0, return_counts=True
-    )
+    pairs, counts = np.unique(np.vstack([s_data[mask], t_data[mask]]).T, axis=0, return_counts=True)
 
     keep = counts > count_limit
     pairs = pairs[keep]
@@ -55,12 +55,8 @@ def load_sankey_params(s_data, t_data, mask, count_limit=10):
     uniq_source = np.unique(pairs[:, 0])
     uniq_target = np.unique(pairs[:, 1])
 
-    labels = [standard_legend[cls] for cls in uniq_source] + [
-        standard_legend[cls] for cls in uniq_target
-    ]
-    node_colors = [class_colors[cls] for cls in uniq_source] + [
-        class_colors[cls] for cls in uniq_target
-    ]
+    labels = [standard_legend[cls] for cls in uniq_source] + [standard_legend[cls] for cls in uniq_target]
+    node_colors = [class_colors[cls] for cls in uniq_source] + [class_colors[cls] for cls in uniq_target]
 
     source_map = {cls: i for i, cls in enumerate(uniq_source)}
     target_map = {cls: i + len(uniq_source) for i, cls in enumerate(uniq_target)}

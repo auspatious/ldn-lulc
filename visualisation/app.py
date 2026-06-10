@@ -1,37 +1,34 @@
 """
 LDN GeoMedian/GeoMAD and Predicted LULC Mosaic Viewer
 -----------------------
-Uses TiTiler to visualise a MosaicJSON of either GeoMedian/GeoMAD or predicted LULC. Can visualise single or multiple bands.
+Uses TiTiler to visualise a MosaicJSON of either GeoMedian/GeoMAD or predicted LULC.
+Can visualise single or multiple bands.
 Tiles from separate per-band COGs using TiTiler + STACReader.
 """
 
 import logging
+import os
 import re
 import sys
 from typing import Annotated, Literal
 
 import httpx
 from cogeo_mosaic.backends import MosaicBackend
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from rio_tiler.io import STACReader
+from mangum import Mangum
 from rio_tiler.colormap import cmap as default_cmap
-from titiler.core.dependencies import create_colormap_dependency
-from titiler.core.dependencies import AssetsExprParams
+from rio_tiler.io import STACReader
+from titiler.core.dependencies import AssetsExprParams, create_colormap_dependency
 from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
-from mangum import Mangum
-import os
-
 
 GEOMAD_VERSION = "0-2-1-test"
 PREDICTION_VERSION = "0-0-4-test"
 
-GEOMAD_MOSAIC_BASE = (
-    f"https://source.coop/auspatious/geomad-sids/ls_geomad/{GEOMAD_VERSION}/mosaics"
-)
+GEOMAD_MOSAIC_BASE = f"https://source.coop/auspatious/geomad-sids/ls_geomad/{GEOMAD_VERSION}/mosaics"
 PREDICTION_MOSAIC_BASE = f"https://source.coop/auspatious/lulc-sids/ls_lulc_prediction/{PREDICTION_VERSION}/mosaics"
 
 logger = logging.getLogger(__name__)
@@ -137,7 +134,8 @@ def mosaic_path_params(
         return str(mosaic_paths[year])
     raise HTTPException(
         status_code=404,
-        detail=f"No mosaic found for year '{year}' in dataset '{dataset}'. Available years: {sorted(mosaic_paths.keys())}.",
+        detail=f"No mosaic found for year '{year}' in dataset '{dataset}'. "
+        f"Available years: {sorted(mosaic_paths.keys())}.",
     )
 
 

@@ -1,18 +1,19 @@
-import numpy as np
-import geopandas as gpd
-import xarray as xr
-import pytest
 from unittest.mock import MagicMock
+
+import geopandas as gpd
+import numpy as np
+import pytest
+import xarray as xr
 from shapely.geometry import Point
 
 from ldn.training_data import (
+    _cci_quality_filter,
     _item_centroid_lon,
     _wc_quality_filter,
-    _cci_quality_filter,
+    extract_geomad_dem_indices_values,
+    filter_outliers,
     find_agreement,
     remove_nan_samples,
-    filter_outliers,
-    extract_geomad_dem_indices_values,
 )
 
 

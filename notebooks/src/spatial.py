@@ -1,6 +1,7 @@
 # spatial functions
 
 from typing import List
+
 import geopandas as gpd
 
 country_code = {

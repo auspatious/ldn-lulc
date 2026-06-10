@@ -17,8 +17,8 @@ import pandas as pd
 import rioxarray  # noqa: F401
 import typer
 import xarray as xr
-from dep_tools.utils import search_across_180, bbox_across_180
 from dep_tools.aws import object_exists
+from dep_tools.utils import _fix_geometry, bbox_across_180, search_across_180
 from odc.geo.geom import Geometry
 from odc.stac import load
 from planetary_computer import sign_url
@@ -35,7 +35,7 @@ from sklearn.preprocessing import StandardScaler
 from ldn.classify import search_and_load_geomad_indices_dem
 from ldn.grids import get_gadm, get_gridspec
 from ldn.random_sampling import random_sampling
-from ldn.typology import world_cover_map, cci_lc_map, io_map
+from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
     BUCKET,
     TRAINING_DATA_VERSION,
@@ -45,8 +45,6 @@ from ldn.utils import (
     wgs84,
 )
 from notebooks.src.Compare_LULC_func import standardise_class
-
-from dep_tools.utils import _fix_geometry
 
 logger = logging.getLogger(__name__)
 
@@ -101,9 +99,7 @@ def _load_lulc_am(
     for items, gdf in [(east_items, east_gdf), (west_items, west_gdf)]:
         if not items:
             continue
-        ds = load(items, geopolygon=gdf, chunks={}, patch_url=sign_url).squeeze(
-            drop=True
-        )
+        ds = load(items, geopolygon=gdf, chunks={}, patch_url=sign_url).squeeze(drop=True)
         halves.append(ds)
 
     if len(halves) != 2:
@@ -161,9 +157,7 @@ def load_lulc_for_tile(product: str, geobox, year: str) -> xr.Dataset:
     logger.info(f"Found {len(lulc_items)} {product} items")
     assert 0 < len(lulc_items) < 30
 
-    geobox_wgs84 = gpd.GeoDataFrame(
-        geometry=[geobox.extent.geom], crs=geobox.crs
-    ).to_crs(wgs84)
+    geobox_wgs84 = gpd.GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(wgs84)
     crosses_am = isinstance(bbox_across_180(geobox_wgs84), tuple)
 
     if crosses_am:
@@ -214,10 +208,7 @@ def _cci_quality_filter(ds):
     relaxed = processed & stable & (obs >= 1)
     if relaxed.any():
         pct = float(relaxed.sum()) / relaxed.size * 100
-        logger.info(
-            f"CCI: strict filter (obs>=3) rejected all pixels, "
-            f"falling back to obs>=1 ({pct:.1f}% pass)"
-        )
+        logger.info(f"CCI: strict filter (obs>=3) rejected all pixels, falling back to obs>=1 ({pct:.1f}% pass)")
         return relaxed
 
     logger.info("CCI: all quality filters rejected all pixels")
@@ -270,9 +261,7 @@ def load_and_prepare(
         xarray Dataset with standardised class band, clipped to the
         buffered country geometry with nodata=255.
     """
-    product, native_band, output_band, class_map, quality_fn, quality_bands = (
-        product_dict.values()
-    )
+    product, native_band, output_band, class_map, quality_fn, quality_bands = product_dict.values()
 
     ds = load_lulc_for_tile(product, geobox, year)
     ds[output_band] = ds[native_band]
@@ -328,38 +317,25 @@ def find_agreement(wc: xr.Dataset, cci: xr.Dataset, io_ds: xr.Dataset) -> xr.Dat
     wc_ok = wc_da > 0
     cci_ok = cci_da > 0
     io_ok = io_da > 0
-    has_data_count = (
-        wc_ok.astype("uint8") + cci_ok.astype("uint8") + io_ok.astype("uint8")
-    )
+    has_data_count = wc_ok.astype("uint8") + cci_ok.astype("uint8") + io_ok.astype("uint8")
     valid = has_data_count >= 2
 
     wc_cci_agree = (wc_da == cci_da) & wc_ok & cci_ok
     cci_io_agree = (cci_da == io_da) & cci_ok & io_ok
     wc_io_agree = (wc_da == io_da) & wc_ok & io_ok
 
-    pair_agree_count = (
-        wc_cci_agree.astype("uint8")
-        + cci_io_agree.astype("uint8")
-        + wc_io_agree.astype("uint8")
-    )
+    pair_agree_count = wc_cci_agree.astype("uint8") + cci_io_agree.astype("uint8") + wc_io_agree.astype("uint8")
 
     two_of_three = (pair_agree_count >= 1) & valid
     majority_class = xr.where(wc_cci_agree, wc_da, xr.where(wc_io_agree, wc_da, io_da))
 
     neighbour_mask = xr.DataArray(
-        minimum_filter(
-            two_of_three.values.astype("float32"), size=3, mode="constant", cval=0
-        )
-        == 1,
+        minimum_filter(two_of_three.values.astype("float32"), size=3, mode="constant", cval=0) == 1,
         coords=two_of_three.coords,
         dims=two_of_three.dims,
     )
 
-    agreed_class = (
-        majority_class.where(neighbour_mask & two_of_three, other=0)
-        .rename(class_attr)
-        .astype("uint8")
-    )
+    agreed_class = majority_class.where(neighbour_mask & two_of_three, other=0).rename(class_attr).astype("uint8")
     agreed_class = agreed_class.where(agreed_class != 0, 255).astype("uint8")
     agreed_class.attrs["nodata"] = 255
 
@@ -388,12 +364,8 @@ def generate_samples(
     agree_computed = agreed.compute()
 
     geomad_valid = geomad_dem_indices["red"].notnull().compute().astype("uint8")
-    geomad_valid_matched = geomad_valid.sel(
-        x=agree_computed.x, y=agree_computed.y, method="nearest"
-    )
-    geomad_valid_matched = geomad_valid_matched.assign_coords(
-        x=agree_computed.x, y=agree_computed.y
-    )
+    geomad_valid_matched = geomad_valid.sel(x=agree_computed.x, y=agree_computed.y, method="nearest")
+    geomad_valid_matched = geomad_valid_matched.assign_coords(x=agree_computed.x, y=agree_computed.y)
 
     agree_masked = agree_computed.where(geomad_valid_matched == 1, other=drop_value)
 
@@ -616,7 +588,8 @@ def get_buffered_country(
     return gpd.GeoDataFrame(geometry=rows, crs=wgs84)
 
 
-# get_tile_year_geomad_dem_indices uses a lot of the code in search_and_load_geomad_indices_dem, but the training data notebook needs the extra country clipping so they are separate functions.
+# get_tile_year_geomad_dem_indices uses a lot of the code in search_and_load_geomad_indices_dem,
+# but the training data notebook needs the extra country clipping so they are separate functions.
 def get_tile_year_geomad_dem_indices(
     tile_id: str,
     year: str,
@@ -716,18 +689,14 @@ def make_training_data(
     tile_index = tuple(int(i) for i in tile_id.split("_"))
     grid = get_gridspec(region=region)
     tile_geobox = grid.tile_geobox(tile_index)
-    tile_footprint_wgs84 = gpd.GeoDataFrame(
-        geometry=[tile_geobox.extent.geom], crs=tile_geobox.crs
-    ).to_crs(wgs84)
+    tile_footprint_wgs84 = gpd.GeoDataFrame(geometry=[tile_geobox.extent.geom], crs=tile_geobox.crs).to_crs(wgs84)
     tile_crosses_am = isinstance(bbox_across_180(tile_footprint_wgs84), tuple)
 
     if tile_crosses_am:
         logger.info("AM-crossing tile — skipping country clip to tile footprint")
     else:
         country_wgs84_buffered = gpd.GeoDataFrame(
-            geometry=country_wgs84_buffered.intersection(
-                tile_footprint_wgs84.union_all()
-            ),
+            geometry=country_wgs84_buffered.intersection(tile_footprint_wgs84.union_all()),
             crs=wgs84,
         )
         country_wgs84_buffered = country_wgs84_buffered[
@@ -761,15 +730,11 @@ def make_training_data(
 
     # 5. Generate samples
     logger.info("Generating samples")
-    samples = generate_samples(
-        agreed, geomad_dem_indices, n=n, min_sample_per_class_n=min_sample_per_class_n
-    )
+    samples = generate_samples(agreed, geomad_dem_indices, n=n, min_sample_per_class_n=min_sample_per_class_n)
 
     # 6. Extract GeoMAD values
     logger.info("Extracting GeoMAD values")
-    samples = extract_geomad_dem_indices_values(
-        samples, geomad_dem_indices, analysis_crs
-    )
+    samples = extract_geomad_dem_indices_values(samples, geomad_dem_indices, analysis_crs)
 
     # 7. Remove NaN samples
     logger.info("Removing NaN samples")
@@ -781,10 +746,7 @@ def make_training_data(
 
     # 9. Write outputs (local)
     tile_x_index, tile_y_index = tile_id.split("_")
-    out_fname = (
-        f"training_data/{training_data_version}/{region}/{tile_x_index}/"
-        f"{tile_y_index}/{year}/samples"
-    )
+    out_fname = f"training_data/{training_data_version}/{region}/{tile_x_index}/{tile_y_index}/{year}/samples"
     out_fname_local = f"ldn/{out_fname}"
     Path(out_fname_local).parent.mkdir(parents=True, exist_ok=True)
 
@@ -803,9 +765,7 @@ def make_training_data(
 def generate_training_data(
     tile_id: str = typer.Option(..., help="Grid tile identifier (e.g. 058_043)"),
     year: str = typer.Option("2020", help="Year (e.g. 2020)"),
-    region: Literal["pacific", "non-pacific"] = typer.Option(
-        ..., help="Region: pacific or non-pacific"
-    ),
+    region: Literal["pacific", "non-pacific"] = typer.Option(..., help="Region: pacific or non-pacific"),
     training_data_version: str = typer.Option(
         TRAINING_DATA_VERSION, help=f"Version (default: {TRAINING_DATA_VERSION})"
     ),
@@ -818,9 +778,7 @@ def generate_training_data(
     country_code: str = typer.Option(None, help="Country ISO3 code (e.g. FJI)"),
     n: int = typer.Option(2100, help="Total number of sample points"),
     min_sample_per_class_n: int = typer.Option(300, help="Minimum samples per class"),
-    overwrite: bool = typer.Option(
-        False, help="Whether to overwrite existing data in S3"
-    ),
+    overwrite: bool = typer.Option(False, help="Whether to overwrite existing data in S3"),
 ):
     """Generate training data for LULC classification."""
     if not tile_id:

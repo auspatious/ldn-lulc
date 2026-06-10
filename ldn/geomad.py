@@ -1,7 +1,8 @@
-from datetime import datetime, UTC
 import logging
+from datetime import UTC, datetime
 from typing import Iterable, Tuple
 
+import numpy as np
 from datacube_compute import geomedian_with_mads
 from dep_tools.loaders import StacLoader
 from dep_tools.namers import S3ItemPath
@@ -10,10 +11,10 @@ from dep_tools.searchers import Searcher
 from dep_tools.stac_utils import StacCreator
 from dep_tools.task import AreaTask
 from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
-from odc.geo import GeoBox
-import numpy as np
 from odc.algo import mask_cleanup
-from xarray import Dataset, DataArray
+from odc.geo import GeoBox
+from xarray import DataArray, Dataset
+
 from ldn.utils import LS7_YEAR_THRESHOLD, LdnError
 
 logger = logging.getLogger(__name__)
@@ -39,9 +40,7 @@ qa_bands = {"qa_pixel", "qa_radsat"}
 
 def http_to_s3_url(http_url):
     """Convert a USGS HTTP URL to an S3 URL"""
-    s3_url = http_url.replace(
-        "https://landsatlook.usgs.gov/data", "s3://usgs-landsat"
-    ).rstrip(":1")
+    s3_url = http_url.replace("https://landsatlook.usgs.gov/data", "s3://usgs-landsat").rstrip(":1")
     return s3_url
 
 
@@ -70,9 +69,7 @@ def _set_stac_properties(input_xr: Dataset, output_xr: Dataset) -> Dataset:
         start_datetime=start_datetime,
         datetime=midpoint_datetime,
         end_datetime=end_datetime,
-        created=datetime.now(UTC)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z"),
+        created=datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
     )
 
     # Record the actual observation window when it differs from the nominal year.
@@ -92,7 +89,8 @@ def fuse_qa_pixel(dst, src):
 
     dst = earlier image on the same solarday
     src = later image on the same solarday.
-    This is used to preserve qa_pixel values for pixels that are nodata in earlier images but not later images on the same solarday.
+    This is used to preserve qa_pixel values for pixels that are nodata in earlier
+    images but not later images on the same solarday.
 
     qa_pixel uses bit 0 as Fill, so fill=1 in metadata. But actual
     nodata pixels can also be 0 (no bits set). This function treats
@@ -292,18 +290,14 @@ def mask_blue_white_cloud(
     red = _to_reflectance(ds[red_band])
 
     mean_vis = (blue + green + red) / 3.0
-    whiteness = (
-        abs(blue - mean_vis) + abs(green - mean_vis) + abs(red - mean_vis)
-    ) / mean_vis.where(mean_vis != 0)
+    whiteness = (abs(blue - mean_vis) + abs(green - mean_vis) + abs(red - mean_vis)) / mean_vis.where(mean_vis != 0)
 
     cloud_mask = (blue > _CLOUD_BLUE_MIN) & (whiteness < _CLOUD_WHITENESS_MAX)
 
     if not cloud_mask.any():
         return ds
 
-    masked = {
-        band: ds[band].where(~cloud_mask, other=nodata_value) for band in spectral_bands
-    }
+    masked = {band: ds[band].where(~cloud_mask, other=nodata_value) for band in spectral_bands}
     return ds.assign(masked)
 
 
@@ -371,9 +365,7 @@ class GeoMADProcessor(Processor):
 
     def process(self, ds: Dataset) -> Dataset:
         if ds.time.size < self.min_timesteps:
-            raise InsufficientScenesError(
-                f"{ds.time.size} is less than {self.min_timesteps} timesteps"
-            )
+            raise InsufficientScenesError(f"{ds.time.size} is less than {self.min_timesteps} timesteps")
 
         ds = mask_nodata_clouds_saturated(ds, **self.mask_kwargs)
         data = ds.drop_vars(self.drop_vars) if len(self.drop_vars) > 0 else ds
@@ -383,11 +375,7 @@ class GeoMADProcessor(Processor):
         if self.load_data_before_writing:
             geomad = geomad.compute()
 
-        geomad[
-            "count"
-        ].odc.nodata = (
-            0  # This could hide real values of 0. 9999 is what datacube-compute do.
-        )
+        geomad["count"].odc.nodata = 0  # This could hide real values of 0. 9999 is what datacube-compute do.
 
         return _set_stac_properties(data, geomad)
 
@@ -425,9 +413,7 @@ class AwsStacTask(AreaTask):
         input_data = self.loader.load(items, self.area)
         logger.info(f"Loaded {len(input_data.time.values)} items for this tile/year")
 
-        processor_kwargs = (
-            dict(area=self.area) if self.processor.send_area_to_processor else dict()
-        )
+        processor_kwargs = dict(area=self.area) if self.processor.send_area_to_processor else dict()
         output_data = self.processor.process(input_data, **processor_kwargs)
 
         if self.post_processor is not None:

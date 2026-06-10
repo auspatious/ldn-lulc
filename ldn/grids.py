@@ -2,23 +2,23 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-import pandas as pd
 import geopandas as gpd
-from ldn.utils import ALL_COUNTRIES, LdnError
-
-from odc.geo.geom import Geometry
-
-from odc.geo.gridspec import GridSpec
-from odc.geo import XY
-
+import pandas as pd
 from antimeridian import fix_polygon
-
 from dep_tools.grids import (
-    PACIFIC_EPSG,
-    grid as dep_grid,
     COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES,
 )
-from ldn.utils import NON_DEP_COUNTRIES, wgs84
+from dep_tools.grids import (
+    PACIFIC_EPSG,
+)
+from dep_tools.grids import (
+    grid as dep_grid,
+)
+from odc.geo import XY
+from odc.geo.geom import Geometry
+from odc.geo.gridspec import GridSpec
+
+from ldn.utils import ALL_COUNTRIES, NON_DEP_COUNTRIES, LdnError, wgs84
 
 EPSG_CODE = 6933  # NSIDC EASE-Grid 2.0 Global
 logger = logging.getLogger(__name__)
@@ -29,17 +29,13 @@ GADM_FILE = Path(__file__).parent / "gadm_sids.gpkg"
 def do_get_gadm(countries: dict) -> gpd.GeoDataFrame:
     all_polys = []
     for _, country_code in countries.items():
-        url = (
-            f"https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_{country_code}.gpkg"
-        )
+        url = f"https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_{country_code}.gpkg"
         country_gdf = gpd.read_file(url, layer="ADM_ADM_0")
         all_polys.append(country_gdf)
     return gpd.GeoDataFrame(pd.concat(all_polys, ignore_index=True))
 
 
-def get_gadm(
-    countries: dict = ALL_COUNTRIES, overwrite: bool = False
-) -> gpd.GeoDataFrame:
+def get_gadm(countries: dict = ALL_COUNTRIES, overwrite: bool = False) -> gpd.GeoDataFrame:
     """
     Downloads the GADM data for the specified countries if not already cached locally.
     Combines the country geometries into a single GeoDataFrame and saves to a local GeoPackage file.
@@ -49,37 +45,28 @@ def get_gadm(
     # If no local file or overwrite requested, download everything and return early.
     if not GADM_FILE.exists() or overwrite:
         logger.info(
-            f"Overwrite is True or GADM file does not exist — downloading GADM data for requested countries ({', '.join(requested_countries)})."
+            f"Overwrite is True or GADM file does not exist — downloading GADM data for requested "
+            f"countries ({', '.join(requested_countries)})."
         )
         all_gadm = do_get_gadm(countries)
         all_gadm.to_file(GADM_FILE, driver="GPKG")
         return all_gadm[all_gadm["GID_0"].isin(requested_countries)]
 
     # Local file exists — check which requested countries are already present.
-    logger.info(
-        "GADM file exists and overwrite is False — checking for missing countries."
-    )
+    logger.info("GADM file exists and overwrite is False — checking for missing countries.")
     existing_gdf = gpd.read_file(GADM_FILE)
     existing_countries = set(existing_gdf["GID_0"].unique())
     missing_countries = requested_countries - existing_countries
 
     # Fetch and append any missing countries.
     if missing_countries:
-        logger.info(
-            f"Missing countries in local GADM file: {missing_countries} — downloading now."
-        )
-        missing_country_codes = {
-            name: code for name, code in countries.items() if code in missing_countries
-        }
+        logger.info(f"Missing countries in local GADM file: {missing_countries} — downloading now.")
+        missing_country_codes = {name: code for name, code in countries.items() if code in missing_countries}
         missing_gadm = do_get_gadm(missing_country_codes)
-        combined_gdf = gpd.GeoDataFrame(
-            pd.concat([existing_gdf, missing_gadm], ignore_index=True)
-        )
+        combined_gdf = gpd.GeoDataFrame(pd.concat([existing_gdf, missing_gadm], ignore_index=True))
         combined_gdf.to_file(GADM_FILE, driver="GPKG")
     else:
-        logger.info(
-            "All requested countries already present in local GADM file — no download needed."
-        )
+        logger.info("All requested countries already present in local GADM file — no download needed.")
         combined_gdf = existing_gdf
 
     return combined_gdf[combined_gdf["GID_0"].isin(requested_countries)]
@@ -111,9 +98,7 @@ def get_gridspec(
 
     if region == "pacific":
         # For the Pacific region, we use the DEP-defined grid
-        return dep_grid(
-            resolution, simplify_tolerance=0, crs=PACIFIC_EPSG, return_type="GridSpec"
-        )
+        return dep_grid(resolution, simplify_tolerance=0, crs=PACIFIC_EPSG, return_type="GridSpec")
 
     # Put the origin at a stable, off-Earth corner so the grid never moves.
     # Prevent the antimeridian from coinciding with tile boundaries.
@@ -136,24 +121,20 @@ def get_grid_tiles(
     overwrite: bool = False,
 ) -> gpd.GeoDataFrame | list[tuple[tuple[int, int], str]]:
     """
-    Returns a list of all grid tiles (as ((x, y), region) tuples) that cover the combined geometry of all SIDS and DEP countries.
+    Returns a list of all grid tiles (as ((x, y), region) tuples) that cover the combined geometry of all
+    SIDS and DEP countries.
     Alternately, returns a Geopandas GeoDataFrame of the tiles.
     Writes two GeoJSONs: one for CI, one for DEP.
-    As an optimization, if the GeoJSON files already exist and overwrite=False, it will read from those instead of recalculating the tiles.
-    Output list format [((x, y), region), ...] or GeoDataFrame with columns ['x_index', 'y_index', 'label', 'geometry', 'region']
-    where label is "x_index_y_index".
+    As an optimization, if the GeoJSON files already exist and overwrite=False, it will read from those
+    instead of recalculating the tiles.
     """
     if format not in ["list", "gdf"]:
         raise LdnError("Invalid format. Must be 'list' or 'gdf'.")
 
     if grids not in ["all", "pacific", "non-pacific"]:
-        raise LdnError(
-            "Invalid grids value. Must be 'all', 'pacific', or 'non-pacific'."
-        )
+        raise LdnError("Invalid grids value. Must be 'all', 'pacific', or 'non-pacific'.")
 
-    logger.info(
-        f"Getting all tiles for grids: {grids} with format: {format} and overwrite: {overwrite}"
-    )
+    logger.info(f"Getting all tiles for grids: {grids} with format: {format} and overwrite: {overwrite}")
 
     geojson_path_non_pacific = Path(__file__).parent / "sids_non_pacific_tiles.geojson"
     geojson_path_pacific = Path(__file__).parent / "sids_pacific_tiles.geojson"
@@ -162,47 +143,32 @@ def get_grid_tiles(
     def process_grid(region, grid_obj, gadm, countries, geojson_file):
         logger.info(f"Processing grid {region} for countries: {list(countries.keys())}")
         if not overwrite and geojson_file.exists():
-            logger.info(
-                "Reading existing GeoJSON file because overwrite is False and file exists."
-            )
+            logger.info("Reading existing GeoJSON file because overwrite is False and file exists.")
             extents_gdf = gpd.read_file(geojson_file)
         else:
-            logger.info(
-                "Calculating tiles because overwrite is True or file does not exist."
-            )
+            logger.info("Calculating tiles because overwrite is True or file does not exist.")
             all_polys = []
             for country, code in countries.items():
                 selection = gadm[gadm["GID_0"] == code]
                 if selection.empty:
                     raise LdnError(
-                        f"No geometry found for country: {country} with code {code}. Check get_gadm has been run for all countries with overwrite on."
+                        f"No geometry found for country: {country} with code {code}. Check get_gadm has "
+                        f"been run for all countries with overwrite on."
                     )
                 polygon = Geometry(selection.geometry.union_all(), crs=gadm.crs)
                 tiles = list(grid_obj.tiles_from_geopolygon(polygon))
                 geoboxes = [tile[1] for tile in tiles]
-                geobox_labels = [
-                    list(tile[0]) + [f"{tile[0][0]}_{tile[0][1]}"] for tile in tiles
-                ]
+                geobox_labels = [list(tile[0]) + [f"{tile[0][0]}_{tile[0][1]}"] for tile in tiles]
                 geobox_extents = [
                     fix_polygon(gb.extent.to_crs(wgs84)) for gb in geoboxes
                 ]  # Fix antimeridian crossing geoms.
-                labels_df = pd.DataFrame(
-                    geobox_labels, columns=["x_index", "y_index", "label"]
-                )
-                extents_gdf = gpd.GeoDataFrame(
-                    labels_df, geometry=geobox_extents, crs=wgs84
-                )
+                labels_df = pd.DataFrame(geobox_labels, columns=["x_index", "y_index", "label"])
+                extents_gdf = gpd.GeoDataFrame(labels_df, geometry=geobox_extents, crs=wgs84)
                 extents_gdf["region"] = region
                 all_polys.append(extents_gdf)
-            extents_gdf = (
-                pd.concat(all_polys)
-                .drop_duplicates(subset=["label"])
-                .reset_index(drop=True)
-            )
+            extents_gdf = pd.concat(all_polys).drop_duplicates(subset=["label"]).reset_index(drop=True)
 
-            logger.info(
-                f"Writing geojson for grid {region} with {len(extents_gdf)} tiles."
-            )
+            logger.info(f"Writing geojson for grid {region} with {len(extents_gdf)} tiles.")
 
             extents_gdf.to_file(
                 geojson_file, driver="GeoJSON"
@@ -245,14 +211,12 @@ def get_grid_tiles(
 
     if grids == "all" and (overwrite or not geojson_path_all.exists()):
         logger.info(
-            f"Writing combined GeoJSON file for all tiles because grids is 'all', and (overwrite is True or the file does not exist). With {len(all_tiles_gdf)} tiles."
+            f"Writing combined GeoJSON file for all tiles because grids is 'all', "
+            f"and (overwrite is True or the file does not exist). With {len(all_tiles_gdf)} tiles."
         )
         all_tiles_gdf.to_file(geojson_path_all, driver="GeoJSON")
 
     if format == "list":
-        return [
-            ((int(row["x_index"]), int(row["y_index"])), str(row["region"]))
-            for _, row in all_tiles_gdf.iterrows()
-        ]
+        return [((int(row["x_index"]), int(row["y_index"])), str(row["region"])) for _, row in all_tiles_gdf.iterrows()]
     else:
         return all_tiles_gdf.reset_index(drop=True)

@@ -1,6 +1,6 @@
 from importlib.resources import files
-import yaml
 
+import yaml
 
 _typology_path = files("ldn").joinpath("typology_mapping.yaml")
 with _typology_path.open("r", encoding="utf-8") as f:

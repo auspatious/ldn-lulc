@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 
-from ldn.geomad import GeoMADProcessor, LANDSAT_BANDS, _set_stac_properties
+from ldn.geomad import LANDSAT_BANDS, GeoMADProcessor, _set_stac_properties
 
 EXPECTED_BANDS = [
     "nir08",
@@ -20,9 +20,7 @@ EXPECTED_BANDS = [
 def _make_landsat_input(n_times: int, size: int) -> xr.Dataset:
     """Build a tiny multi-timestep Landsat-like dataset with all required bands."""
     coords = {
-        "time": np.array(
-            [f"2020-0{i + 1}-15" for i in range(n_times)], dtype="datetime64[ns]"
-        ),
+        "time": np.array([f"2020-0{i + 1}-15" for i in range(n_times)], dtype="datetime64[ns]"),
         "y": np.arange(size, dtype="float64"),
         "x": np.arange(size, dtype="float64"),
     }
@@ -62,9 +60,7 @@ def test_geomad_processor_output_has_expected_bands_nodata_and_dtype() -> None:
 
 
 def test_set_stac_properties_datetime_same_year() -> None:
-    input_xr = xr.Dataset(
-        coords={"time": np.array(["2020-03-01", "2020-11-15"], dtype="datetime64[ns]")}
-    )
+    input_xr = xr.Dataset(coords={"time": np.array(["2020-03-01", "2020-11-15"], dtype="datetime64[ns]")})
     output_xr = xr.Dataset()
 
     result = _set_stac_properties(input_xr, output_xr)
@@ -78,9 +74,7 @@ def test_set_stac_properties_datetime_same_year() -> None:
 
 
 def test_set_stac_properties_datetime_midpoint_when_years_differ() -> None:
-    input_xr = xr.Dataset(
-        coords={"time": np.array(["2020-03-01", "2021-11-15"], dtype="datetime64[ns]")}
-    )
+    input_xr = xr.Dataset(coords={"time": np.array(["2020-03-01", "2021-11-15"], dtype="datetime64[ns]")})
     output_xr = xr.Dataset()
 
     result = _set_stac_properties(input_xr, output_xr)
@@ -94,9 +88,7 @@ def test_set_stac_properties_datetime_midpoint_when_years_differ() -> None:
 
 
 def test_set_stac_properties_datetime_three_year_span() -> None:
-    input_xr = xr.Dataset(
-        coords={"time": np.array(["1999-02-10", "2001-10-20"], dtype="datetime64[ns]")}
-    )
+    input_xr = xr.Dataset(coords={"time": np.array(["1999-02-10", "2001-10-20"], dtype="datetime64[ns]")})
     output_xr = xr.Dataset()
 
     result = _set_stac_properties(input_xr, output_xr)

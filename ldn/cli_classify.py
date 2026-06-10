@@ -6,13 +6,13 @@ import typer
 from ldn.classify import run_classify_task
 from ldn.utils import (
     AWS_REGION,
+    BUCKET,
     GEOMAD_VERSION,
     MODEL_VERSION,
-    LdnError,
-    BUCKET,
-    PACIFIC_OWNER,
     NON_PACIFIC_OWNER,
+    PACIFIC_OWNER,
     PREDICTION_VERSION,
+    LdnError,
     owner_for_region,
 )
 
@@ -36,15 +36,9 @@ def run(
         ..., help="Region to predict LULC for. Can be 'pacific' or 'non-pacific'."
     ),
     bucket: str = typer.Option(BUCKET, help="S3 bucket for data."),
-    owner_pacific: str = typer.Option(
-        PACIFIC_OWNER, help="S3 owner prefix for Pacific data."
-    ),
-    owner_non_pacific: str = typer.Option(
-        NON_PACIFIC_OWNER, help="S3 owner prefix for non-Pacific data."
-    ),
-    product_owner: str | None = typer.Option(
-        None, help="Override the region-derived owner prefix."
-    ),
+    owner_pacific: str = typer.Option(PACIFIC_OWNER, help="S3 owner prefix for Pacific data."),
+    owner_non_pacific: str = typer.Option(NON_PACIFIC_OWNER, help="S3 owner prefix for non-Pacific data."),
+    product_owner: str | None = typer.Option(None, help="Override the region-derived owner prefix."),
     model_path: str = typer.Option(
         # TODO: defaults to pacific. Later have per region/time period models.
         f"https://s3.{AWS_REGION}.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/pacific/2020/lulc_random_forest_model_pacific_2020.joblib",
@@ -54,28 +48,23 @@ def run(
         False,
         help="Whether to use decimated data for prediction. Decimated data is faster to predict but less accurate.",
     ),
-    overwrite: bool = typer.Option(
-        False, help="Whether to overwrite existing prediction."
-    ),
+    overwrite: bool = typer.Option(False, help="Whether to overwrite existing prediction."),
     probability_threshold: float = typer.Option(
         30.0,
-        help="Probability threshold (0-100) for classifying a pixel as the target class. Higher values mean only pixels with higher predicted probability will be classified as the target class.",
+        help="Probability threshold (0-100) for classifying a pixel as the target class. "
+        "Higher values mean only pixels with higher predicted probability will be classified as the target class.",
     ),
     nodata_value: int = typer.Option(
         255,
         help="Value to use for NoData pixels in the output. Must be an integer between 0 and 255.",
     ),
-    memory_limit: Annotated[
-        str, typer.Option(help="Per-worker Dask memory limit.")
-    ] = "10GB",
+    memory_limit: Annotated[str, typer.Option(help="Per-worker Dask memory limit.")] = "10GB",
     n_workers: Annotated[int, typer.Option(help="Number of Dask workers.")] = 2,
-    threads_per_worker: Annotated[
-        int, typer.Option(help="Threads per Dask worker.")
-    ] = 4,
+    threads_per_worker: Annotated[int, typer.Option(help="Threads per Dask worker.")] = 4,
     xy_chunk_size: Annotated[
         int,
         typer.Option(
-            help="Chunk size in pixels for x and y dimensions when predicting. Larger chunk sizes may be faster but use more memory."
+            help="Chunk size in pixels for x and y dimensions. Larger chunk sizes may be faster but use more memory."
         ),
     ] = 1024,
 ) -> None:

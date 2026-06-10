@@ -2,17 +2,16 @@
 # Writing there needs its own AWS credentials, that are different to our standard credentials.
 # This is all optional because writing to other buckets doesn't need this.
 
-from contextlib import contextmanager
+import logging
 import os
+from contextlib import contextmanager
 
 import boto3
 import obstore
-
-from ldn.utils import AWS_REGION
-
-import logging
 from botocore.client import BaseClient
 from dep_tools.writers import write_to_s3
+
+from ldn.utils import AWS_REGION
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +32,7 @@ def get_write_session() -> boto3.Session:
     secret = os.environ.get(_WRITE_SECRET)
 
     if not (key and secret):
-        logger.info(
-            "AWS_WRITE_* env vars not set; falling back to default credential chain for writes."
-        )
+        logger.info("AWS_WRITE_* env vars not set; falling back to default credential chain for writes.")
         return boto3.Session()
 
     logger.info("Using explicit write credentials from environment.")
@@ -73,7 +70,8 @@ def _session_credentials(session: boto3.Session) -> dict:
     }
 
 
-# The env-var swap in write_credentials_as_env is not thread-safe. Since make_mosaics is synchronous/sequential this is fine, but worth noting if it ever gets parallelised.
+# The env-var swap in write_credentials_as_env is not thread-safe. Since make_mosaics is synchronous/sequential
+# this is fine, but worth noting if it ever gets parallelised.
 @contextmanager
 def write_credentials_as_env(session: boto3.Session):
     """Context manager that temporarily sets AWS env vars from a boto3 session.

@@ -1,6 +1,6 @@
 """Smoke tests verifying CLI region config params wire through to S3ItemPath."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
@@ -114,9 +114,7 @@ class TestGeomadRegionConfig:
     @patch("ldn.cli_geomad.object_exists", return_value=True)
     @patch("ldn.cli_geomad.configure_s3_access")
     @patch("ldn.cli_geomad.boto3")
-    def test_custom_bucket_skips_existing(
-        self, mock_boto3, mock_s3_access, mock_exists
-    ):
+    def test_custom_bucket_skips_existing(self, mock_boto3, mock_s3_access, mock_exists):
         """When item exists with custom bucket, geomad should skip and report the custom path."""
         mock_boto3.client.return_value = MagicMock()
 
@@ -203,8 +201,6 @@ class TestIndexToStacGeoparquetRegionConfig:
         mock_run_index.assert_called_once()
         args = mock_run_index.call_args[0]
         if SOURCE_COOP_PUBLIC_URL:
-            assert args[1] == [
-                ("auspatious/geomad-sids/custom_ls_geomad/0-2-1", "custom_ls_geomad")
-            ]
+            assert args[1] == [("auspatious/geomad-sids/custom_ls_geomad/0-2-1", "custom_ls_geomad")]
         else:
             assert args[1] == [("custom_ls_geomad/0-2-1", "custom_ls_geomad")]

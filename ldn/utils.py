@@ -1,5 +1,6 @@
 import logging
 from typing import Literal
+
 from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
 
 logger = logging.getLogger(__name__)
@@ -71,13 +72,10 @@ SIDS_COUNTRIES_AND_CODES = {
 ALL_COUNTRIES = {**SIDS_COUNTRIES_AND_CODES, **DEP_COUNTRIES_AND_CODES}
 
 # Get SIDS countries that are not in DEP for CI Grid use.
-NON_DEP_COUNTRIES = {
-    k: v
-    for k, v in SIDS_COUNTRIES_AND_CODES.items()
-    if k not in DEP_COUNTRIES_AND_CODES
-}
+NON_DEP_COUNTRIES = {k: v for k, v in SIDS_COUNTRIES_AND_CODES.items() if k not in DEP_COUNTRIES_AND_CODES}
 
-# These tiles are representative of different environments e.g. forest, atoll, volcanic, elevated, urban, beach, wetland, grassland, cropland, etc, Give me more if more than 5 are needed
+# These tiles are representative of different environments e.g. forest, atoll, volcanic, elevated, urban, beach,
+# wetland, grassland, cropland, etc, Give me more if more than 5 are needed
 PACIFIC_TRAINING_TILES = [
     # Papua New Guinea: Dense tropical rainforest & highland montane forest.
     ("028_030", "pacific", {"Papua New Guinea": "PNG"}),  # Capital city and coast.
@@ -94,7 +92,8 @@ PACIFIC_TRAINING_TILES = [
     # 2 tiles pretty much covers all of Samoa.
     ("074_025", "pacific", {"Samoa": "WSM"}),
     ("075_025", "pacific", {"Samoa": "WSM"}),
-    # Fiji: The most "mixed urban + agricultural" of the group, with sugarcane croplands, mangrove wetlands, and a developed capital (Suva)
+    # Fiji: The most "mixed urban + agricultural" of the group, with sugarcane croplands,
+    # mangrove wetlands, and a developed capital (Suva)
     ("063_020", "pacific", {"Fiji": "FJI"}),  # Elevation.
     ("066_022", "pacific", {"Fiji": "FJI"}),  # AM-crossing.
     ("064_020", "pacific", {"Fiji": "FJI"}),  # Suva urban area.
