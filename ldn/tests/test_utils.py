@@ -1,33 +1,14 @@
 from ldn.utils import (
     AWS_REGION,
     GEOMAD_VERSION,
-    NON_PACIFIC_BUCKET,
+    BUCKET,
     NON_PACIFIC_OWNER,
-    PACIFIC_BUCKET,
     PACIFIC_OWNER,
-    bucket_for_region,
     dataset_prefix,
     get_geomad_item_id,
     get_geomad_stac_geoparquet_url,
     owner_for_region,
 )
-
-
-class TestBucketForRegion:
-    def test_pacific_default(self):
-        assert bucket_for_region("pacific") == PACIFIC_BUCKET
-
-    def test_non_pacific_default(self):
-        assert bucket_for_region("non-pacific") == NON_PACIFIC_BUCKET
-
-    def test_pacific_custom(self):
-        assert bucket_for_region("pacific", "my-bucket", "other-bucket") == "my-bucket"
-
-    def test_non_pacific_custom(self):
-        assert (
-            bucket_for_region("non-pacific", "my-bucket", "other-bucket")
-            == "other-bucket"
-        )
 
 
 class TestOwnerForRegion:
@@ -69,17 +50,17 @@ class TestDatasetPrefix:
 class TestGetGeomadStacGeoparquetUrl:
     def test_pacific(self):
         url = get_geomad_stac_geoparquet_url("pacific")
-        expected = f"https://s3.{AWS_REGION}.amazonaws.com/{PACIFIC_BUCKET}/dep_ls_geomad/{GEOMAD_VERSION}/dep_ls_geomad.parquet"
+        expected = f"https://s3.{AWS_REGION}.amazonaws.com/{BUCKET}/dep_ls_geomad/{GEOMAD_VERSION}/dep_ls_geomad.parquet"
         assert url == expected
 
     def test_non_pacific(self):
         url = get_geomad_stac_geoparquet_url("non-pacific")
-        expected = f"https://s3.{AWS_REGION}.amazonaws.com/{NON_PACIFIC_BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
+        expected = f"https://s3.{AWS_REGION}.amazonaws.com/{BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
         assert url == expected
 
     def test_product_owner_override(self):
         url = get_geomad_stac_geoparquet_url("pacific", product_owner="ci")
-        expected = f"https://s3.{AWS_REGION}.amazonaws.com/{PACIFIC_BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
+        expected = f"https://s3.{AWS_REGION}.amazonaws.com/{BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
         assert url == expected
 
 

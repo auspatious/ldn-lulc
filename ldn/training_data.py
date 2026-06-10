@@ -37,7 +37,7 @@ from ldn.grids import get_gadm, get_gridspec
 from ldn.random_sampling import random_sampling
 from ldn.typology import world_cover_map, cci_lc_map, io_map
 from ldn.utils import (
-    NON_PACIFIC_BUCKET,
+    BUCKET,
     TRAINING_DATA_VERSION,
     LdnError,
     class_attr,
@@ -810,8 +810,8 @@ def generate_training_data(
         TRAINING_DATA_VERSION, help=f"Version (default: {TRAINING_DATA_VERSION})"
     ),
     bucket: str = typer.Option(
-        NON_PACIFIC_BUCKET,
-        help=f"S3 bucket name for upload (default: {NON_PACIFIC_BUCKET})",
+        BUCKET,
+        help=f"S3 bucket name for upload (default: {BUCKET})",
     ),
     # TODO: Refactor so country data doesn't need to be passed. Not sure how.
     country_name: str = typer.Option(None, help="Country name (e.g. Fiji)"),

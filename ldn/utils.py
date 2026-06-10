@@ -114,16 +114,16 @@ TRAINING_DATA_VERSION = "0-0-4"
 
 # aws s3 cp test.txt s3://us-west-2.opendata.source.coop/auspatious/geomad-sids/test.txt
 # aws s3 rm s3://us-west-2.opendata.source.coop/auspatious/geomad-sids/test.txt
-GEOMAD_PREFIX = "auspatious/geomad-sids"  # For source.coop.
+SOURCE_COOP_PUBLIC_URL = "https://data.source.coop"  # public read URL for STAC hrefs
+# SOURCE_COOP_PUBLIC_URL = None # For non-Source.Coop buckets.
+SOURCE_COOP_PREFIX = "auspatious/geomad-sids"  # For source.coop.
 
-# Mosaic source configuration per region
-# PACIFIC_BUCKET = "dep-public-staging"
-PACIFIC_BUCKET = "us-west-2.opendata.source.coop"  # TODO: Just call this bucket. Remove non-pacific bucket.
+# BUCKET = "data.ldn.auspatious.com"
+# BUCKET = "dep-public-staging"
+BUCKET = "us-west-2.opendata.source.coop"
+
+
 PACIFIC_OWNER = "dep"
-GEOMAD_PUBLIC_URL = "https://data.source.coop"  # public read URL for STAC hrefs
-# GEOMAD_PUBLIC_URL = None # For non-Source.Coop buckets.
-# NON_PACIFIC_BUCKET = "data.ldn.auspatious.com" # TODO: Remove.
-NON_PACIFIC_BUCKET = "us-west-2.opendata.source.coop"  # TODO: Remove.
 NON_PACIFIC_OWNER = "ci"
 
 SENSOR = "ls"
@@ -137,15 +137,6 @@ training_data_year = "2020"
 class_attr = "lulc"
 
 wgs84 = "EPSG:4326"
-
-
-def bucket_for_region(
-    region: Literal["pacific", "non-pacific"],
-    bucket_pacific: str = PACIFIC_BUCKET,
-    bucket_non_pacific: str = NON_PACIFIC_BUCKET,
-) -> str:
-    """Return the S3 bucket for a given region."""
-    return bucket_pacific if region == "pacific" else bucket_non_pacific
 
 
 def owner_for_region(
@@ -192,7 +183,8 @@ def get_geomad_stac_geoparquet_url(
         HTTPS URL to the STAC-Geoparquet file.
     """
     ver = version if version is not None else GEOMAD_VERSION
-    bucket = bucket_for_region(region)
+    bucket = BUCKET  # TODO: Make this a param?
+    # TODO: Add SOURCE_COOP_PREFIX here for source.coop?
     owner = owner_for_region(region, product_owner=product_owner)
     prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
     return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/{prefix}/{ver}/{prefix}.parquet"

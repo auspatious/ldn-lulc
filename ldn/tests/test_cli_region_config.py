@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 
 from ldn.cli import app
 from ldn.cli_classify import classify_app
+from ldn.utils import SOURCE_COOP_PREFIX
 
 runner = CliRunner()
 
@@ -32,7 +33,7 @@ class TestPrintTasksRegionConfig:
                 "2020",
                 "--region",
                 "pacific",
-                "--bucket-pacific",
+                "--bucket",
                 "my-custom-bucket",
                 "--owner-pacific",
                 "myorg",
@@ -43,7 +44,10 @@ class TestPrintTasksRegionConfig:
         mock_paginator.paginate.assert_called_once()
         call_kwargs = mock_paginator.paginate.call_args[1]
         assert call_kwargs["Bucket"] == "my-custom-bucket"
-        assert call_kwargs["Prefix"].startswith("myorg_ls_geomad/")
+        expected_prefix = "myorg_ls_geomad/"
+        if SOURCE_COOP_PREFIX:
+            expected_prefix = f"{SOURCE_COOP_PREFIX}/{expected_prefix}"
+        assert call_kwargs["Prefix"].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")
     @patch("ldn.cli.boto3")
@@ -71,7 +75,10 @@ class TestPrintTasksRegionConfig:
 
         assert result.exit_code == 0, result.output
         call_kwargs = mock_paginator.paginate.call_args[1]
-        assert call_kwargs["Prefix"].startswith("override_ls_geomad/")
+        expected_prefix = "override_ls_geomad/"
+        if SOURCE_COOP_PREFIX:
+            expected_prefix = f"{SOURCE_COOP_PREFIX}/{expected_prefix}"
+        assert call_kwargs["Prefix"].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")
     @patch("ldn.cli.boto3")
@@ -127,7 +134,7 @@ class TestGeomadRegionConfig:
                 "0-2-1",
                 "--region",
                 "pacific",
-                "--bucket-pacific",
+                "--bucket",
                 "my-test-bucket",
                 "--owner-pacific",
                 "testorg",
@@ -161,7 +168,7 @@ class TestClassifyRegionConfig:
                 "0-0-4",
                 "--region",
                 "pacific",
-                "--bucket-pacific",
+                "--bucket",
                 "custom-bucket",
                 "--owner-pacific",
                 "customorg",
@@ -214,7 +221,7 @@ class TestIndexToStacGeoparquetRegionConfig:
                 "geomad",
                 "--region",
                 "pacific",
-                "--bucket-pacific",
+                "--bucket",
                 "idx-bucket",
                 "--owner-pacific",
                 "idxorg",
@@ -262,9 +269,9 @@ class TestMakeMosaicsRegionConfig:
                 "geomad",
                 "--region",
                 "pacific",
-                "--bucket-pacific",
+                "--bucket",
                 "mosaic-bucket",
-                "--owner-pacific",
+                "--product-owner",
                 "mosaicorg",
             ],
         )
@@ -272,7 +279,6 @@ class TestMakeMosaicsRegionConfig:
         assert result.exit_code == 0, result.output
         mock_load.assert_called_once()
         url = mock_load.call_args[0][0]
-        assert "mosaic-bucket" in url
         assert "mosaicorg_ls_geomad" in url
 
     @patch("ldn.cli._load_all_features", return_value=[])

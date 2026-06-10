@@ -34,14 +34,12 @@ from ldn.grids import get_gridspec
 from ldn.utils import (
     AWS_REGION,
     GEOMAD_DATASET_ID,
-    GEOMAD_PREFIX,
-    GEOMAD_PUBLIC_URL,
+    SOURCE_COOP_PREFIX,
+    SOURCE_COOP_PUBLIC_URL,
     SENSOR,
-    PACIFIC_BUCKET,
-    NON_PACIFIC_BUCKET,
+    BUCKET,
     PACIFIC_OWNER,
     NON_PACIFIC_OWNER,
-    bucket_for_region,
     owner_for_region,
     LS7_YEAR_THRESHOLD,
 )
@@ -119,17 +117,16 @@ def run(
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
-    bucket_pacific: Annotated[
-        str, typer.Option(help="S3 bucket for pacific data.")
-    ] = PACIFIC_BUCKET,
-    bucket_non_pacific: Annotated[
-        str, typer.Option(help="S3 bucket for non-pacific data.")
-    ] = NON_PACIFIC_BUCKET,
+    bucket: Annotated[str, typer.Option(help="S3 bucket for Pacific data.")] = BUCKET,
     owner_pacific: Annotated[
-        str, typer.Option(help="Short owner prefix for pacific (e.g. 'dep').")
+        str,
+        typer.Option(help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."),
     ] = PACIFIC_OWNER,
     owner_non_pacific: Annotated[
-        str, typer.Option(help="Short owner prefix for non-pacific (e.g. 'ci').")
+        str,
+        typer.Option(
+            help=f"Short owner prefix for non-Pacific (e.g. '{NON_PACIFIC_OWNER}')."
+        ),
     ] = NON_PACIFIC_OWNER,
     product_owner: Annotated[
         str | None, typer.Option(help="Override the region-derived owner prefix.")
@@ -224,16 +221,15 @@ def run(
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_index)
 
-    # Resolve bucket and prefix based on tile region
-    bucket = bucket_for_region(region, bucket_pacific, bucket_non_pacific)
+    # Resolve prefix based on tile region and owner override
     owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
 
     # TODO: Handle different bucket formats more robustly. For now we support:
     # "data.ldn.auspatious.com" to "https://data.ldn.auspatious.com"
     # "dep-public-staging" to "https://dep-public-staging.s3.us-west-2.amazonaws.com"
     # "https://data.source.coop" to "https://data.source.coop"
-    if GEOMAD_PUBLIC_URL:
-        full_path_prefix = GEOMAD_PUBLIC_URL
+    if SOURCE_COOP_PUBLIC_URL:
+        full_path_prefix = SOURCE_COOP_PUBLIC_URL
     elif bucket.startswith("https://"):
         full_path_prefix = bucket
     elif "." in bucket:
@@ -253,7 +249,7 @@ def run(
 
     # Check if we've done this tile before
     itempath = PrefixedS3ItemPath(
-        key_prefix=GEOMAD_PREFIX,
+        key_prefix=SOURCE_COOP_PREFIX,
         prefix=owner,
         bucket=bucket,  # S3 bucket for writes
         sensor=SENSOR,
@@ -270,7 +266,7 @@ def run(
 
     # TODO: Now this only works for Source.Coop write credentials.
     # check_client = write_client if writing_to_source_coop else client
-    check_client = write_client if GEOMAD_PREFIX else client
+    check_client = write_client if SOURCE_COOP_PREFIX else client
 
     # If we don't want to overwrite, and the destination file already exists, skip it
     # Use the write client to check if the item already exists at the destination, since it may have different credentials.

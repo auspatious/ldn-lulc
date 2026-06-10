@@ -63,7 +63,7 @@ def test_build_mosaic_for_year_returns_mosaic():
 
     assert isinstance(mosaic, MosaicJSON)
     assert mosaic.minzoom == 5
-    assert mosaic.maxzoom == 14
+    assert mosaic.maxzoom == 12
 
 
 def test_build_mosaic_for_year_raises_on_empty():
