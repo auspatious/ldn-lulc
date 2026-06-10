@@ -185,6 +185,15 @@ geomad-source-coop-test-np:
     	--version $(SOURCE_TEST_VERSION) \
 		--decimated;
 
+# Test geomad works for LS7
+test-geomad-ls7-source-coop:
+	poetry run ldn geomad run \
+		--tile-id 050_015 \
+    	--region pacific \
+    	--year 2010 \
+    	--version 0-2-1-test \
+		--decimated;
+
 index-geomad-source-coop-test:
 	ldn index-to-stac-geoparquet \
 	--dataset "geomad" \

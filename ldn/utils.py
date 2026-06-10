@@ -116,9 +116,11 @@ TRAINING_DATA_VERSION = "0-0-4"
 # aws s3 rm s3://us-west-2.opendata.source.coop/auspatious/geomad-sids/test.txt
 # aws s3 rm s3://us-west-2.opendata.source.coop/auspatious/lulc-sids/dep_ls_lulc_prediction/0-0-4-test/ --recursive
 SOURCE_COOP_PUBLIC_URL = "https://data.source.coop"  # public read URL for STAC hrefs
-# SOURCE_COOP_PUBLIC_URL = None # For non-Source.Coop buckets.
 SOURCE_COOP_PREFIX_GEOMAD = "auspatious/geomad-sids"  # For source.coop.
 SOURCE_COOP_PREFIX_PREDICTION = "auspatious/lulc-sids"  # For source.coop.
+# SOURCE_COOP_PUBLIC_URL = None # For non-Source.Coop buckets.
+# SOURCE_COOP_PREFIX_GEOMAD = None
+# SOURCE_COOP_PREFIX_PREDICTION = None
 
 # BUCKET = "data.ldn.auspatious.com"
 # BUCKET = "dep-public-staging"

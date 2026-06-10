@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 from typer.testing import CliRunner
 
 from ldn.cli import app
-from ldn.utils import SOURCE_COOP_PREFIX_GEOMAD
+from ldn.utils import SOURCE_COOP_PREFIX_GEOMAD, SOURCE_COOP_PUBLIC_URL
 
 runner = CliRunner()
 
@@ -170,11 +170,18 @@ class TestIndexToStacGeoparquetRegionConfig:
         )
 
         assert result.exit_code == 0, result.output
-        mock_run_index.assert_called_once_with(
-            "idx-bucket",
-            [("auspatious/geomad-sids/idxorg_ls_geomad/0-2-1", "idxorg_ls_geomad")],
-            "auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet",
-        )
+        if SOURCE_COOP_PUBLIC_URL:
+            mock_run_index.assert_called_once_with(
+                "idx-bucket",
+                [("auspatious/geomad-sids/idxorg_ls_geomad/0-2-1", "idxorg_ls_geomad")],
+                "auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet",
+            )
+        else:
+            mock_run_index.assert_called_once_with(
+                "idx-bucket",
+                [("idxorg_ls_geomad/0-2-1", "idxorg_ls_geomad")],
+                "None/ls_geomad/0-2-1/ls_geomad.parquet",
+            )
 
     @patch("ldn.cli._run_index")
     def test_product_owner_override(self, mock_run_index):
@@ -195,6 +202,9 @@ class TestIndexToStacGeoparquetRegionConfig:
         assert result.exit_code == 0, result.output
         mock_run_index.assert_called_once()
         args = mock_run_index.call_args[0]
-        assert args[1] == [
-            ("auspatious/geomad-sids/custom_ls_geomad/0-2-1", "custom_ls_geomad")
-        ]
+        if SOURCE_COOP_PUBLIC_URL:
+            assert args[1] == [
+                ("auspatious/geomad-sids/custom_ls_geomad/0-2-1", "custom_ls_geomad")
+            ]
+        else:
+            assert args[1] == [("custom_ls_geomad/0-2-1", "custom_ls_geomad")]
