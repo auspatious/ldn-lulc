@@ -67,6 +67,22 @@ spec:
           - "{{ workflow.parameters.dataset }}"
           - --region
           - "{{ workflow.parameters.region }}"
+        env:
+          - name: AWS_WRITE_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: source-coop-creds
+                key: aws_access_key_id
+          - name: AWS_WRITE_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: source-coop-creds
+                key: aws_secret_access_key
+          - name: AWS_WRITE_SESSION_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: source-coop-creds
+                key: aws_session_token
 
     - name: make-mosaics
       activeDeadlineSeconds: 900 # 15 mins
@@ -85,3 +101,19 @@ spec:
           - "{{ workflow.parameters.dataset }}"
           - --region
           - "{{ workflow.parameters.region }}"
+        env:
+          - name: AWS_WRITE_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: source-coop-creds
+                key: aws_access_key_id
+          - name: AWS_WRITE_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: source-coop-creds
+                key: aws_secret_access_key
+          - name: AWS_WRITE_SESSION_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: source-coop-creds
+                key: aws_session_token

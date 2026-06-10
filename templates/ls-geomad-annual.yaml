@@ -149,3 +149,19 @@ spec:
           - "{{= asInt(retries) == 0 ? '800' : '1600'}}"
           - "{{ workflow.parameters.overwrite }}"
           - "{{ workflow.parameters.decimated }}"
+        env:
+          - name: AWS_WRITE_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: source-coop-creds
+                key: aws_access_key_id
+          - name: AWS_WRITE_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: source-coop-creds
+                key: aws_secret_access_key
+          - name: AWS_WRITE_SESSION_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: source-coop-creds
+                key: aws_session_token

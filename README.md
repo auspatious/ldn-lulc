@@ -149,17 +149,6 @@ This will:
 
 ```bash
 poetry install --with visualisation
-eval $(poetry run python -c "
-from ldn.utils import (
-    PACIFIC_BUCKET, NON_PACIFIC_BUCKET, PACIFIC_OWNER, NON_PACIFIC_OWNER,
-    GEOMAD_VERSION, PREDICTION_VERSION, SENSOR, GEOMAD_DATASET_ID, PREDICTION_DATASET_ID,
-)
-for name in [
-    'PACIFIC_BUCKET', 'NON_PACIFIC_BUCKET', 'PACIFIC_OWNER', 'NON_PACIFIC_OWNER',
-    'GEOMAD_VERSION', 'PREDICTION_VERSION', 'SENSOR', 'GEOMAD_DATASET_ID', 'PREDICTION_DATASET_ID',
-]:
-    print(f'export {name}=\"{eval(name)}\"')
-")
 poetry run uvicorn visualisation.app:app --host 0.0.0.0 --port 8081 --reload
 ```
 
