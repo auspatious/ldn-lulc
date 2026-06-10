@@ -4,6 +4,8 @@ from ldn.utils import (
     BUCKET,
     NON_PACIFIC_OWNER,
     PACIFIC_OWNER,
+    SOURCE_COOP_PREFIX_GEOMAD,
+    SOURCE_COOP_PUBLIC_URL,
     dataset_prefix,
     get_geomad_item_id,
     get_geomad_stac_geoparquet_url,
@@ -51,16 +53,22 @@ class TestGetGeomadStacGeoparquetUrl:
     def test_pacific(self):
         url = get_geomad_stac_geoparquet_url("pacific")
         expected = f"https://s3.{AWS_REGION}.amazonaws.com/{BUCKET}/dep_ls_geomad/{GEOMAD_VERSION}/dep_ls_geomad.parquet"
+        if SOURCE_COOP_PUBLIC_URL:
+            expected = f"{SOURCE_COOP_PUBLIC_URL}/{SOURCE_COOP_PREFIX_GEOMAD}/dep_ls_geomad/{GEOMAD_VERSION}/dep_ls_geomad.parquet"
         assert url == expected
 
     def test_non_pacific(self):
         url = get_geomad_stac_geoparquet_url("non-pacific")
         expected = f"https://s3.{AWS_REGION}.amazonaws.com/{BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
+        if SOURCE_COOP_PUBLIC_URL:
+            expected = f"{SOURCE_COOP_PUBLIC_URL}/{SOURCE_COOP_PREFIX_GEOMAD}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
         assert url == expected
 
     def test_product_owner_override(self):
         url = get_geomad_stac_geoparquet_url("pacific", product_owner="ci")
         expected = f"https://s3.{AWS_REGION}.amazonaws.com/{BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
+        if SOURCE_COOP_PUBLIC_URL:
+            expected = f"{SOURCE_COOP_PUBLIC_URL}/{SOURCE_COOP_PREFIX_GEOMAD}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
         assert url == expected
 
 

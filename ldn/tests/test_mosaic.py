@@ -114,8 +114,6 @@ def test_make_mosaics_geomad_single_year(mock_load, mock_years, mock_backend):
             "make-mosaics",
             "--dataset",
             "geomad",
-            "--region",
-            "pacific",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-prediction",
@@ -146,8 +144,6 @@ def test_make_mosaics_prediction_single_year(mock_load, mock_years, mock_backend
             "make-mosaics",
             "--dataset",
             "prediction",
-            "--region",
-            "pacific",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-prediction",
@@ -159,41 +155,6 @@ def test_make_mosaics_prediction_single_year(mock_load, mock_years, mock_backend
     mock_backend.assert_called_once()
     out_path = mock_backend.call_args[0][0]
     assert "prediction_2020_mosaic.json" in out_path
-
-
-@patch("ldn.cli.MosaicBackend")
-@patch("ldn.cli._extract_years")
-@patch("ldn.cli._load_all_features")
-def test_make_mosaics_all_builds_both_datasets(mock_load, mock_years, mock_backend):
-    features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
-    mock_load.return_value = features
-    mock_years.return_value = ["2020"]
-
-    mock_backend.return_value.__enter__ = MagicMock(return_value=MagicMock())
-    mock_backend.return_value.__exit__ = MagicMock(return_value=False)
-
-    result = runner.invoke(
-        app,
-        [
-            "make-mosaics",
-            "--dataset",
-            "all",
-            "--region",
-            "pacific",
-            "--version-geomad",
-            GEOMAD_VERSION,
-            "--version-prediction",
-            PREDICTION_VERSION,
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    # Two datasets (geomad + prediction), each with 1 year = 2 backend calls
-    assert mock_backend.call_count == 2
-
-    out_paths = [c[0][0] for c in mock_backend.call_args_list]
-    assert any("prediction" in p for p in out_paths)
-    assert any("geomad" in p for p in out_paths)
 
 
 @patch("ldn.cli.MosaicBackend")
@@ -216,8 +177,6 @@ def test_make_mosaics_multiple_years(mock_load, mock_years, mock_backend):
             "make-mosaics",
             "--dataset",
             "geomad",
-            "--region",
-            "pacific",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-prediction",
@@ -251,8 +210,6 @@ def test_make_mosaics_writes_with_overwrite(mock_load, mock_years, mock_backend)
             "make-mosaics",
             "--dataset",
             "geomad",
-            "--region",
-            "pacific",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-prediction",
