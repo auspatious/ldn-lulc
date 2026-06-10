@@ -1,5 +1,7 @@
-import re
 import logging
+import re
+from datetime import UTC
+from datetime import datetime as dt
 from pathlib import Path
 from typing import Literal
 
@@ -7,40 +9,37 @@ import boto3
 import numpy as np
 import pandas as pd
 import requests
+import rioxarray  # noqa: F401 for the .rio accessor
 import typer
 import xarray as xr
-from datetime import UTC, datetime as dt
-import rioxarray  # noqa: F401 for the .rio accessor
 from dask.distributed import Client as DaskClient
 from dep_tools.aws import object_exists
 from dep_tools.exceptions import EmptyCollectionError
 from dep_tools.loaders import OdcLoader
-from dep_tools.stac_utils import StacCreator
-from dep_tools.writers import AwsStacWriter
-from ldn.geomad import AwsStacTask as Task
-from dep_tools.writers import AwsDsCogWriter
 from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
+from dep_tools.stac_utils import StacCreator
+from dep_tools.utils import _fix_geometry, bbox_across_180, search_across_180
+from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from geopandas import GeoDataFrame
 from joblib import load as joblib_load
-from sklearn.ensemble import RandomForestClassifier
 from odc.geo.geobox import GeoBox
+from odc.geo.geom import box as odc_box
 from odc.stac import configure_s3_access
 from odc.stac import load as stac_load
 from planetary_computer import sign_url
 from pystac import Item, ItemCollection
 from pystac_client import Client as PyStacClient
+from rasterio.enums import Resampling
 from rustac import search_sync
 from scipy.ndimage import sobel
-from typing_extensions import Annotated
-from dep_tools.utils import search_across_180, bbox_across_180, _fix_geometry
-from rasterio.enums import Resampling
 from shapely.geometry import box
-from odc.geo.geom import box as odc_box
-
+from sklearn.ensemble import RandomForestClassifier
+from typing_extensions import Annotated
 
 from ldn.aws_credentials import get_write_client, get_write_session, make_write_function
 from ldn.cli_geomad import PrefixedS3ItemPath
+from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
 from ldn.utils import (
     AWS_REGION,
@@ -52,8 +51,8 @@ from ldn.utils import (
     SOURCE_COOP_PUBLIC_URL,
     LdnError,
     get_analysis_epsg,
-    get_geomad_stac_geoparquet_url,
     get_geomad_item_id,
+    get_geomad_stac_geoparquet_url,
     wgs84,
 )
 
@@ -80,11 +79,7 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     offset = -0.2
     nodata_values = (0, 65_535)
 
-    bands_to_scale = [
-        band
-        for band in data.data_vars
-        if band not in ["count", "emad", "smad", "bcmad"]
-    ]
+    bands_to_scale = [band for band in data.data_vars if band not in ["count", "emad", "smad", "bcmad"]]
 
     for band in bands_to_scale:
         raw = data[band]
@@ -240,10 +235,7 @@ class GeopolygonOdcLoader(OdcLoader):
         # may return a larger extent when the WGS84 footprint overlaps
         # neighbouring STAC items at tile boundaries.
         if original_geobox is not None and result.odc.geobox != original_geobox:
-            logger.info(
-                f"Cropping loaded data from {result.odc.geobox.shape} "
-                f"to target geobox {original_geobox.shape}"
-            )
+            logger.info(f"Cropping loaded data from {result.odc.geobox.shape} to target geobox {original_geobox.shape}")
             result = result.odc.crop(original_geobox.extent, apply_mask=False)
 
         return result
@@ -256,8 +248,10 @@ def _load_dem_am(
 ) -> xr.Dataset:
     """Load DEM for a tile that crosses the antimeridian.
 
-    This is needed to prevent a memory error due to loading a world-spanning DEM tile when the WGS84 footprint overlaps both sides of the AM.
-    Can't load straight to target geobox CRS. Must load to WGS84, shift longitudes, concatenate, then reproject with +over.
+    This is needed to prevent a memory error due to loading a world-spanning DEM tile when the WGS84
+    footprint overlaps both sides of the AM.
+    Can't load straight to target geobox CRS. Must load to WGS84, shift longitudes,
+    concatenate, then reproject with +over.
 
     Loads east and west halves separately in WGS84, shifts west
     longitudes to >180, concatenates, and reprojects to the target
@@ -309,7 +303,8 @@ def _load_dem_am(
 
     if len(halves) != 2:
         raise LdnError(
-            f"Expected to load 2 halves of the DEM but got {len(halves)}. Check if the tile geometry is correct and if the DEM items cover the area."
+            f"Expected to load 2 halves of the DEM but got {len(halves)}. Check if the tile geometry is "
+            f"correct and if the DEM items cover the area."
         )
 
     # Shift west longitudes (-180..-179) to (180..181) so the
@@ -382,26 +377,18 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     logger.info(f"Found {len(dem_items)} DEM items")
 
     if len(dem_items) == 0:
-        raise LdnError(
-            "No DEM items found. COP-DEM-GLO-30 is global so this is unexpected."
-        )
+        raise LdnError("No DEM items found. COP-DEM-GLO-30 is global so this is unexpected.")
     if len(dem_items) >= 10:
-        raise LdnError(
-            f"Too many DEM items ({len(dem_items)}). Expected ~4, data may be world-spanning."
-        )
+        raise LdnError(f"Too many DEM items ({len(dem_items)}). Expected ~4, data may be world-spanning.")
 
-    geobox_wgs84 = GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(
-        wgs84
-    )
+    geobox_wgs84 = GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(wgs84)
     crosses_am = isinstance(bbox_across_180(geobox_wgs84), tuple)
 
     if crosses_am:
         logger.info("Tile crosses the antimeridian, using custom '+over' loading logic")
         dem = _load_dem_am(dem_items, geobox, geobox_wgs84)
     else:
-        logger.info(
-            "Tile does not cross the antimeridian, using standard loading logic"
-        )
+        logger.info("Tile does not cross the antimeridian, using standard loading logic")
         dem = (
             stac_load(
                 dem_items,
@@ -448,29 +435,20 @@ def search_and_load_geomad_indices_dem(
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
-    geomad_url = get_geomad_stac_geoparquet_url(
-        region, product_owner=product_owner, version=version_geomad
-    )
+    geomad_url = get_geomad_stac_geoparquet_url(region, product_owner=product_owner, version=version_geomad)
     item_id = get_geomad_item_id(region, tile_id, year, product_owner=product_owner)
 
-    logging.info(
-        f"Searching for GeoMAD item for tile {tile_id} and year {year}, using latest version {GEOMAD_VERSION}"
-    )
+    logging.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}, using latest version {GEOMAD_VERSION}")
     geomad_items = search_sync(
         geomad_url,
         ids=item_id,
     )
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
     geomad_items_n = len(geomad_items)
-    logger.info(
-        f"Found {geomad_items_n} GeoMAD items for tile {tile_id} and year {year}"
-    )
+    logger.info(f"Found {geomad_items_n} GeoMAD items for tile {tile_id} and year {year}")
 
     if geomad_items_n != 1:
-        raise LdnError(
-            f"Must find exactly 1 GeoMAD item for this tile and year, "
-            f"found {geomad_items_n} instead."
-        )
+        raise LdnError(f"Must find exactly 1 GeoMAD item for this tile and year, found {geomad_items_n} instead.")
 
     proj_bbox = geomad_items[0].properties.get("proj:bbox")
     logger.info(f"proj:bbox = {proj_bbox}")
@@ -488,8 +466,7 @@ def search_and_load_geomad_indices_dem(
 
     if geomad_ds.odc.crs.epsg != int(analysis_crs.split(":")[1]):
         raise LdnError(
-            f"GeoMAD dataset CRS (EPSG:{geomad_ds.odc.crs.epsg}) "
-            f"does not match analysis CRS ({analysis_crs})"
+            f"GeoMAD dataset CRS (EPSG:{geomad_ds.odc.crs.epsg}) does not match analysis CRS ({analysis_crs})"
         )
     logger.info(f"GeoMAD CRS: EPSG:{geomad_ds.odc.crs.epsg}")
     logger.info(f"GeoMAD shape: {geomad_ds.dims}")
@@ -542,9 +519,7 @@ def reshape_array_to_2d(
         A 2D uint8 DataArray with the specified nodata_value for nodata pixels.
     """
     array = stacked_array.to_numpy().reshape(template_ds.y.size, template_ds.x.size)
-    da = xr.DataArray(
-        array, coords={"y": template_ds.y, "x": template_ds.x}, dims=["y", "x"]
-    )
+    da = xr.DataArray(array, coords={"y": template_ds.y, "x": template_ds.x}, dims=["y", "x"])
     # nodata_value as NoData. Ensure any remaining NaNs are also set to nodata_value before casting.
     da = da.where(~original_mask, nodata_value).fillna(nodata_value)
     return da.astype("uint8")
@@ -617,9 +592,7 @@ def do_prediction(
     # Validate that all model features are present before reindexing.
     missing = set(model.feature_names_in_) - set(obs.columns)
     if missing:
-        raise LdnError(
-            f"Dataset is missing features required by the model: {sorted(missing)}"
-        )
+        raise LdnError(f"Dataset is missing features required by the model: {sorted(missing)}")
     obs = obs.reindex(columns=model.feature_names_in_)
 
     # Flatten the spatial nodata mask to match the observation index.
@@ -627,23 +600,17 @@ def do_prediction(
 
     n_classes = len(model.classes_)
     full_predictions = pd.Series(nodata_value, index=obs.index, dtype=np.float32)
-    full_probabilities = np.full(
-        (len(obs.index), n_classes), nodata_value, dtype=np.float32
-    )
+    full_probabilities = np.full((len(obs.index), n_classes), nodata_value, dtype=np.float32)
 
     if valid.any():
         valid_df = obs.loc[valid]
         proba = model.predict_proba(valid_df)
-        full_predictions.loc[valid] = model.classes_[proba.argmax(axis=1)].astype(
-            np.float32
-        )
+        full_predictions.loc[valid] = model.classes_[proba.argmax(axis=1)].astype(np.float32)
         full_probabilities[valid] = (proba * 100).astype(np.float32)
 
     # Reshape back to 2D; nodata_mask stamps nodata_value over masked pixels.
     nodata_mask_2d = nodata_mask.unstack("dims")
-    predictions_2d = reshape_array_to_2d(
-        full_predictions, ds, nodata_mask_2d, nodata_value=nodata_value
-    )
+    predictions_2d = reshape_array_to_2d(full_predictions, ds, nodata_mask_2d, nodata_value=nodata_value)
 
     # Per-class probability bands.
     probabilities = {}
@@ -654,13 +621,9 @@ def do_prediction(
         )
 
     # Classification = argmax class only where max probability >= threshold, else nodata.
-    max_prob = np.stack([da.values for da in probabilities.values()], axis=0).max(
-        axis=0
-    )
+    max_prob = np.stack([da.values for da in probabilities.values()], axis=0).max(axis=0)
     max_prob_da = xr.DataArray(max_prob, coords={"y": ds.y, "x": ds.x}, dims=["y", "x"])
-    classification = predictions_2d.where(
-        max_prob_da >= probability_threshold, nodata_value
-    ).astype("uint8")
+    classification = predictions_2d.where(max_prob_da >= probability_threshold, nodata_value).astype("uint8")
 
     return classification, probabilities
 
@@ -773,10 +736,7 @@ def _load_joblib_model(model_path: str):
         model = model_path
 
     else:
-        raise LdnError(
-            f"Model path must be a '.joblib' file or a URL to a '.joblib' file,"
-            f" not {model_path}"
-        )
+        raise LdnError(f"Model path must be a '.joblib' file or a URL to a '.joblib' file, not {model_path}")
 
     try:
         joblib_load(model)
@@ -838,10 +798,7 @@ def run_classify_task(
         n_workers: Number of Dask workers.
         threads_per_worker: Number of threads per Dask worker.
     """
-    logger.info(
-        f"Starting processing. Tile ID: {tile_id}, Year: {year}, "
-        f"Region: {region}, Version: {version}."
-    )
+    logger.info(f"Starting processing. Tile ID: {tile_id}, Year: {year}, Region: {region}, Version: {version}.")
 
     if version_geomad != GEOMAD_VERSION:
         logger.info(
@@ -853,17 +810,12 @@ def run_classify_task(
         )
 
     # TODO: Pass owner override (if present) to get_geomad_stac_geoparquet_url
-    geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(
-        region, version=version_geomad
-    )
+    geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(region, version=version_geomad)
 
     # Split by any of [",", "-", "_"] to be robust.
     tile_id_parts = [int(i) for i in re.split(r"[,\-_]", tile_id)]
     if len(tile_id_parts) != 2:
-        raise LdnError(
-            f"Tile ID must split into 2 integers, got {tile_id_parts}"
-            f" from tile_id '{tile_id}'"
-        )
+        raise LdnError(f"Tile ID must split into 2 integers, got {tile_id_parts} from tile_id '{tile_id}'")
     tile_id_tuple: tuple[int, int] = (tile_id_parts[0], tile_id_parts[1])
 
     analysis_crs = get_analysis_epsg(region)
@@ -914,9 +866,7 @@ def run_classify_task(
         logger.info(f"Item already exists at {stac_document}, skipping.")
         return
 
-    logger.info(
-        "Either item does not exist or overwrite is True, proceeding with processing."
-    )
+    logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
 
     logger.info(
         f"Dask config: n_workers={n_workers}, threads_per_worker={threads_per_worker}, "
@@ -991,7 +941,4 @@ def run_classify_task(
     finally:
         dask_client.close()
 
-    logger.info(
-        f"Completed processing. Wrote {len(paths)} items to"
-        f" {itempath.stac_path(tile_id_tuple, absolute=True)}"
-    )
+    logger.info(f"Completed processing. Wrote {len(paths)} items to {itempath.stac_path(tile_id_tuple, absolute=True)}")

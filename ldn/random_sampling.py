@@ -1,5 +1,6 @@
 # Forked from https://github.com/frontiersi/FAO_LC_workshop_Rwanda/blob/main/random_sampling.py
 import logging
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -97,22 +98,12 @@ def random_sampling(
     if sampling == "stratified_random":
         for _class in class_ratio["class"]:
             # Use relative proportions of classes to sample df
-            no_of_points = (
-                n * class_ratio[class_ratio["class"] == _class]["proportion"].values[0]
-            )
-            n_available = class_ratio[class_ratio["class"] == _class][
-                "n_available"
-            ].values[0]
+            no_of_points = n * class_ratio[class_ratio["class"] == _class]["proportion"].values[0]
+            n_available = class_ratio[class_ratio["class"] == _class]["n_available"].values[0]
             if n_available >= max([min_sample_n, no_of_points]):
                 no_of_points = max([min_sample_n, no_of_points])
                 # Random sample each class
-                logger.info(
-                    "Class "
-                    + str(_class)
-                    + ": sampling at "
-                    + str(round(no_of_points))
-                    + "locations"
-                )
+                logger.info("Class " + str(_class) + ": sampling at " + str(round(no_of_points)) + "locations")
             else:
                 no_of_points = n_available
                 logger.info(
@@ -131,20 +122,10 @@ def random_sampling(
         for _class in classes:
             # Use relative proportions of classes to sample df
             no_of_points = n / len(classes)
-            n_available = class_ratio[class_ratio["class"] == _class][
-                "n_available"
-            ].values[0]
+            n_available = class_ratio[class_ratio["class"] == _class]["n_available"].values[0]
             if n_available >= no_of_points:
-                sample_loc = df[df[class_attr] == _class].sample(
-                    n=int(round(no_of_points))
-                )
-                logger.info(
-                    "Class "
-                    + str(_class)
-                    + ": sampling at "
-                    + str(round(no_of_points))
-                    + " locations"
-                )
+                sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
+                logger.info("Class " + str(_class) + ": sampling at " + str(round(no_of_points)) + " locations")
             else:
                 no_of_points = n_available
                 logger.info(
@@ -157,22 +138,21 @@ def random_sampling(
             sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
             samples.append(sample_loc)
 
-    #             # Random sample each classes
-    #             try:
-    #                 sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
-    #                 logger.info('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + ' locations')
-    #                 samples.append(sample_loc)
+            # # Random sample each classes
+            # try:
+            #     sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
+            #     logger.info('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + ' locations')
+            #     samples.append(sample_loc)
 
-    #             except ValueError:
-    #                         logger.info('Requested more sample points than population of pixels for class '+ str(_class)+', skipping')
-    #                         pass
+            # except ValueError:
+            #             logger.info('Requested more sample points than population of pixels for class
+            # '+ str(_class)+', skipping')
+            #             pass
 
     if sampling == "random":
         no_of_points = n
         # Random sample entire df
-        logger.info(
-            "Randomly sampling dataArray at " + str(round(no_of_points)) + " locations"
-        )
+        logger.info("Randomly sampling dataArray at " + str(round(no_of_points)) + " locations")
         sample_loc = df.dropna().sample(n=int(round(no_of_points)))
         samples.append(sample_loc)
 
@@ -189,17 +169,9 @@ def random_sampling(
                 # Run sampling
                 for _class in classes:
                     no_of_points = manual_class_ratios.get(str(_class))
-                    n_available = class_ratio[class_ratio["class"] == _class][
-                        "n_available"
-                    ].values[0]
+                    n_available = class_ratio[class_ratio["class"] == _class]["n_available"].values[0]
                     if n_available >= no_of_points:
-                        logger.info(
-                            "Class "
-                            + str(_class)
-                            + ": sampling at "
-                            + str(round(no_of_points))
-                            + " locations"
-                        )
+                        logger.info("Class " + str(_class) + ": sampling at " + str(round(no_of_points)) + " locations")
                     else:
                         no_of_points = n_available
                         logger.info(
@@ -209,19 +181,18 @@ def random_sampling(
                             + str(int(no_of_points))
                             + " locations"
                         )
-                    sample_loc = df[df[class_attr] == _class].sample(
-                        n=int(round(no_of_points))
-                    )
+                    sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
                     samples.append(sample_loc)
 
-            #                     try:
-            #                         sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
-            #                         logger.info('Class '+ str(_class)+ ': sampled at '+ str(round(no_of_points)) + ' locations')
-            #                         samples.append(sample_loc)
+                    # try:
+                    #     sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
+                    #     logger.info('Class '+ str(_class)+ ': sampled at '+ str(round(no_of_points)) + ' locations')
+                    #     samples.append(sample_loc)
 
-            #                     except ValueError:
-            #                         logger.info('Requested more sample points than population of pixels for class '+ str(_class)+', skipping')
-            #                         pass
+                    # except ValueError:
+                    #     logger.info('Requested more sample points than population of pixels for class
+                    # '+ str(_class)+', skipping')
+                    #     pass
 
             else:
                 raise LdnError(
@@ -235,8 +206,7 @@ def random_sampling(
 
         else:
             raise LdnError(
-                "Must supply a dictionary mapping {'class': numofpoints} if sampling"
-                + " is set to 'manual'"
+                "Must supply a dictionary mapping {'class': numofpoints} if sampling" + " is set to 'manual'"
             )
 
     # Join back into single dataframe
@@ -255,9 +225,7 @@ def random_sampling(
         crs = da.attrs.get("crs", None)
 
     # Create geopandas dataframe and ensure output is in WGS84.
-    gdf = gpd.GeoDataFrame(
-        all_samples, crs=crs, geometry=gpd.points_from_xy(x, y)
-    ).reset_index()
+    gdf = gpd.GeoDataFrame(all_samples, crs=crs, geometry=gpd.points_from_xy(x, y)).reset_index()
 
     gdf = gdf.drop(["latitude", "longitude"], axis=1)
 

@@ -1,51 +1,47 @@
 import logging
 import sys
-
-import boto3
-from dask.distributed import KilledWorker
-from dep_tools.namers import S3ItemPath
-from dep_tools.aws import object_exists
-from dep_tools.searchers import PystacSearcher
-from dep_tools.loaders import OdcLoader
-from typing_extensions import Annotated
-from dep_tools.stac_utils import StacCreator
-from dep_tools.writers import AwsStacWriter
-from ldn.geomad import AwsStacTask as Task
-from dep_tools.writers import AwsDsCogWriter
-from odc.stac import configure_s3_access
 from typing import Literal
 
-from dep_tools.exceptions import EmptyCollectionError
+import boto3
+import typer
 from dask.distributed import Client as DaskClient
+from dask.distributed import KilledWorker
+from dep_tools.aws import object_exists
+from dep_tools.exceptions import EmptyCollectionError
+from dep_tools.loaders import OdcLoader
+from dep_tools.namers import S3ItemPath
+from dep_tools.searchers import PystacSearcher
+from dep_tools.stac_utils import StacCreator
 from dep_tools.utils import join_path_or_url
+from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
+from odc.stac import configure_s3_access
+from typing_extensions import Annotated
 
+from ldn.aws_credentials import get_write_client, get_write_session, make_write_function
 from ldn.geomad import (
-    GeoMADProcessor,
-    LANDSAT_SCALE,
+    LANDSAT_BANDS,
     LANDSAT_OFFSET,
+    LANDSAT_SCALE,
     USGS_CATALOG,
     USGS_COLLECTION,
-    LANDSAT_BANDS,
+    GeoMADProcessor,
     InsufficientScenesError,
 )
-import typer
-
+from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
 from ldn.utils import (
     AWS_REGION,
+    BUCKET,
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
+    LS7_YEAR_THRESHOLD,
+    NON_PACIFIC_OWNER,
+    PACIFIC_OWNER,
+    SENSOR,
     SOURCE_COOP_PREFIX_GEOMAD,
     SOURCE_COOP_PUBLIC_URL,
-    SENSOR,
-    BUCKET,
-    PACIFIC_OWNER,
-    NON_PACIFIC_OWNER,
     owner_for_region,
-    LS7_YEAR_THRESHOLD,
 )
-
-from ldn.aws_credentials import get_write_client, make_write_function, get_write_session
 
 geomad_app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -56,9 +52,7 @@ EXIT_SKIP = 43  # too few scenes / no items — expected, don't retry
 
 def count_scenes(
     tile_id: str = typer.Option(..., help="Tile ID to count scenes for."),
-    region: Literal["pacific", "non-pacific"] = typer.Option(
-        ..., help="Region tile is in."
-    ),
+    region: Literal["pacific", "non-pacific"] = typer.Option(..., help="Region tile is in."),
     year: str = typer.Option(..., help="Year to count scenes for."),
     include_t2: bool = typer.Option(
         False,
@@ -100,9 +94,7 @@ class PrefixedS3ItemPath(S3ItemPath):
         self.key_prefix = key_prefix.strip("/") if key_prefix else None
 
     def path(self, item_id, asset_name=None, ext=".tif", absolute=False) -> str:
-        relative_path = super().path(
-            item_id, asset_name=asset_name, ext=ext, absolute=False
-        )
+        relative_path = super().path(item_id, asset_name=asset_name, ext=ext, absolute=False)
         if self.key_prefix:
             relative_path = f"{self.key_prefix}/{relative_path}"
         return (
@@ -125,26 +117,18 @@ def run(
     ] = PACIFIC_OWNER,
     owner_non_pacific: Annotated[
         str,
-        typer.Option(
-            help=f"Short owner prefix for non-Pacific (e.g. '{NON_PACIFIC_OWNER}')."
-        ),
+        typer.Option(help=f"Short owner prefix for non-Pacific (e.g. '{NON_PACIFIC_OWNER}')."),
     ] = NON_PACIFIC_OWNER,
-    product_owner: Annotated[
-        str | None, typer.Option(help="Override the region-derived owner prefix.")
-    ] = None,
+    product_owner: Annotated[str | None, typer.Option(help="Override the region-derived owner prefix.")] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
     decimated: Annotated[bool, typer.Option()] = False,
     mask_shadow: Annotated[
         bool,
-        typer.Option(
-            help="True to mask cloud shadows, false to not mask them (leave them in). Defaults to True."
-        ),
+        typer.Option(help="True to mask cloud shadows, false to not mask them (leave them in). Defaults to True."),
     ] = True,
     ls7_buffer_years: Annotated[
         int,
-        typer.Option(
-            help=f"Half-width of the temporal buffer for LS7 era (<={LS7_YEAR_THRESHOLD}). E.g. 1 searches year-1 to year+1."
-        ),
+        typer.Option(help=f"Temporal buffer for LS7 era (<={LS7_YEAR_THRESHOLD}). E.g. 1 searches year-1 to year+1."),
     ] = 1,
     all_bands: Annotated[bool, typer.Option()] = True,
     memory_limit: Annotated[str, typer.Option()] = "10GB",
@@ -165,14 +149,12 @@ def run(
     """
     logger.info(
         f"tile={tile_id} year={year} version={version} region={region} overwrite={overwrite} decimated={decimated} "
-        f"all_bands={all_bands} mask_shadow={mask_shadow} memory={memory_limit} workers={n_workers} threads={threads_per_worker} "
-        f"chunk={xy_chunk_size} geomad_threads={geomad_threads}",
+        f"all_bands={all_bands} mask_shadow={mask_shadow} memory={memory_limit} workers={n_workers} "
+        f"threads={threads_per_worker} chunk={xy_chunk_size} geomad_threads={geomad_threads}",
     )
 
     if version != GEOMAD_VERSION:
-        logger.info(
-            f"Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version})."
-        )
+        logger.info(f"Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version}).")
 
     year_int = int(year)
     search_year = year
@@ -180,34 +162,25 @@ def run(
 
     min_scenes_threshold = 20
 
-    scene_count_without_t2 = count_scenes(
-        tile_id=tile_id, year=year, region=region, include_t2=False
-    )
+    scene_count_without_t2 = count_scenes(tile_id=tile_id, year=year, region=region, include_t2=False)
     logger.info(f"Scene count (tier 1) for tile/year: {scene_count_without_t2}")
 
     if scene_count_without_t2 >= min_scenes_threshold:
-        logger.info(
-            f"Scene count ({scene_count_without_t2}) is sufficient with T1 only."
-        )
+        logger.info(f"Scene count ({scene_count_without_t2}) is sufficient with T1 only.")
         # search_kwargs already set to T1 only, search_year already set to year
 
     else:
-        logger.info(
-            f"Scene count ({scene_count_without_t2}) is below {min_scenes_threshold}, trying with T2 too."
-        )
-        scene_count_with_t2 = count_scenes(
-            tile_id=tile_id, year=year, region=region, include_t2=True
-        )
+        logger.info(f"Scene count ({scene_count_without_t2}) is below {min_scenes_threshold}, trying with T2 too.")
+        scene_count_with_t2 = count_scenes(tile_id=tile_id, year=year, region=region, include_t2=True)
 
         if scene_count_with_t2 >= min_scenes_threshold:
-            logger.info(
-                f"Scene count with T2 ({scene_count_with_t2}) is sufficient, using T1 and T2."
-            )
+            logger.info(f"Scene count with T2 ({scene_count_with_t2}) is sufficient, using T1 and T2.")
             search_kwargs = {}  # Include T2
 
         else:
             logger.info(
-                f"Scene count with T2 ({scene_count_with_t2}) is still below {min_scenes_threshold}. Adding LS7 buffered temporal search as well as T1 and T2 data."
+                f"Scene count with T2 ({scene_count_with_t2}) is still below {min_scenes_threshold}. "
+                f"Adding LS7 buffered temporal search as well as T1 and T2 data."
             )
             search_kwargs = {}  # Include T2
 
@@ -215,9 +188,7 @@ def run(
                 year_start = year_int - ls7_buffer_years
                 year_end = year_int + ls7_buffer_years
                 search_year = f"{year_start}/{year_end}"
-                typer.echo(
-                    f"Using {ls7_buffer_years}-year buffered temporal search for LS7 era: {search_year}"
-                )
+                typer.echo(f"Using {ls7_buffer_years}-year buffered temporal search for LS7 era: {search_year}")
             else:
                 logger.info("Not in LS7 era so not using buffered temporal search.")
 
@@ -273,7 +244,7 @@ def run(
     aws_client_to_use = write_client if SOURCE_COOP_PREFIX_GEOMAD else s3_client
 
     # If we don't want to overwrite, and the destination file already exists, skip it
-    # Use the write client to check if the item already exists at the destination, since it may have different credentials.
+    # Use the write client to check if the item already exists at the destination, since it may have different creds.
     if not overwrite and object_exists(bucket, stac_key, client=aws_client_to_use):
         typer.echo(f"Item already exists at {stac_document}, skipping.")
         return
@@ -305,9 +276,10 @@ def run(
         chunks={"x": xy_chunk_size, "y": xy_chunk_size, "time": 1},
         groupby="solar_day",
         fuse_func={
-            "qa_pixel": "ldn.geomad.fuse_qa_pixel",  # This makes the qa_pixel data temporally merge correctly (grouped by solar day).
+            # This makes the qa_pixel data temporally merge correctly (grouped by solar day).
+            "qa_pixel": "ldn.geomad.fuse_qa_pixel",
         },
-        fail_on_error=False,  # We don't control the Landsat data so it may have issues, but we still want to load what we can.
+        fail_on_error=False,  # We don't control the Landsat data so it may have issues. We load what we can.
         **load_kwargs,
     )
 

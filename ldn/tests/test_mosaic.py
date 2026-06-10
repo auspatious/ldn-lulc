@@ -4,9 +4,8 @@ import pytest
 from cogeo_mosaic.mosaic import MosaicJSON
 from typer.testing import CliRunner
 
-from ldn.cli import _stac_self_link, _build_mosaic_for_year, app
+from ldn.cli import _build_mosaic_for_year, _stac_self_link, app
 from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION, LdnError
-
 
 runner = CliRunner()
 
@@ -118,9 +117,7 @@ def mock_write_session():
 @patch("ldn.cli.MosaicBackend")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-def test_make_mosaics_geomad_single_year(
-    mock_load, mock_years, mock_backend, mock_write_session
-):
+def test_make_mosaics_geomad_single_year(mock_load, mock_years, mock_backend, mock_write_session):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
     mock_years.return_value = ["2020"]
@@ -150,9 +147,7 @@ def test_make_mosaics_geomad_single_year(
 @patch("ldn.cli.MosaicBackend")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-def test_make_mosaics_prediction_single_year(
-    mock_load, mock_years, mock_backend, mock_write_session
-):
+def test_make_mosaics_prediction_single_year(mock_load, mock_years, mock_backend, mock_write_session):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
     mock_years.return_value = ["2020"]
@@ -182,9 +177,7 @@ def test_make_mosaics_prediction_single_year(
 @patch("ldn.cli.MosaicBackend")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-def test_make_mosaics_multiple_years(
-    mock_load, mock_years, mock_backend, mock_write_session
-):
+def test_make_mosaics_multiple_years(mock_load, mock_years, mock_backend, mock_write_session):
     features = [
         _make_feature("item-1", [103.6, 1.2, 104.0, 1.5], "2020"),
         _make_feature("item-2", [104.0, 1.2, 104.4, 1.5], "2021"),
@@ -219,9 +212,7 @@ def test_make_mosaics_multiple_years(
 @patch("ldn.cli.MosaicBackend")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-def test_make_mosaics_writes_with_overwrite(
-    mock_load, mock_years, mock_backend, mock_write_session
-):
+def test_make_mosaics_writes_with_overwrite(mock_load, mock_years, mock_backend, mock_write_session):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
     mock_years.return_value = ["2020"]

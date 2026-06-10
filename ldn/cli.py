@@ -1,51 +1,47 @@
+import asyncio
+import json
 import logging
 import sys
-import json
+from typing import Literal
 
 import boto3
-from dep_tools.namers import S3ItemPath
-from typing_extensions import Annotated
-from typing import Literal
 import obstore
-from rustac import write_sync
-
+import typer
 from cogeo_mosaic.backends import MosaicBackend
 from cogeo_mosaic.mosaic import MosaicJSON
+from dep_tools.namers import S3ItemPath
 from pystac import ItemCollection
-from rustac import search_sync
+from rustac import search_sync, write_sync
 from shapely.geometry import mapping, shape
-
-import asyncio
-
-from ldn.grids import get_grid_tiles
-import typer
+from typing_extensions import Annotated
 
 from ldn import get_version
-from ldn.cli_grid import cli_grid_app
+from ldn.aws_credentials import (
+    get_write_session,
+    make_obstore_s3,
+    write_credentials_as_env,
+)
 from ldn.cli_classify import classify_app
 from ldn.cli_geomad import geomad_app
+from ldn.cli_grid import cli_grid_app
+from ldn.grids import get_grid_tiles
+from ldn.training_data import cli_training_app
 from ldn.utils import (
     AWS_REGION,
+    BUCKET,
+    GEOMAD_DATASET_ID,
+    GEOMAD_VERSION,
+    NON_PACIFIC_OWNER,
+    PACIFIC_OWNER,
+    PREDICTION_DATASET_ID,
+    PREDICTION_VERSION,
+    SENSOR,
     SOURCE_COOP_PREFIX_GEOMAD,
     SOURCE_COOP_PREFIX_PREDICTION,
     SOURCE_COOP_PUBLIC_URL,
-    GEOMAD_VERSION,
-    GEOMAD_DATASET_ID,
-    PREDICTION_DATASET_ID,
-    SENSOR,
     LdnError,
-    PREDICTION_VERSION,
-    BUCKET,
-    PACIFIC_OWNER,
-    NON_PACIFIC_OWNER,
-    owner_for_region,
     dataset_prefix,
-)
-from ldn.training_data import cli_training_app
-from ldn.aws_credentials import (
-    get_write_session,
-    write_credentials_as_env,
-    make_obstore_s3,
+    owner_for_region,
 )
 
 app = typer.Typer()
@@ -63,15 +59,9 @@ logging.basicConfig(
 logging.getLogger("ldn").setLevel(logging.INFO)  # Our logging level.
 
 # Add the subcommands
-app.add_typer(
-    cli_grid_app, name="grid", help="Commands for working with the ODC Geo Grid."
-)
-app.add_typer(
-    classify_app, name="classify", help="Commands for classifying/predicting LULC."
-)
-app.add_typer(
-    cli_training_app, name="training", help="Commands for generating training data."
-)
+app.add_typer(cli_grid_app, name="grid", help="Commands for working with the ODC Geo Grid.")
+app.add_typer(classify_app, name="classify", help="Commands for classifying/predicting LULC.")
+app.add_typer(cli_training_app, name="training", help="Commands for generating training data.")
 app.add_typer(geomad_app, name="geomad", help="Commands for working with GeoMAD.")
 
 
@@ -147,7 +137,8 @@ def _find_existing_tasks(
 
     total_existing = sum(len(v) for v in existing_keys.values())
     logger.info(
-        f"Found {total_existing} existing STAC items in S3 (this value may be more because of input parameters to print-tasks)."
+        f"Found {total_existing} existing STAC items in S3 (this value may be more than how many are going to be "
+        f"processed because of input parameters to print-tasks)."
     )
 
     # Check each task against the set
@@ -186,12 +177,8 @@ def _find_existing_tasks(
 def print_tasks(
     years: Annotated[str, typer.Option()],
     region: Annotated[Literal["all", "pacific", "non-pacific"], typer.Option()] = "all",
-    dataset: Annotated[
-        Literal["geomad", "prediction"], typer.Option(help="Dataset name.")
-    ] = "geomad",
-    version_geomad: Annotated[
-        str, typer.Option(help="Version string for GeoMAD dataset.")
-    ] = GEOMAD_VERSION,
+    dataset: Annotated[Literal["geomad", "prediction"], typer.Option(help="Dataset name.")] = "geomad",
+    version_geomad: Annotated[str, typer.Option(help="Version string for GeoMAD dataset.")] = GEOMAD_VERSION,
     version_prediction: Annotated[
         str, typer.Option(help="Version string for prediction dataset.")
     ] = PREDICTION_VERSION,
@@ -202,16 +189,10 @@ def print_tasks(
     ] = PACIFIC_OWNER,
     owner_non_pacific: Annotated[
         str,
-        typer.Option(
-            help=f"Short owner prefix for non-Pacific (e.g. '{NON_PACIFIC_OWNER}')."
-        ),
+        typer.Option(help=f"Short owner prefix for non-Pacific (e.g. '{NON_PACIFIC_OWNER}')."),
     ] = NON_PACIFIC_OWNER,
-    product_owner: Annotated[
-        str | None, typer.Option(help="Override the region-derived owner prefix.")
-    ] = None,
-    overwrite: Annotated[
-        bool, typer.Option(help="If true, skip filtering existing outputs.")
-    ] = False,
+    product_owner: Annotated[str | None, typer.Option(help="Override the region-derived owner prefix.")] = None,
+    overwrite: Annotated[bool, typer.Option(help="If true, skip filtering existing outputs.")] = False,
 ) -> None:
     """Print tasks for given years, optionally filtering out those with existing outputs."""
     logger.info(f"Generating tasks for years: {years} and region: {region}")
@@ -232,9 +213,7 @@ def print_tasks(
 
     tiles = get_grid_tiles(format="list", grids=region, overwrite=False)
 
-    logger.info(
-        f"Number of tasks: {len(years_list) * len(tiles)} (years: {len(years_list)}, tiles: {len(tiles)})"
-    )
+    logger.info(f"Number of tasks: {len(years_list) * len(tiles)} (years: {len(years_list)}, tiles: {len(tiles)})")
 
     tasks = []
     for year in years_list:
@@ -249,9 +228,7 @@ def print_tasks(
 
     # Filter out tasks whose output already exists in S3
     if not overwrite:
-        dataset_id = (
-            PREDICTION_DATASET_ID if dataset == "prediction" else GEOMAD_DATASET_ID
-        )
+        dataset_id = PREDICTION_DATASET_ID if dataset == "prediction" else GEOMAD_DATASET_ID
         version = version_prediction if dataset == "prediction" else version_geomad
 
         existing = _find_existing_tasks(
@@ -265,9 +242,7 @@ def print_tasks(
         )
         before_count = len(tasks)
         tasks = [t for t in tasks if (t["id"], t["year"]) not in existing]
-        logger.info(
-            f"Filtered: {before_count - len(tasks)} already exist, {len(tasks)} remaining."
-        )
+        logger.info(f"Filtered: {before_count - len(tasks)} already exist, {len(tasks)} remaining.")
     else:
         logger.info("Overwrite enabled, skipping existence check.")
 
@@ -351,35 +326,21 @@ def index_to_stac_geoparquet(
     region: Literal["all", "pacific", "non-pacific"] = typer.Option(
         "all", help="Region to index: 'all', 'pacific', or 'non-pacific'."
     ),
-    version_geomad: str = typer.Option(
-        GEOMAD_VERSION, help="Version string for GeoMAD dataset."
-    ),
-    version_prediction: str = typer.Option(
-        PREDICTION_VERSION, help="Version string for prediction dataset."
-    ),
+    version_geomad: str = typer.Option(GEOMAD_VERSION, help="Version string for GeoMAD dataset."),
+    version_prediction: str = typer.Option(PREDICTION_VERSION, help="Version string for prediction dataset."),
     bucket: str = typer.Option(BUCKET, help="S3 bucket data."),
-    owner_pacific: str = typer.Option(
-        PACIFIC_OWNER, help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."
-    ),
+    owner_pacific: str = typer.Option(PACIFIC_OWNER, help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."),
     owner_non_pacific: str = typer.Option(
         NON_PACIFIC_OWNER,
         help=f"Short owner prefix for non-Pacific (e.g. '{NON_PACIFIC_OWNER}').",
     ),
-    product_owner: str | None = typer.Option(
-        None, help="Override the region-derived owner prefix."
-    ),
+    product_owner: str | None = typer.Option(None, help="Override the region-derived owner prefix."),
 ) -> None:
     """Build STAC-Geoparquet indexes from STAC items for given dataset and region(s)."""
-    regions: list[Literal["pacific", "non-pacific"]] = (
-        ["pacific", "non-pacific"] if region == "all" else [region]
-    )
+    regions: list[Literal["pacific", "non-pacific"]] = ["pacific", "non-pacific"] if region == "all" else [region]
 
     dataset_id = GEOMAD_DATASET_ID if dataset == "geomad" else PREDICTION_DATASET_ID
-    source_coop_prefix = (
-        SOURCE_COOP_PREFIX_GEOMAD
-        if dataset == "geomad"
-        else SOURCE_COOP_PREFIX_PREDICTION
-    )
+    source_coop_prefix = SOURCE_COOP_PREFIX_GEOMAD if dataset == "geomad" else SOURCE_COOP_PREFIX_PREDICTION
     version = version_geomad if dataset == "geomad" else version_prediction
 
     targets: list[tuple[str, str]] = []
@@ -387,16 +348,12 @@ def index_to_stac_geoparquet(
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
         short_prefix = dataset_prefix(owner, dataset_id)
         full_prefix = (
-            f"{source_coop_prefix}/{short_prefix}/{version}"
-            if SOURCE_COOP_PUBLIC_URL
-            else f"{short_prefix}/{version}"
+            f"{source_coop_prefix}/{short_prefix}/{version}" if SOURCE_COOP_PUBLIC_URL else f"{short_prefix}/{version}"
         )
         targets.append((full_prefix, short_prefix))
 
     combined_short = f"{SENSOR}_{dataset_id}"
-    parquet_key = (
-        f"{source_coop_prefix}/{combined_short}/{version}/{combined_short}.parquet"
-    )
+    parquet_key = f"{source_coop_prefix}/{combined_short}/{version}/{combined_short}.parquet"
 
     _run_index(bucket, targets, parquet_key)
 
@@ -415,9 +372,7 @@ def _run_index(
         logger.info(f"Found {len(keys)} STAC items under {short_prefix}")
 
         if not keys:
-            logger.warning(
-                f"No STAC items found under s3://{bucket}/{full_prefix}, skipping."
-            )
+            logger.warning(f"No STAC items found under s3://{bucket}/{full_prefix}, skipping.")
             continue
 
         logger.info(f"Loading STAC items from {short_prefix}")
@@ -429,10 +384,7 @@ def _run_index(
         logger.warning("No STAC items found across any targets, skipping write.")
         return
 
-    logger.info(
-        f"Writing combined STAC-Geoparquet ({len(all_docs)} items) "
-        f"to s3://{bucket}/{parquet_key}"
-    )
+    logger.info(f"Writing combined STAC-Geoparquet ({len(all_docs)} items) to s3://{bucket}/{parquet_key}")
     write_session = get_write_session()
     store = make_obstore_s3(bucket, write_session)
     write_sync(parquet_key, all_docs, store=store)
@@ -445,9 +397,7 @@ def _stac_self_link(feature: dict) -> str:
     links = {link["rel"]: link["href"] for link in feature.get("links", [])}
     self_link = links.get("self")
     if self_link is None:
-        raise LdnError(
-            f"Feature {feature.get('id', 'unknown')} has no self link, cannot determine STAC item URL."
-        )
+        raise LdnError(f"Feature {feature.get('id', 'unknown')} has no self link, cannot determine STAC item URL.")
     return self_link
 
 
@@ -534,9 +484,7 @@ def _extract_years(features: list[dict]) -> list[str]:
 def make_mosaics(
     dataset: Annotated[
         Literal["geomad", "prediction"],
-        typer.Option(
-            help="Which dataset to build mosaics for: 'geomad' or 'prediction'."
-        ),
+        typer.Option(help="Which dataset to build mosaics for: 'geomad' or 'prediction'."),
     ],
     years: Annotated[
         str | None,
@@ -566,20 +514,14 @@ def make_mosaics(
             requested_years = [y.strip() for y in years.split(",")]
 
     dataset_id = GEOMAD_DATASET_ID if dataset == "geomad" else PREDICTION_DATASET_ID
-    source_coop_prefix = (
-        SOURCE_COOP_PREFIX_GEOMAD
-        if dataset == "geomad"
-        else SOURCE_COOP_PREFIX_PREDICTION
-    )
+    source_coop_prefix = SOURCE_COOP_PREFIX_GEOMAD if dataset == "geomad" else SOURCE_COOP_PREFIX_PREDICTION
     version = version_geomad if dataset == "geomad" else version_prediction
 
     combined_short = f"{SENSOR}_{dataset_id}"
 
     if SOURCE_COOP_PUBLIC_URL:
         read_url = f"{SOURCE_COOP_PUBLIC_URL}/{source_coop_prefix}"
-        output_path = (
-            f"s3://{bucket}/{source_coop_prefix}/{combined_short}/{version}/mosaics/"
-        )
+        output_path = f"s3://{bucket}/{source_coop_prefix}/{combined_short}/{version}/mosaics/"
     else:
         read_url = f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
         output_path = f"s3://{bucket}/{combined_short}/{version}/mosaics/"
@@ -594,9 +536,7 @@ def make_mosaics(
         return
 
     available_years = _extract_years(features)
-    logger.info(
-        f"Found {len(features)} features across {len(available_years)} years: {available_years}"
-    )
+    logger.info(f"Found {len(features)} features across {len(available_years)} years: {available_years}")
 
     if requested_years is not None:
         missing = [y for y in requested_years if y not in available_years]
