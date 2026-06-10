@@ -9,12 +9,10 @@ from ldn.utils import (
     GEOMAD_VERSION,
     MODEL_VERSION,
     LdnError,
-    NON_PACIFIC_BUCKET,
-    NON_PACIFIC_OWNER,
-    PACIFIC_BUCKET,
+    BUCKET,
     PACIFIC_OWNER,
+    NON_PACIFIC_OWNER,
     PREDICTION_VERSION,
-    bucket_for_region,
     owner_for_region,
 )
 
@@ -37,17 +35,12 @@ def run(
     region: Literal["pacific", "non-pacific"] = typer.Option(
         ..., help="Region to predict LULC for. Can be 'pacific' or 'non-pacific'."
     ),
-    bucket_pacific: str = typer.Option(
-        PACIFIC_BUCKET, help="S3 bucket for pacific data."
-    ),
-    bucket_non_pacific: str = typer.Option(
-        NON_PACIFIC_BUCKET, help="S3 bucket for non-pacific data."
-    ),
+    bucket: str = typer.Option(BUCKET, help="S3 bucket for data."),
     owner_pacific: str = typer.Option(
-        PACIFIC_OWNER, help="S3 owner prefix for pacific data."
+        PACIFIC_OWNER, help="S3 owner prefix for Pacific data."
     ),
     owner_non_pacific: str = typer.Option(
-        NON_PACIFIC_OWNER, help="S3 owner prefix for non-pacific data."
+        NON_PACIFIC_OWNER, help="S3 owner prefix for non-Pacific data."
     ),
     product_owner: str | None = typer.Option(
         None, help="Override the region-derived owner prefix."
@@ -57,7 +50,6 @@ def run(
         f"https://s3.{AWS_REGION}.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/pacific/2020/lulc_random_forest_model_pacific_2020.joblib",
         help="Model to use for prediction.",
     ),
-    asset_url_prefix: str | None = typer.Option(None, help="Prefix for asset URLs."),
     decimated: bool = typer.Option(
         False,
         help="Whether to use decimated data for prediction. Decimated data is faster to predict but less accurate.",
@@ -90,23 +82,18 @@ def run(
     if int(year) < 2000 or int(year) > 2025:
         raise LdnError("Year must be between 2000 and 2025.")
 
-    # Resolve bucket and prefix based on region
-    output_bucket = bucket_for_region(region, bucket_pacific, bucket_non_pacific)
-    output_prefix = owner_for_region(
-        region, owner_pacific, owner_non_pacific, product_owner
-    )
+    owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
 
     run_classify_task(
         tile_id,
-        datetime=year,
+        year=year,
         version=version,
         version_geomad=version_geomad,
         region=region,
-        output_bucket=output_bucket,
-        output_prefix=output_prefix,
+        bucket=bucket,
+        owner=owner,
         model_path=model_path,
         xy_chunk_size=xy_chunk_size,
-        asset_url_prefix=asset_url_prefix,
         decimated=decimated,
         overwrite=overwrite,
         probability_threshold=probability_threshold,

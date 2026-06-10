@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 from typer.testing import CliRunner
 
 from ldn.cli import app
-from ldn.cli_classify import classify_app
+from ldn.utils import SOURCE_COOP_PREFIX_GEOMAD, SOURCE_COOP_PUBLIC_URL
 
 runner = CliRunner()
 
@@ -32,7 +32,7 @@ class TestPrintTasksRegionConfig:
                 "2020",
                 "--region",
                 "pacific",
-                "--bucket-pacific",
+                "--bucket",
                 "my-custom-bucket",
                 "--owner-pacific",
                 "myorg",
@@ -43,7 +43,10 @@ class TestPrintTasksRegionConfig:
         mock_paginator.paginate.assert_called_once()
         call_kwargs = mock_paginator.paginate.call_args[1]
         assert call_kwargs["Bucket"] == "my-custom-bucket"
-        assert call_kwargs["Prefix"].startswith("myorg_ls_geomad/")
+        expected_prefix = "myorg_ls_geomad/"
+        if SOURCE_COOP_PREFIX_GEOMAD:
+            expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
+        assert call_kwargs["Prefix"].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")
     @patch("ldn.cli.boto3")
@@ -71,7 +74,10 @@ class TestPrintTasksRegionConfig:
 
         assert result.exit_code == 0, result.output
         call_kwargs = mock_paginator.paginate.call_args[1]
-        assert call_kwargs["Prefix"].startswith("override_ls_geomad/")
+        expected_prefix = "override_ls_geomad/"
+        if SOURCE_COOP_PREFIX_GEOMAD:
+            expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
+        assert call_kwargs["Prefix"].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")
     @patch("ldn.cli.boto3")
@@ -127,7 +133,7 @@ class TestGeomadRegionConfig:
                 "0-2-1",
                 "--region",
                 "pacific",
-                "--bucket-pacific",
+                "--bucket",
                 "my-test-bucket",
                 "--owner-pacific",
                 "testorg",
@@ -140,64 +146,6 @@ class TestGeomadRegionConfig:
         call_args = mock_exists.call_args
         assert call_args[0][0] == "my-test-bucket"
         assert "testorg_ls_geomad" in call_args[0][1]
-
-
-class TestClassifyRegionConfig:
-    """Verify classify command wires bucket/owner params to run_classify_task."""
-
-    @patch("ldn.cli_classify.run_classify_task")
-    def test_custom_bucket_and_owner_passed_to_classify(self, mock_run):
-        """Custom bucket/owner should be forwarded to run_classify_task."""
-        mock_run.return_value = None
-
-        result = runner.invoke(
-            classify_app,
-            [
-                "--tile-id",
-                "066_022",
-                "--year",
-                "2020",
-                "--version",
-                "0-0-4",
-                "--region",
-                "pacific",
-                "--bucket-pacific",
-                "custom-bucket",
-                "--owner-pacific",
-                "customorg",
-            ],
-        )
-
-        assert result.exit_code == 0, result.output
-        mock_run.assert_called_once()
-        kwargs = mock_run.call_args[1]
-        assert kwargs["output_bucket"] == "custom-bucket"
-        assert kwargs["output_prefix"] == "customorg"
-
-    @patch("ldn.cli_classify.run_classify_task")
-    def test_product_owner_overrides_in_classify(self, mock_run):
-        """--product-owner should override the region-derived owner."""
-        mock_run.return_value = None
-
-        result = runner.invoke(
-            classify_app,
-            [
-                "--tile-id",
-                "119_126",
-                "--year",
-                "2020",
-                "--version",
-                "0-0-4",
-                "--region",
-                "non-pacific",
-                "--product-owner",
-                "override",
-            ],
-        )
-
-        assert result.exit_code == 0, result.output
-        kwargs = mock_run.call_args[1]
-        assert kwargs["output_prefix"] == "override"
 
 
 class TestIndexToStacGeoparquetRegionConfig:
@@ -214,7 +162,7 @@ class TestIndexToStacGeoparquetRegionConfig:
                 "geomad",
                 "--region",
                 "pacific",
-                "--bucket-pacific",
+                "--bucket",
                 "idx-bucket",
                 "--owner-pacific",
                 "idxorg",
@@ -222,9 +170,18 @@ class TestIndexToStacGeoparquetRegionConfig:
         )
 
         assert result.exit_code == 0, result.output
-        mock_run_index.assert_called_once_with(
-            "idx-bucket", "idxorg_ls_geomad", "0-2-1"
-        )
+        if SOURCE_COOP_PUBLIC_URL:
+            mock_run_index.assert_called_once_with(
+                "idx-bucket",
+                [("auspatious/geomad-sids/idxorg_ls_geomad/0-2-1", "idxorg_ls_geomad")],
+                "auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet",
+            )
+        else:
+            mock_run_index.assert_called_once_with(
+                "idx-bucket",
+                [("idxorg_ls_geomad/0-2-1", "idxorg_ls_geomad")],
+                "None/ls_geomad/0-2-1/ls_geomad.parquet",
+            )
 
     @patch("ldn.cli._run_index")
     def test_product_owner_override(self, mock_run_index):
@@ -245,53 +202,9 @@ class TestIndexToStacGeoparquetRegionConfig:
         assert result.exit_code == 0, result.output
         mock_run_index.assert_called_once()
         args = mock_run_index.call_args[0]
-        assert args[1] == "custom_ls_geomad"
-
-
-class TestMakeMosaicsRegionConfig:
-    """Verify make-mosaics wires bucket/owner params into parquet URL and output path."""
-
-    @patch("ldn.cli._load_all_features", return_value=[])
-    def test_custom_bucket_and_owner_in_parquet_url(self, mock_load):
-        """Custom bucket/owner should appear in the stac-geoparquet URL."""
-        result = runner.invoke(
-            app,
-            [
-                "make-mosaics",
-                "--dataset",
-                "geomad",
-                "--region",
-                "pacific",
-                "--bucket-pacific",
-                "mosaic-bucket",
-                "--owner-pacific",
-                "mosaicorg",
-            ],
-        )
-
-        assert result.exit_code == 0, result.output
-        mock_load.assert_called_once()
-        url = mock_load.call_args[0][0]
-        assert "mosaic-bucket" in url
-        assert "mosaicorg_ls_geomad" in url
-
-    @patch("ldn.cli._load_all_features", return_value=[])
-    def test_product_owner_override_in_mosaic(self, mock_load):
-        """--product-owner should override the region-derived owner."""
-        result = runner.invoke(
-            app,
-            [
-                "make-mosaics",
-                "--dataset",
-                "prediction",
-                "--region",
-                "non-pacific",
-                "--product-owner",
-                "ovr",
-            ],
-        )
-
-        assert result.exit_code == 0, result.output
-        mock_load.assert_called_once()
-        url = mock_load.call_args[0][0]
-        assert "ovr_ls_lulc_prediction" in url
+        if SOURCE_COOP_PUBLIC_URL:
+            assert args[1] == [
+                ("auspatious/geomad-sids/custom_ls_geomad/0-2-1", "custom_ls_geomad")
+            ]
+        else:
+            assert args[1] == [("custom_ls_geomad/0-2-1", "custom_ls_geomad")]

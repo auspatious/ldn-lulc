@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 
-from ldn.geomad import GeoMADProcessor, LANDSAT_BANDS, set_stac_properties
+from ldn.geomad import GeoMADProcessor, LANDSAT_BANDS, _set_stac_properties
 
 EXPECTED_BANDS = [
     "nir08",
@@ -67,7 +67,7 @@ def test_set_stac_properties_datetime_same_year() -> None:
     )
     output_xr = xr.Dataset()
 
-    result = set_stac_properties(input_xr, output_xr)
+    result = _set_stac_properties(input_xr, output_xr)
     props = result.attrs["stac_properties"]
 
     assert props["start_datetime"] == "2020-01-01T00:00:00Z"
@@ -83,7 +83,7 @@ def test_set_stac_properties_datetime_midpoint_when_years_differ() -> None:
     )
     output_xr = xr.Dataset()
 
-    result = set_stac_properties(input_xr, output_xr)
+    result = _set_stac_properties(input_xr, output_xr)
     props = result.attrs["stac_properties"]
 
     assert props["datetime"] == "2020-06-30T00:00:00Z"
@@ -99,7 +99,7 @@ def test_set_stac_properties_datetime_three_year_span() -> None:
     )
     output_xr = xr.Dataset()
 
-    result = set_stac_properties(input_xr, output_xr)
+    result = _set_stac_properties(input_xr, output_xr)
     props = result.attrs["stac_properties"]
 
     assert props["datetime"] == "2000-06-30T00:00:00Z"

@@ -9,18 +9,19 @@ import pandas as pd
 import requests
 import typer
 import xarray as xr
+from datetime import UTC, datetime as dt
 import rioxarray  # noqa: F401 for the .rio accessor
 from dask.distributed import Client as DaskClient
 from dep_tools.aws import object_exists
 from dep_tools.exceptions import EmptyCollectionError
 from dep_tools.loaders import OdcLoader
-from dep_tools.namers import S3ItemPath
+from dep_tools.stac_utils import StacCreator
+from dep_tools.writers import AwsStacWriter
+from ldn.geomad import AwsStacTask as Task
+from dep_tools.writers import AwsDsCogWriter
 from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
-from dep_tools.stac_utils import StacCreator
-from dep_tools.task import AwsStacTask as Task
 from geopandas import GeoDataFrame
-from odc.geo.geom import Geometry
 from joblib import load as joblib_load
 from sklearn.ensemble import RandomForestClassifier
 from odc.geo.geobox import GeoBox
@@ -38,15 +39,22 @@ from shapely.geometry import box
 from odc.geo.geom import box as odc_box
 
 
-from ldn.grids import get_gadm, get_gridspec
+from ldn.aws_credentials import get_write_client, get_write_session, make_write_function
+from ldn.cli_geomad import PrefixedS3ItemPath
+from ldn.grids import get_gridspec
 from ldn.utils import (
+    AWS_REGION,
     GEOMAD_VERSION,
     PREDICTION_DATASET_ID,
+    PREDICTION_VERSION,
     SENSOR,
+    SOURCE_COOP_PREFIX_PREDICTION,
+    SOURCE_COOP_PUBLIC_URL,
     LdnError,
     get_analysis_epsg,
     get_geomad_stac_geoparquet_url,
     get_geomad_item_id,
+    wgs84,
 )
 
 logger = logging.getLogger(__name__)
@@ -136,8 +144,6 @@ GEOMAD_BANDS = [
 DEM_CATALOG = "https://planetarycomputer.microsoft.com/api/stac/v1/"
 DEM_COLLECTION = "cop-dem-glo-30"
 
-wgs84 = "EPSG:4326"
-
 
 class StacGeoparquetSearcher(Searcher):
     """Search STAC items in a STAC-Geoparquet file using rustac.
@@ -179,6 +185,8 @@ class StacGeoparquetSearcher(Searcher):
 
         if len(items) == 0:
             raise LdnError("No GeoMAD items found")
+
+        # TODO: Should len(items) == 1??
 
         logger.info(f"Found {len(items)} GeoMAD items")
         return ItemCollection(items)
@@ -666,6 +674,7 @@ class LulcProcessor(Processor):
         logger: logging.Logger,
         probability_threshold: float,
         nodata_value: int,
+        year: str,
         **kwargs,
     ):
         """Create a LULC prediction processor.
@@ -681,6 +690,7 @@ class LulcProcessor(Processor):
         self._probability_threshold = probability_threshold
         self._nodata_value = nodata_value
         self._logger = logger
+        self._year = year
 
     def process(self, input_data: xr.Dataset) -> xr.Dataset:
         """Scale GeoMAD, compute indices, load DEM terrain, and predict LULC.
@@ -730,7 +740,7 @@ class LulcProcessor(Processor):
             output[var].odc.nodata = self._nodata_value
             output[var].attrs["_FillValue"] = self._nodata_value
 
-        return output
+        return _set_stac_properties(output, year=self._year)
 
 
 def _load_joblib_model(model_path: str):
@@ -776,17 +786,27 @@ def _load_joblib_model(model_path: str):
         raise LdnError(f"Failed to load model from {model}") from e
 
 
+def _set_stac_properties(ds: xr.Dataset, year: str) -> xr.Dataset:
+    """Set STAC temporal properties on the output LULC dataset."""
+
+    ds.attrs["stac_properties"] = dict(
+        datetime=f"{year}-06-30T00:00:00Z",
+        created=dt.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+    )
+
+    return ds
+
+
 def run_classify_task(
     tile_id: Annotated[str, typer.Option()],
-    datetime: Annotated[str, typer.Option()],
+    year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     version_geomad: Annotated[str, typer.Option()],
     region: Literal["pacific", "non-pacific"],
-    output_bucket: str,
-    output_prefix: str,
+    bucket: str,
+    owner: str,
     model_path: str,
     xy_chunk_size: int,
-    asset_url_prefix: str | None,
     decimated: bool,
     overwrite: Annotated[bool, typer.Option()],
     probability_threshold: float,
@@ -802,15 +822,14 @@ def run_classify_task(
 
     Args:
         tile_id: Grid tile identifier (e.g. "136_142").
-        datetime: Year string (e.g. "2020").
+        year: Year string (e.g. "2020").
         version: Output version string (e.g. "0-0-1").
         version_geomad: Version of the GeoMAD data to use (e.g. "0-0-1").
         region: Grid region, either "pacific" or "non-pacific".
-        output_bucket: S3 bucket for output COGs, STAC metadata, and GeoMAD source data.
-        output_prefix: Output prefix for paths (e.g. "dep" or "ci").
+        bucket: S3 bucket for output COGs, STAC metadata, and input GeoMAD source data.
+        owner: Output prefix for paths (e.g. "dep" or "ci" or owner override).
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
-        asset_url_prefix: Optional URL prefix for STAC asset hrefs.
         decimated: If True, use 10x lower resolution (for testing).
         overwrite: If True, overwrite existing output.
         probability_threshold: Confidence threshold (0-100) for the binary mask.
@@ -820,14 +839,20 @@ def run_classify_task(
         threads_per_worker: Number of threads per Dask worker.
     """
     logger.info(
-        f"Starting processing. Tile ID: {tile_id}, Year: {datetime}, "
+        f"Starting processing. Tile ID: {tile_id}, Year: {year}, "
         f"Region: {region}, Version: {version}."
     )
 
     if version_geomad != GEOMAD_VERSION:
         logger.info(
-            "Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
+            f"Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
         )
+    if version != PREDICTION_VERSION:
+        logger.info(
+            f"Overriding the latest prediction version ({PREDICTION_VERSION}) with the specified version ({version})."
+        )
+
+    # TODO: Pass owner override (if present) to get_geomad_stac_geoparquet_url
     geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(
         region, version=version_geomad
     )
@@ -849,7 +874,8 @@ def run_classify_task(
 
     if decimated:
         logger.warning("Decimating geobox by 10x")
-        geobox = geobox.zoom_out(10)
+        geobox = geobox.zoom_out(10)  # TODO: Reenable.
+        # geobox = geobox.zoom_out(100)  # Hyper decimated for faster testing
 
     logger.info("Configuring S3 access")
     configure_s3_access(cloud_defaults=True)
@@ -859,30 +885,33 @@ def run_classify_task(
     logger.info("Loading model")
     loaded_model = _load_joblib_model(model_path)
 
-    aws_region_name = boto3.client("s3").head_bucket(Bucket=output_bucket)[
-        "BucketRegion"
-    ]
+    if SOURCE_COOP_PUBLIC_URL:
+        # Source.Coop.
+        full_path_prefix = SOURCE_COOP_PUBLIC_URL
+    else:
+        # Non-Source.Coop.
+        full_path_prefix = f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/"
 
-    if asset_url_prefix is None:
-        asset_url_prefix = (
-            f"https://s3.{aws_region_name}.amazonaws.com/{output_bucket}/"
-        )
-
-    itempath = S3ItemPath(
-        prefix=output_prefix,
-        bucket=output_bucket,
+    itempath = PrefixedS3ItemPath(
+        key_prefix=SOURCE_COOP_PREFIX_PREDICTION if SOURCE_COOP_PUBLIC_URL else None,
+        prefix=owner,
+        bucket=bucket,
         sensor=SENSOR,
         dataset_id=PREDICTION_DATASET_ID,
         version=version,
-        time=datetime,
-        full_path_prefix=asset_url_prefix,
+        time=year,
+        full_path_prefix=full_path_prefix,
     )
-    stac_url = itempath.stac_path(tile_id_tuple)
+    stac_document = itempath.stac_path(tile_id_tuple, absolute=True)
+    stac_key = itempath.stac_path(tile_id_tuple, absolute=False)
 
-    if not overwrite and object_exists(output_bucket, stac_url, client=s3_client):
-        logger.info(
-            f"Item already exists at {itempath.stac_path(tile_id_tuple, absolute=True)}, skipping."
-        )
+    write_session = get_write_session()
+    write_client = get_write_client(write_session)
+
+    aws_client_to_use = write_client if SOURCE_COOP_PREFIX_PREDICTION else s3_client
+
+    if not overwrite and object_exists(bucket, stac_key, client=aws_client_to_use):
+        logger.info(f"Item already exists at {stac_document}, skipping.")
         return
 
     logger.info(
@@ -896,7 +925,7 @@ def run_classify_task(
 
     searcher = StacGeoparquetSearcher(
         stac_geoparquet_url=geomad_stac_geoparquet_url,
-        datetime=datetime,
+        datetime=year,
     )
 
     # GeopolygonOdcLoader converts the geobox to an AM-fixed WGS84
@@ -913,9 +942,25 @@ def run_classify_task(
         nodata_value=nodata_value,
         logger=logger,
         probability_threshold=probability_threshold,
+        year=year,
     )
 
-    stac_creator = StacCreator(itempath=itempath, with_raster=True)
+    stac_creator = StacCreator(
+        collection_url_root=f"{full_path_prefix}/#{owner}_{SENSOR}_{PREDICTION_DATASET_ID}/",
+        itempath=itempath,
+        with_raster=True,
+    )
+
+    writer = AwsDsCogWriter(
+        itempath,
+        write_multithreaded=True,
+        write_function=make_write_function(write_session),
+    )
+
+    stac_writer = AwsStacWriter(
+        itempath,
+        client=aws_client_to_use,
+    )
 
     dask_client = DaskClient(
         n_workers=n_workers,
@@ -933,7 +978,9 @@ def run_classify_task(
             loader=loader,
             processor=processor,
             logger=logger,
+            writer=writer,
             stac_creator=stac_creator,
+            stac_writer=stac_writer,
         ).run()
     except EmptyCollectionError:
         logger.exception("No items found for this tile")
@@ -948,99 +995,3 @@ def run_classify_task(
         f"Completed processing. Wrote {len(paths)} items to"
         f" {itempath.stac_path(tile_id_tuple, absolute=True)}"
     )
-
-
-# get_tile_year_geomad_dem_indices and get_buffered_country are used by the notebooks.
-# get_tile_year_geomad_dem_indices uses a lot of the code in search_and_load_geomad_indices_dem, but the training data notebook needs the extra country clipping so they are separate functions.
-def get_tile_year_geomad_dem_indices(
-    tile_id: str,
-    year: str,
-    region: Literal["pacific", "non-pacific"],
-    country_wgs84_buffered: GeoDataFrame,
-    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
-    product_owner: str | None,
-    version_geomad: str | None = None,
-) -> xr.Dataset:
-    """Load GeoMAD + DEM features for a tile, clipped to buffered country.
-
-    Delegates to search_and_load_geomad_indices_dem for the shared search/load/scale/
-    indices/DEM logic, then clips to the intersection of the tile extent
-    and the buffered country geometry.
-
-    Args:
-        tile_id: Grid tile identifier (e.g. "058_043").
-        year: Temporal filter used for GeoMAD item search (e.g. "2020").
-        region: Grid region, either "pacific" or "non-pacific".
-        country_wgs84_buffered: Buffered country geometry in WGS84.
-        analysis_crs: Projected CRS string (e.g. "EPSG:3832").
-        product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
-        version_geomad: Optional GeoMAD version override.
-
-    Returns:
-        Dataset with GeoMAD bands, spectral indices, elevation, slope,
-        and aspect, clipped to the tile-country intersection.
-    """
-    merged = search_and_load_geomad_indices_dem(
-        tile_id=tile_id,
-        year=year,
-        region=region,
-        analysis_crs=analysis_crs,
-        geopolygon=country_wgs84_buffered,
-        product_owner=product_owner,
-        version_geomad=version_geomad,
-    )
-
-    # Clip to intersection of tile extent and buffered country
-    country_prj = country_wgs84_buffered.to_crs(merged.odc.geobox.crs)
-    tile_extent = merged.odc.geobox.extent
-    country_union = country_prj.union_all()
-    intersection = tile_extent.geom.intersection(country_union)
-    clip_geom = Geometry(
-        intersection,
-        crs=merged.odc.geobox.crs,
-    )
-    merged = merged.odc.crop(clip_geom, apply_mask=True, all_touched=True)
-
-    logger.info(f"Merged GeoMAD/DEM shape (after country clip): {merged.dims}")
-    return merged
-
-
-# Dep tools utils have mask_to_gadm() which would be helpful, but I want to buffer gadm before masking.
-def get_buffered_country(
-    country_of_interest: dict[str, str],
-    wgs84: str,
-    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
-) -> GeoDataFrame:
-    """Fetch and buffer a country geometry for analysis (antimeridian-fixed).
-
-    Retrieves country geometry from GADM, applies country-specific clipping for
-    known edge cases (for example antimeridian handling for Fiji), buffers in
-    the analysis CRS, and returns the result in WGS84.
-
-    Args:
-        country_of_interest: Mapping of country name to country code (single-item
-            dictionary expected).
-        wgs84: CRS string for output coordinates (EPSG:4326).
-        analysis_crs: Projected CRS string used for buffering in meters.
-
-    Returns:
-        A GeoDataFrame containing buffered country geometry in `wgs84`.
-    """
-    buffer_m = 100
-
-    country_gadm = get_gadm(countries=country_of_interest)
-
-    country_gadm = GeoDataFrame(
-        geometry=country_gadm.to_crs(analysis_crs).buffer(buffer_m).to_crs(wgs84),
-        crs=wgs84,
-    )
-    # Do antimeridian fix. Needed for Fiji.
-    rows = []
-    for geom in country_gadm.geometry:
-        fixed = _fix_geometry(geom)
-        if fixed.geom_type == "MultiPolygon":
-            rows.extend(fixed.geoms)  # one row per polygon (east/west of AM)
-        else:
-            rows.append(fixed)
-
-    return GeoDataFrame(geometry=rows, crs=wgs84)

@@ -6,12 +6,11 @@ Tiles from separate per-band COGs using TiTiler + STACReader.
 """
 
 import logging
-import os
 import re
 import sys
 from typing import Annotated, Literal
 
-import boto3
+import httpx
 from cogeo_mosaic.backends import MosaicBackend
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,30 +23,16 @@ from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
 from mangum import Mangum
+import os
 
-# Configuration from environment variables (set by Terraform/deploy).
-# Buckets
-PACIFIC_BUCKET = os.environ["PACIFIC_BUCKET"]
-NON_PACIFIC_BUCKET = os.environ["NON_PACIFIC_BUCKET"]
 
-# Owners (short prefixes used in S3 path construction)
-PACIFIC_OWNER = os.environ["PACIFIC_OWNER"]
-NON_PACIFIC_OWNER = os.environ["NON_PACIFIC_OWNER"]
+GEOMAD_VERSION = "0-2-1-test"
+PREDICTION_VERSION = "0-0-4-test"
 
-# Versions
-GEOMAD_VERSION = os.environ["GEOMAD_VERSION"]
-PREDICTION_VERSION = os.environ["PREDICTION_VERSION"]
-
-# Sensor and dataset IDs
-SENSOR = os.environ["SENSOR"]
-GEOMAD_DATASET_ID = os.environ["GEOMAD_DATASET_ID"]
-PREDICTION_DATASET_ID = os.environ["PREDICTION_DATASET_ID"]
-
-# Derived dataset prefixes: {owner}_{sensor}_{dataset_id}
-PACIFIC_GEOMAD_PREFIX = f"{PACIFIC_OWNER}_{SENSOR}_{GEOMAD_DATASET_ID}"
-PACIFIC_PREDICTION_PREFIX = f"{PACIFIC_OWNER}_{SENSOR}_{PREDICTION_DATASET_ID}"
-NON_PACIFIC_GEOMAD_PREFIX = f"{NON_PACIFIC_OWNER}_{SENSOR}_{GEOMAD_DATASET_ID}"
-NON_PACIFIC_PREDICTION_PREFIX = f"{NON_PACIFIC_OWNER}_{SENSOR}_{PREDICTION_DATASET_ID}"
+GEOMAD_MOSAIC_BASE = (
+    f"https://source.coop/auspatious/geomad-sids/ls_geomad/{GEOMAD_VERSION}/mosaics"
+)
+PREDICTION_MOSAIC_BASE = f"https://source.coop/auspatious/lulc-sids/ls_lulc_prediction/{PREDICTION_VERSION}/mosaics"
 
 logger = logging.getLogger(__name__)
 
@@ -77,131 +62,83 @@ cmap = default_cmap.register(
 )
 ColorMapParams = create_colormap_dependency(cmap)
 
-# GDAL / rasterio environment — speeds up remote COG access significantly
-os.environ.update(
-    {
-        # GDAL HTTP settings
-        "GDAL_HTTP_MULTIPLEX": "YES",
-        "GDAL_HTTP_MERGE_CONSECUTIVE_RANGES": "YES",
-        "GDAL_HTTP_MAX_RETRY": "3",
-        "GDAL_HTTP_RETRY_DELAY": "1",
-        # VSI caching — avoids re-fetching headers/overviews
-        "VSI_CACHE": "TRUE",
-        "VSI_CACHE_SIZE": "536870912",  # 512 MB
-        "GDAL_CACHEMAX": "512",  # 512 MB raster block cache
-        # Band interleaving optimisation
-        "GDAL_BAND_BLOCK_CACHE": "HASHSET",
-        "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
-        # Concurrency — keep connections alive
-        "GDAL_HTTP_TCP_KEEPALIVE": "YES",
-        # Mosaic concurrency — parallel reads of assets within a tile
-        "MOSAIC_CONCURRENCY": "8",
-    }
-)
-
-MOSAIC_PATHS_GEOMAD_PACIFIC: dict[str, str] = {}
-MOSAIC_PATHS_GEOMAD_NON_PACIFIC: dict[str, str] = {}
-MOSAIC_PATHS_PREDICTION_PACIFIC: dict[str, str] = {}
-MOSAIC_PATHS_PREDICTION_NON_PACIFIC: dict[str, str] = {}
-
-# Scan S3 for mosaic JSONs on startup and populate paths dicts.
+# Discover available mosaics by fetching the directory listing over HTTPS.
 # Expects filenames like geomad_2020_mosaic.json or prediction_2020_mosaic.json.
-MOSAIC_PATTERN = re.compile(r"(\w+)_(\d{4})_mosaic\.json$")
+
+MOSAIC_PATHS_GEOMAD: dict[str, str] = {}
+MOSAIC_PATHS_PREDICTION: dict[str, str] = {}
+
+MOSAIC_PATTERN = re.compile(r"_(\d{4})_mosaic\.json$")
+
+
+# TODO: this should use boto3 s3.list_objects_v2 for non-source.coop buckets.
+def _discover_mosaics(base_url: str) -> dict[str, str]:
+    """Fetch an HTTPS directory listing and return {year: full_url} for each mosaic JSON found."""
+    paths: dict[str, str] = {}
+    try:
+        response = httpx.get(base_url, follow_redirects=True, timeout=10)
+        response.raise_for_status()
+        # Parse hrefs from the HTML directory listing
+        for href in re.findall(r'href="([^"]+_mosaic\.json)"', response.text):
+            filename = href.split("/")[-1]
+            match = MOSAIC_PATTERN.search(filename)
+            if match:
+                year = match.group(1)
+                # Resolve relative or absolute hrefs
+                url = href if href.startswith("http") else f"{base_url}/{filename}"
+                paths[year] = url
+    except Exception as e:
+        logger.error(f"Failed to discover mosaics from {base_url}: {e}")
+    return paths
+
 
 try:
-    s3 = boto3.client("s3")
-    for bucket, dataset_prefix, version, paths_dict in [
-        (
-            PACIFIC_BUCKET,
-            PACIFIC_GEOMAD_PREFIX,
-            GEOMAD_VERSION,
-            MOSAIC_PATHS_GEOMAD_PACIFIC,
-        ),
-        (
-            NON_PACIFIC_BUCKET,
-            NON_PACIFIC_GEOMAD_PREFIX,
-            GEOMAD_VERSION,
-            MOSAIC_PATHS_GEOMAD_NON_PACIFIC,
-        ),
-        (
-            PACIFIC_BUCKET,
-            PACIFIC_PREDICTION_PREFIX,
-            PREDICTION_VERSION,
-            MOSAIC_PATHS_PREDICTION_PACIFIC,
-        ),
-        (
-            NON_PACIFIC_BUCKET,
-            NON_PACIFIC_PREDICTION_PREFIX,
-            PREDICTION_VERSION,
-            MOSAIC_PATHS_PREDICTION_NON_PACIFIC,
-        ),
-    ]:
-        s3_prefix = f"{dataset_prefix}/{version}/mosaics/"
-        response = s3.list_objects_v2(Bucket=bucket, Prefix=s3_prefix)
-        for obj in response.get("Contents", []):
-            key = obj["Key"]
-            match = MOSAIC_PATTERN.search(key)
-            if match:
-                year = match.group(2)
-                paths_dict[year] = f"s3://{bucket}/{key}"
+    MOSAIC_PATHS_GEOMAD = _discover_mosaics(GEOMAD_MOSAIC_BASE)
+    MOSAIC_PATHS_PREDICTION = _discover_mosaics(PREDICTION_MOSAIC_BASE)
 except Exception as e:
-    logger.error(f"Failed to scan S3 for mosaics: {e}")
-    if not MOSAIC_PATHS_GEOMAD_PACIFIC and not MOSAIC_PATHS_GEOMAD_NON_PACIFIC:
-        raise RuntimeError(
-            f"Cannot start: failed to discover any mosaics. "
-            f"Check AWS credentials and network connectivity. Error: {e}"
-        ) from e
+    logger.error(f"Failed to discover mosaics: {e}")
 
-logger.info(f"GeoMAD pacific mosaics: {sorted(MOSAIC_PATHS_GEOMAD_PACIFIC.keys())}")
-logger.info(
-    f"GeoMAD non-pacific mosaics: {sorted(MOSAIC_PATHS_GEOMAD_NON_PACIFIC.keys())}"
-)
-logger.info(
-    f"Prediction pacific mosaics: {sorted(MOSAIC_PATHS_PREDICTION_PACIFIC.keys())}"
-)
-logger.info(
-    f"Prediction non-pacific mosaics: {sorted(MOSAIC_PATHS_PREDICTION_NON_PACIFIC.keys())}"
-)
+if not MOSAIC_PATHS_GEOMAD and not MOSAIC_PATHS_PREDICTION:
+    raise RuntimeError(
+        "Cannot start: failed to discover any mosaics from source.coop. "
+        "Check network connectivity and that the base URLs are correct."
+    )
+
+logger.info(f"GeoMAD mosaics: {sorted(MOSAIC_PATHS_GEOMAD.keys())}")
+logger.info(f"Prediction mosaics: {sorted(MOSAIC_PATHS_PREDICTION.keys())}")
 
 DATASETS: dict[str, dict[str, str]] = {
-    "geomad_pacific": MOSAIC_PATHS_GEOMAD_PACIFIC,
-    "geomad_non_pacific": MOSAIC_PATHS_GEOMAD_NON_PACIFIC,
-    "prediction_pacific": MOSAIC_PATHS_PREDICTION_PACIFIC,
-    "prediction_non_pacific": MOSAIC_PATHS_PREDICTION_NON_PACIFIC,
+    "geomad": MOSAIC_PATHS_GEOMAD,
+    "prediction": MOSAIC_PATHS_PREDICTION,
 }
 
 
 # Custom path dependency
+
+
 def mosaic_path_params(
     year: Annotated[
         str,
         Query(description="Year (e.g. '2020')", pattern=r"^\d{4}$"),
     ],
     dataset: Annotated[
-        Literal[
-            "geomad_pacific",
-            "geomad_non_pacific",
-            "prediction_pacific",
-            "prediction_non_pacific",
-        ],
+        Literal["geomad", "prediction"],
         Query(description="Dataset name"),
     ],
 ) -> str:
-    """Resolve dataset and year query parameters to a mosaic.json file path."""
+    """Resolve dataset and year query parameters to a mosaic.json URL."""
     mosaic_paths = DATASETS.get(dataset)
     if mosaic_paths is None:
         raise HTTPException(
             status_code=404,
             detail=f"Unknown dataset '{dataset}'. Valid options: {list(DATASETS.keys())}.",
         )
-
     if year in mosaic_paths:
         return str(mosaic_paths[year])
-    else:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No mosaic found for year '{year}' in dataset '{dataset}'. Available years: {sorted(mosaic_paths.keys())}.",
-        )
+    raise HTTPException(
+        status_code=404,
+        detail=f"No mosaic found for year '{year}' in dataset '{dataset}'. Available years: {sorted(mosaic_paths.keys())}.",
+    )
 
 
 # FastAPI app
@@ -209,7 +146,7 @@ app = FastAPI(
     title="LDN LULC Mosaic Viewer",
     description=(
         "Mosaic viewer for Landsat GeoMedian/GeoMAD and LULC Prediction data. "
-        "Pass a dataset as `dataset` (e.g. `dataset=geomad` or `dataset=prediction`) and year as `year` (e.g. `year=2020`) and band assets as "
+        "Pass `dataset` (e.g. `dataset=geomad` or `dataset=prediction`), `year` (e.g. `year=2020`), and band assets as "
         "`assets=red&assets=green&assets=blue` or `assets=classification`."
     ),
     version="1.0.0",
@@ -257,24 +194,13 @@ def health():
 @app.get("/config.json", tags=["Viewer"])
 def config():
     """Return dynamic configuration for the frontend."""
-    years_geomad_pacific = sorted(MOSAIC_PATHS_GEOMAD_PACIFIC.keys())
-    years_geomad_non_pacific = sorted(MOSAIC_PATHS_GEOMAD_NON_PACIFIC.keys())
-    years_prediction_pacific = sorted(MOSAIC_PATHS_PREDICTION_PACIFIC.keys())
-    years_prediction_non_pacific = sorted(MOSAIC_PATHS_PREDICTION_NON_PACIFIC.keys())
-    all_years = sorted(
-        set(
-            years_geomad_pacific
-            + years_geomad_non_pacific
-            + years_prediction_pacific
-            + years_prediction_non_pacific
-        )
-    )
+    years_geomad = sorted(MOSAIC_PATHS_GEOMAD.keys())
+    years_prediction = sorted(MOSAIC_PATHS_PREDICTION.keys())
+    all_years = sorted(set(years_geomad + years_prediction))
     default_year = all_years[-1] if all_years else "2020"
     return {
-        "years_geomad_pacific": years_geomad_pacific,
-        "years_geomad_non_pacific": years_geomad_non_pacific,
-        "years_prediction_pacific": years_prediction_pacific,
-        "years_prediction_non_pacific": years_prediction_non_pacific,
+        "years_geomad": years_geomad,
+        "years_prediction": years_prediction,
         "all_years": all_years,
         "default_year": default_year,
         "geomad_version": GEOMAD_VERSION,
@@ -291,6 +217,5 @@ def root():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"), media_type="text/html")
 
 
-handler = Mangum(
-    app, lifespan="off"
-)  # Lifespan "off" disables startup/shutdown events which can slow down Lambda cold starts.
+# Lifespan "off" disables startup/shutdown events which can slow down Lambda cold starts.
+handler = Mangum(app, lifespan="off")

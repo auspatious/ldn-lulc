@@ -11,33 +11,33 @@
 # 7. Run make-mosaic for geomad and prediction datasets
 # 8. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
-VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)")
-VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)")
-VERSION_MODEL := $(shell python3 -c "from ldn.utils import MODEL_VERSION; print(MODEL_VERSION)")
+VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)");
+VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)");
+VERSION_MODEL := $(shell python3 -c "from ldn.utils import MODEL_VERSION; print(MODEL_VERSION)");
 
-PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.utils import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))")
+PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.utils import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))");
 
-DECIMATED ?= --no-decimated
+DECIMATED ?= --no-decimated;
 
 # Get grid tiles - all
 grid-get-tiles-all:
-	ldn grid get-grid-tiles --format="gdf" --grids="all" --overwrite
+	ldn grid get-grid-tiles --format="gdf" --grids="all" --overwrite;
 
 # List countries in grids
 grid-list-countries-all:
-	ldn grid list-countries --grids="all"
+	ldn grid list-countries --grids="all";
 
 grid-list-countries-pacific:
-	ldn grid list-countries --grids="pacific"
+	ldn grid list-countries --grids="pacific";
 
 grid-list-countries-non-pacific:
-	ldn grid list-countries --grids="non-pacific"
+	ldn grid list-countries --grids="non-pacific";
 
 print-tasks-2000-2025-all:
-	ldn print-tasks --years="2000-2025" --region="all"
+	ldn print-tasks --years="2000-2025" --region="all";
 
 print-tasks-2000-2025-pacific:
-	ldn print-tasks --years="2000-2025" --region="pacific"
+	ldn print-tasks --years="2000-2025" --region="pacific";
 
 
 TEST_TILES_2_REGIONS := 076_024:pacific 144_127:non-pacific
@@ -55,7 +55,7 @@ geomad-2-regions-decimated:
 			--version $(VERSION_GEOMAD) \
 			--decimated \
 			--overwrite; \
-	done
+	done;
 
 
 # Run geomad for all test case sites for years 2000-2025.
@@ -71,7 +71,7 @@ geomad-2000-2025:
 				--version $(VERSION_GEOMAD) \
 				--overwrite; \
 		done; \
-	done
+	done;
 
 
 index-geomad:
@@ -79,7 +79,7 @@ index-geomad:
 	--dataset "geomad" \
 	--region "all" \
 	--version-geomad $(VERSION_GEOMAD) \
-	--version-prediction $(VERSION_PREDICTION)
+	--version-prediction $(VERSION_PREDICTION);
 
 
 #### Training Data
@@ -94,7 +94,7 @@ training-data-generate:
 			--region $$region \
 			--country-name "$$country_name" \
 			--country-code "$$country_code"; \
-	done
+	done;
 
 
 ###### Classification/Prediction
@@ -106,7 +106,7 @@ print-tasks-prediction-2020:
 	ldn print-tasks \
 	--years="2020" \
 	--region="pacific" \
-	--dataset="prediction"
+	--dataset="prediction";
 
 
 # 2. Classify
@@ -123,7 +123,7 @@ predict-lulc-test-tiles-2020:
 			--region $$region \
 			$(DECIMATED) \
 			--overwrite; \
-	done
+	done;
 
 # TODO: Get write access for Will to dep-public-staging.
 prediction-2-regions-decimated:
@@ -138,7 +138,7 @@ prediction-2-regions-decimated:
 			--region $$region \
 			--decimated \
 			--overwrite; \
-	done
+	done;
 
 
 
@@ -148,16 +148,85 @@ index-predictions:
 	--dataset "prediction" \
 	--region "all" \
 	--version-geomad $(VERSION_GEOMAD) \
-	--version-prediction $(VERSION_PREDICTION)
+	--version-prediction $(VERSION_PREDICTION);
 
 
 # 4. Visualisation
 make-mosaics-geomad:
 	ldn make-mosaics \
-	--dataset geomad \
-	--region "all"
+	--dataset geomad;
 
 make-mosaics-prediction:
 	ldn make-mosaics \
+	--dataset prediction;
+
+# TODO: Write both regions geomad to the same bucket.
+
+# TODO: update index and mosaic commands to be able to write to Source.Coop.
+
+
+
+# Source.Coop testing:
+SOURCE_TEST_VERSION ?= 0-2-1-test
+SOURCE_TEST_VERSION_P ?= 0-0-4-test
+SOURCE_TEST_TILE ?= 028_030
+geomad-source-coop-test:
+	poetry run ldn geomad run \
+		--tile-id $(SOURCE_TEST_TILE) \
+    	--region pacific \
+    	--year 2025 \
+    	--version $(SOURCE_TEST_VERSION) \
+		--decimated;
+geomad-source-coop-test-np:
+	poetry run ldn geomad run \
+		--tile-id 334_092 \
+    	--region non-pacific \
+    	--year 2025 \
+    	--version $(SOURCE_TEST_VERSION) \
+		--decimated;
+
+# Test geomad works for LS7
+test-geomad-ls7-source-coop:
+	poetry run ldn geomad run \
+		--tile-id 050_015 \
+    	--region pacific \
+    	--year 2010 \
+    	--version 0-2-1-test \
+		--decimated;
+
+index-geomad-source-coop-test:
+	ldn index-to-stac-geoparquet \
+	--dataset "geomad" \
+	--version-geomad $(SOURCE_TEST_VERSION);
+
+mosaic-geomad-source-coop-test:
+	ldn make-mosaics \
+	--dataset geomad \
+	--version-geomad $(SOURCE_TEST_VERSION);
+
+classify-source-coop-test:
+	ldn classify run \
+		--tile-id $(SOURCE_TEST_TILE) \
+		--year 2025 \
+		--version $(SOURCE_TEST_VERSION_P) \
+		--version-geomad $(SOURCE_TEST_VERSION) \
+		--region pacific \
+		--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+		--no-decimated \
+		--overwrite; \
+
+index-prediction-source-coop-test:
+	ldn index-to-stac-geoparquet \
+	--dataset "prediction" \
+	--version-geomad $(SOURCE_TEST_VERSION) \
+	--version-prediction $(SOURCE_TEST_VERSION_P);
+
+mosaic-prediction-source-coop-test:
+	ldn make-mosaics \
 	--dataset prediction \
-	--region "all"
+	--version-geomad $(SOURCE_TEST_VERSION) \
+	--version-prediction $(SOURCE_TEST_VERSION_P);
+
+# export AWS_WRITE_ACCESS_KEY_ID=""
+# export AWS_WRITE_SECRET_ACCESS_KEY=""
+# export AWS_WRITE_SESSION_TOKEN=""

@@ -9,6 +9,7 @@ from dep_tools.searchers import PystacSearcher
 from dep_tools.loaders import OdcLoader
 from typing_extensions import Annotated
 from dep_tools.stac_utils import StacCreator
+from dep_tools.writers import AwsStacWriter
 from ldn.geomad import AwsStacTask as Task
 from dep_tools.writers import AwsDsCogWriter
 from odc.stac import configure_s3_access
@@ -16,6 +17,7 @@ from typing import Literal
 
 from dep_tools.exceptions import EmptyCollectionError
 from dask.distributed import Client as DaskClient
+from dep_tools.utils import join_path_or_url
 
 from ldn.geomad import (
     GeoMADProcessor,
@@ -32,15 +34,18 @@ from ldn.grids import get_gridspec
 from ldn.utils import (
     AWS_REGION,
     GEOMAD_DATASET_ID,
+    GEOMAD_VERSION,
+    SOURCE_COOP_PREFIX_GEOMAD,
+    SOURCE_COOP_PUBLIC_URL,
     SENSOR,
-    PACIFIC_BUCKET,
-    NON_PACIFIC_BUCKET,
+    BUCKET,
     PACIFIC_OWNER,
     NON_PACIFIC_OWNER,
-    bucket_for_region,
     owner_for_region,
     LS7_YEAR_THRESHOLD,
 )
+
+from ldn.aws_credentials import get_write_client, make_write_function, get_write_session
 
 geomad_app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -62,9 +67,9 @@ def count_scenes(
 ) -> int:
     """Count (tier 1 or all) scenes per tile and year."""
 
-    tile_index = tuple(map(int, tile_id.split("_")))
+    tile_id_tuple = tuple(map(int, tile_id.split("_")))
     grid = get_gridspec(region=region)
-    geobox = grid.tile_geobox(tile_index)
+    geobox = grid.tile_geobox(tile_id_tuple)
 
     query = {} if include_t2 else {"landsat:collection_category": {"in": ["T1"]}}
 
@@ -87,23 +92,42 @@ def count_scenes(
     return count
 
 
+# This is needed to support Source.Coop prefix.
+# TODO: Move this somewhere it can be used in classify too.
+class PrefixedS3ItemPath(S3ItemPath):
+    def __init__(self, key_prefix: str | None = None, **kwargs):
+        super().__init__(**kwargs)
+        self.key_prefix = key_prefix.strip("/") if key_prefix else None
+
+    def path(self, item_id, asset_name=None, ext=".tif", absolute=False) -> str:
+        relative_path = super().path(
+            item_id, asset_name=asset_name, ext=ext, absolute=False
+        )
+        if self.key_prefix:
+            relative_path = f"{self.key_prefix}/{relative_path}"
+        return (
+            join_path_or_url(self.full_path_prefix, relative_path)
+            if absolute and self.full_path_prefix is not None
+            else relative_path
+        )
+
+
 @geomad_app.command()
 def run(
     tile_id: Annotated[str, typer.Option()],
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
-    bucket_pacific: Annotated[
-        str, typer.Option(help="S3 bucket for pacific data.")
-    ] = PACIFIC_BUCKET,
-    bucket_non_pacific: Annotated[
-        str, typer.Option(help="S3 bucket for non-pacific data.")
-    ] = NON_PACIFIC_BUCKET,
+    bucket: Annotated[str, typer.Option(help="S3 bucket for data.")] = BUCKET,
     owner_pacific: Annotated[
-        str, typer.Option(help="Short owner prefix for pacific (e.g. 'dep').")
+        str,
+        typer.Option(help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."),
     ] = PACIFIC_OWNER,
     owner_non_pacific: Annotated[
-        str, typer.Option(help="Short owner prefix for non-pacific (e.g. 'ci').")
+        str,
+        typer.Option(
+            help=f"Short owner prefix for non-Pacific (e.g. '{NON_PACIFIC_OWNER}')."
+        ),
     ] = NON_PACIFIC_OWNER,
     product_owner: Annotated[
         str | None, typer.Option(help="Override the region-derived owner prefix.")
@@ -144,6 +168,11 @@ def run(
         f"all_bands={all_bands} mask_shadow={mask_shadow} memory={memory_limit} workers={n_workers} threads={threads_per_worker} "
         f"chunk={xy_chunk_size} geomad_threads={geomad_threads}",
     )
+
+    if version != GEOMAD_VERSION:
+        logger.info(
+            f"Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version})."
+        )
 
     year_int = int(year)
     search_year = year
@@ -193,19 +222,21 @@ def run(
                 logger.info("Not in LS7 era so not using buffered temporal search.")
 
     # Set up variables and check
-    tile_index = tuple(map(int, tile_id.split("_")))
+    tile_id_tuple = tuple(map(int, tile_id.split("_")))
 
     grid = get_gridspec(region=region)
-    geobox = grid.tile_geobox(tile_index)
+    geobox = grid.tile_geobox(tile_id_tuple)
 
-    # Resolve bucket and prefix based on tile region
-    bucket = bucket_for_region(region, bucket_pacific, bucket_non_pacific)
+    # Resolve prefix based on tile region and owner override
     owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
 
     # TODO: Handle different bucket formats more robustly. For now we support:
     # "data.ldn.auspatious.com" to "https://data.ldn.auspatious.com"
     # "dep-public-staging" to "https://dep-public-staging.s3.us-west-2.amazonaws.com"
-    if bucket.startswith("https://"):
+    # "https://data.source.coop" to "https://data.source.coop"
+    if SOURCE_COOP_PUBLIC_URL:
+        full_path_prefix = SOURCE_COOP_PUBLIC_URL
+    elif bucket.startswith("https://"):
         full_path_prefix = bucket
     elif "." in bucket:
         full_path_prefix = f"https://{bucket}"
@@ -214,28 +245,36 @@ def run(
 
     if decimated:
         typer.echo("Warning, using decimated (low resolution) for testing purposes.")
-        geobox = geobox.zoom_out(10)
+        geobox = geobox.zoom_out(10)  # TODO: Reenable.
+        # geobox = geobox.zoom_out(100) # For faster testing.
 
     # Configure for dask and reading data
     _ = configure_s3_access(requester_pays=True)
     # Configure for checking item existence
-    client = boto3.client("s3")
+    s3_client = boto3.client("s3")  # Only needed for non-Source.Coop.
 
     # Check if we've done this tile before
-    itempath = S3ItemPath(
+    itempath = PrefixedS3ItemPath(
+        key_prefix=SOURCE_COOP_PREFIX_GEOMAD if SOURCE_COOP_PUBLIC_URL else None,
         prefix=owner,
         bucket=bucket,
         sensor=SENSOR,
         dataset_id=GEOMAD_DATASET_ID,
         version=version,
         time=year,
-        full_path_prefix=full_path_prefix,
+        full_path_prefix=full_path_prefix,  # public URL for STAC hrefs + rasterio reads
     )
-    stac_document = itempath.stac_path(tile_index, absolute=True)
-    stac_key = itempath.stac_path(tile_index, absolute=False)
+    stac_document = itempath.stac_path(tile_id_tuple, absolute=True)
+    stac_key = itempath.stac_path(tile_id_tuple, absolute=False)
+
+    write_session = get_write_session()
+    write_client = get_write_client(write_session)
+
+    aws_client_to_use = write_client if SOURCE_COOP_PREFIX_GEOMAD else s3_client
 
     # If we don't want to overwrite, and the destination file already exists, skip it
-    if not overwrite and object_exists(bucket, stac_key, client=client):
+    # Use the write client to check if the item already exists at the destination, since it may have different credentials.
+    if not overwrite and object_exists(bucket, stac_key, client=aws_client_to_use):
         typer.echo(f"Item already exists at {stac_document}, skipping.")
         return
     else:
@@ -272,8 +311,16 @@ def run(
         **load_kwargs,
     )
 
-    # AWS Writer, to write results
-    writer = AwsDsCogWriter(itempath, write_multithreaded=True)
+    writer = AwsDsCogWriter(
+        itempath,
+        write_multithreaded=True,
+        write_function=make_write_function(write_session),
+    )
+
+    stac_writer = AwsStacWriter(
+        itempath,
+        client=aws_client_to_use,
+    )
 
     # Metadata creator
     stac_creator = StacCreator(
@@ -309,13 +356,14 @@ def run(
         ):
             paths = Task(
                 itempath=itempath,
-                id=tile_index,  # TODO: Check this type
+                id=tile_id_tuple,
                 area=geobox,
                 searcher=searcher,
                 loader=loader,
                 processor=processor,
                 writer=writer,
                 stac_creator=stac_creator,
+                stac_writer=stac_writer,
             ).run()
             typer.echo(f"Wrote {len(paths)} files...")
 
