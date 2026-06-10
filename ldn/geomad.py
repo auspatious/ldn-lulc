@@ -394,13 +394,14 @@ class GeoMADProcessor(Processor):
         return set_stac_properties(data, geomad)
 
 
+# This is a generic function used be geomad and classify tasks.
 class AwsStacTask(AreaTask):
     """Area task with search + STAC creation/writing for AWS workflows."""
 
     def __init__(
         self,
         itempath: S3ItemPath,
-        id: str,  # TODO: Check this type. str or tuple?
+        id: str,
         area: GeoBox,
         searcher: Searcher,
         loader: StacLoader,
@@ -422,11 +423,9 @@ class AwsStacTask(AreaTask):
 
     def run(self):
         items = self.searcher.search(self.area)
-        logger.info(f"Found {len(items)} LS items for this tile/year")
+        logger.info(f"Found {len(items)} items for this tile/year")
         input_data = self.loader.load(items, self.area)
-        logger.info(
-            f"Loaded {len(input_data.time.values)} LS items for this tile/year (grouped by solar_day)"
-        )
+        logger.info(f"Loaded {len(input_data.time.values)} items for this tile/year")
 
         processor_kwargs = (
             dict(area=self.area) if self.processor.send_area_to_processor else dict()

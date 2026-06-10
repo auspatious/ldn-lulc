@@ -50,7 +50,6 @@ def run(
         f"https://s3.{AWS_REGION}.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/pacific/2020/lulc_random_forest_model_pacific_2020.joblib",
         help="Model to use for prediction.",
     ),
-    asset_url_prefix: str | None = typer.Option(None, help="Prefix for asset URLs."),
     decimated: bool = typer.Option(
         False,
         help="Whether to use decimated data for prediction. Decimated data is faster to predict but less accurate.",
@@ -83,23 +82,18 @@ def run(
     if int(year) < 2000 or int(year) > 2025:
         raise LdnError("Year must be between 2000 and 2025.")
 
-    # Resolve prefix based on region
-    # TODO: Add SOURCE_COOP_PREFIX here for source.coop
-    output_prefix = owner_for_region(
-        region, owner_pacific, owner_non_pacific, product_owner
-    )
+    owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
 
     run_classify_task(
         tile_id,
-        datetime=year,
+        year=year,
         version=version,
         version_geomad=version_geomad,
         region=region,
-        output_bucket=bucket,
-        output_prefix=output_prefix,
+        bucket=bucket,
+        owner=owner,
         model_path=model_path,
         xy_chunk_size=xy_chunk_size,
-        asset_url_prefix=asset_url_prefix,
         decimated=decimated,
         overwrite=overwrite,
         probability_threshold=probability_threshold,

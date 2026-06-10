@@ -34,7 +34,8 @@ from ldn.grids import get_gridspec
 from ldn.utils import (
     AWS_REGION,
     GEOMAD_DATASET_ID,
-    SOURCE_COOP_PREFIX,
+    GEOMAD_VERSION,
+    SOURCE_COOP_PREFIX_GEOMAD,
     SOURCE_COOP_PUBLIC_URL,
     SENSOR,
     BUCKET,
@@ -66,9 +67,9 @@ def count_scenes(
 ) -> int:
     """Count (tier 1 or all) scenes per tile and year."""
 
-    tile_index = tuple(map(int, tile_id.split("_")))
+    tile_id_tuple = tuple(map(int, tile_id.split("_")))
     grid = get_gridspec(region=region)
-    geobox = grid.tile_geobox(tile_index)
+    geobox = grid.tile_geobox(tile_id_tuple)
 
     query = {} if include_t2 else {"landsat:collection_category": {"in": ["T1"]}}
 
@@ -168,6 +169,11 @@ def run(
         f"chunk={xy_chunk_size} geomad_threads={geomad_threads}",
     )
 
+    if version != GEOMAD_VERSION:
+        logger.info(
+            f"Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version})."
+        )
+
     year_int = int(year)
     search_year = year
     search_kwargs = {"query": {"landsat:collection_category": {"in": ["T1"]}}}
@@ -216,10 +222,10 @@ def run(
                 logger.info("Not in LS7 era so not using buffered temporal search.")
 
     # Set up variables and check
-    tile_index = tuple(map(int, tile_id.split("_")))
+    tile_id_tuple = tuple(map(int, tile_id.split("_")))
 
     grid = get_gridspec(region=region)
-    geobox = grid.tile_geobox(tile_index)
+    geobox = grid.tile_geobox(tile_id_tuple)
 
     # Resolve prefix based on tile region and owner override
     owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
@@ -245,32 +251,30 @@ def run(
     # Configure for dask and reading data
     _ = configure_s3_access(requester_pays=True)
     # Configure for checking item existence
-    client = boto3.client("s3")  # Only needed for non-Source.Coop.
+    s3_client = boto3.client("s3")  # Only needed for non-Source.Coop.
 
     # Check if we've done this tile before
     itempath = PrefixedS3ItemPath(
-        key_prefix=SOURCE_COOP_PREFIX,
+        key_prefix=SOURCE_COOP_PREFIX_GEOMAD if SOURCE_COOP_PUBLIC_URL else None,
         prefix=owner,
-        bucket=bucket,  # S3 bucket for writes
+        bucket=bucket,
         sensor=SENSOR,
         dataset_id=GEOMAD_DATASET_ID,
         version=version,
         time=year,
         full_path_prefix=full_path_prefix,  # public URL for STAC hrefs + rasterio reads
     )
-    stac_document = itempath.stac_path(tile_index, absolute=True)
-    stac_key = itempath.stac_path(tile_index, absolute=False)
+    stac_document = itempath.stac_path(tile_id_tuple, absolute=True)
+    stac_key = itempath.stac_path(tile_id_tuple, absolute=False)
 
     write_session = get_write_session()
     write_client = get_write_client(write_session)
 
-    # TODO: Now this only works for Source.Coop write credentials.
-    # check_client = write_client if writing_to_source_coop else client
-    check_client = write_client if SOURCE_COOP_PREFIX else client
+    aws_client_to_use = write_client if SOURCE_COOP_PREFIX_GEOMAD else s3_client
 
     # If we don't want to overwrite, and the destination file already exists, skip it
     # Use the write client to check if the item already exists at the destination, since it may have different credentials.
-    if not overwrite and object_exists(bucket, stac_key, client=check_client):
+    if not overwrite and object_exists(bucket, stac_key, client=aws_client_to_use):
         typer.echo(f"Item already exists at {stac_document}, skipping.")
         return
     else:
@@ -315,7 +319,7 @@ def run(
 
     stac_writer = AwsStacWriter(
         itempath,
-        client=write_client,
+        client=aws_client_to_use,
     )
 
     # Metadata creator
@@ -352,7 +356,7 @@ def run(
         ):
             paths = Task(
                 itempath=itempath,
-                id=tile_index,  # TODO: Check this type
+                id=tile_id_tuple,
                 area=geobox,
                 searcher=searcher,
                 loader=loader,

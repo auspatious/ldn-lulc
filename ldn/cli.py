@@ -26,7 +26,8 @@ from ldn.cli_classify import classify_app
 from ldn.cli_geomad import geomad_app
 from ldn.utils import (
     AWS_REGION,
-    SOURCE_COOP_PREFIX,
+    SOURCE_COOP_PREFIX_GEOMAD,
+    SOURCE_COOP_PREFIX_PREDICTION,
     SOURCE_COOP_PUBLIC_URL,
     GEOMAD_VERSION,
     GEOMAD_DATASET_ID,
@@ -130,8 +131,11 @@ def _find_existing_tasks(
     for combo_bucket, combo_owner in region_combos:
         full_prefix = dataset_prefix(combo_owner, dataset_id)
         s3_prefix = f"{full_prefix}/{version}/"
-        if SOURCE_COOP_PREFIX:
-            s3_prefix = f"{SOURCE_COOP_PREFIX}/{s3_prefix}"
+        if SOURCE_COOP_PUBLIC_URL:
+            if dataset_id == GEOMAD_DATASET_ID:
+                s3_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{s3_prefix}"
+            elif dataset_id == PREDICTION_DATASET_ID:
+                s3_prefix = f"{SOURCE_COOP_PREFIX_PREDICTION}/{s3_prefix}"
         paginator = client.get_paginator("list_objects_v2")
         key_set: set[str] = set()
         for page in paginator.paginate(Bucket=combo_bucket, Prefix=s3_prefix):
@@ -154,8 +158,11 @@ def _find_existing_tasks(
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
         full_path_prefix = _full_path_prefix_for_bucket(BUCKET)
 
-        if SOURCE_COOP_PREFIX:
-            full_path_prefix = f"{full_path_prefix}/{SOURCE_COOP_PREFIX}"
+        if SOURCE_COOP_PUBLIC_URL:
+            if dataset_id == GEOMAD_DATASET_ID:
+                full_path_prefix = f"{full_path_prefix}/{SOURCE_COOP_PREFIX_GEOMAD}"
+            elif dataset_id == PREDICTION_DATASET_ID:
+                full_path_prefix = f"{full_path_prefix}/{SOURCE_COOP_PREFIX_PREDICTION}"
 
         itempath = S3ItemPath(
             prefix=owner,
@@ -371,7 +378,7 @@ def index_to_stac_geoparquet(
     for r in regions:
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
         for d in datasets:
-            if d == "geomad":
+            if d == GEOMAD_DATASET_ID:
                 prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
                 version = version_geomad
             else:
@@ -386,8 +393,11 @@ def index_to_stac_geoparquet(
 def _run_index(bucket: str, prefix: str, version: str) -> None:
     """Run the STAC-Geoparquet indexing for a single bucket/prefix."""
     full_prefix = f"{prefix}/{version}"
-    if SOURCE_COOP_PREFIX:  # Source.Coop prefix.
-        full_prefix = f"{SOURCE_COOP_PREFIX}/{full_prefix}"
+    if SOURCE_COOP_PUBLIC_URL:  # Source.Coop prefix.
+        if GEOMAD_DATASET_ID in prefix:
+            full_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{full_prefix}"
+        elif PREDICTION_DATASET_ID in prefix:
+            full_prefix = f"{SOURCE_COOP_PREFIX_PREDICTION}/{full_prefix}"
     parquet_key = f"{full_prefix}/{prefix}.parquet"
 
     logger.info(f"Listing STAC items under s3://{bucket}/{full_prefix}")
@@ -552,31 +562,38 @@ def make_mosaics(
         else:
             requested_years = [y.strip() for y in years.split(",")]
 
+    DATASET_CONFIG = {
+        GEOMAD_DATASET_ID: {
+            "version": version_geomad,
+            "source_coop_prefix": SOURCE_COOP_PREFIX_GEOMAD,
+        },
+        PREDICTION_DATASET_ID: {
+            "version": version_prediction,
+            "source_coop_prefix": SOURCE_COOP_PREFIX_PREDICTION,
+        },
+    }
+
     regions = ["pacific", "non-pacific"] if region == "all" else [region]
-    datasets_list = ["geomad", "prediction"] if dataset == "all" else [dataset]
+    datasets_list = (
+        [GEOMAD_DATASET_ID, PREDICTION_DATASET_ID] if dataset == "all" else [dataset]
+    )
 
     mosaic_targets: list[tuple[str, str, str, str]] = []
     for r in regions:
         owner = owner_for_region(r, product_owner=product_owner)
-        # Always use S3 path-style URL to bypass CDN caching
-        read_url = (
-            f"{SOURCE_COOP_PUBLIC_URL}/{SOURCE_COOP_PREFIX}"
-            if SOURCE_COOP_PUBLIC_URL
-            else f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
-        )
         for d in datasets_list:
-            if d == "geomad":
-                prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
-                ver = version_geomad
+            cfg = DATASET_CONFIG[d]
+            prefix = dataset_prefix(owner, d)
+            ver = cfg["version"]
+            sc_prefix = cfg["source_coop_prefix"]
+
+            if SOURCE_COOP_PUBLIC_URL:
+                read_url = f"{SOURCE_COOP_PUBLIC_URL}/{sc_prefix}"
+                output_path = f"s3://{bucket}/{sc_prefix}/{prefix}/{ver}/mosaics/"
             else:
-                prefix = dataset_prefix(owner, PREDICTION_DATASET_ID)
-                ver = version_prediction
-            output_path_end = f"{prefix}/{ver}/mosaics/"
-            output_path = (
-                f"s3://{bucket}/{SOURCE_COOP_PREFIX}/{output_path_end}"
-                if SOURCE_COOP_PUBLIC_URL
-                else f"s3://{bucket}/{output_path_end}"
-            )
+                read_url = f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
+                output_path = f"s3://{bucket}/{prefix}/{ver}/mosaics/"
+
             parquet_url = f"{read_url}/{prefix}/{ver}/{prefix}.parquet"
             mosaic_targets.append((f"{d} ({r})", d, parquet_url, output_path))
 

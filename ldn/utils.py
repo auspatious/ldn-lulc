@@ -114,9 +114,11 @@ TRAINING_DATA_VERSION = "0-0-4"
 
 # aws s3 cp test.txt s3://us-west-2.opendata.source.coop/auspatious/geomad-sids/test.txt
 # aws s3 rm s3://us-west-2.opendata.source.coop/auspatious/geomad-sids/test.txt
+# aws s3 rm s3://us-west-2.opendata.source.coop/auspatious/geomad-sids/dep_ls_lulc_prediction/ --recursive
 SOURCE_COOP_PUBLIC_URL = "https://data.source.coop"  # public read URL for STAC hrefs
 # SOURCE_COOP_PUBLIC_URL = None # For non-Source.Coop buckets.
-SOURCE_COOP_PREFIX = "auspatious/geomad-sids"  # For source.coop.
+SOURCE_COOP_PREFIX_GEOMAD = "auspatious/geomad-sids"  # For source.coop.
+SOURCE_COOP_PREFIX_PREDICTION = "auspatious/lulc-sids"  # For source.coop.
 
 # BUCKET = "data.ldn.auspatious.com"
 # BUCKET = "dep-public-staging"
@@ -184,9 +186,10 @@ def get_geomad_stac_geoparquet_url(
     """
     ver = version if version is not None else GEOMAD_VERSION
     bucket = BUCKET  # TODO: Make this a param?
-    # TODO: Add SOURCE_COOP_PREFIX here for source.coop?
     owner = owner_for_region(region, product_owner=product_owner)
     prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
+    if SOURCE_COOP_PUBLIC_URL:
+        return f"{SOURCE_COOP_PUBLIC_URL}/{SOURCE_COOP_PREFIX_GEOMAD}/{prefix}/{ver}/{prefix}.parquet"
     return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/{prefix}/{ver}/{prefix}.parquet"
 
 

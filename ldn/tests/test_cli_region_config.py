@@ -6,7 +6,7 @@ from typer.testing import CliRunner
 
 from ldn.cli import app
 from ldn.cli_classify import classify_app
-from ldn.utils import SOURCE_COOP_PREFIX
+from ldn.utils import SOURCE_COOP_PREFIX_GEOMAD
 
 runner = CliRunner()
 
@@ -45,8 +45,8 @@ class TestPrintTasksRegionConfig:
         call_kwargs = mock_paginator.paginate.call_args[1]
         assert call_kwargs["Bucket"] == "my-custom-bucket"
         expected_prefix = "myorg_ls_geomad/"
-        if SOURCE_COOP_PREFIX:
-            expected_prefix = f"{SOURCE_COOP_PREFIX}/{expected_prefix}"
+        if SOURCE_COOP_PREFIX_GEOMAD:
+            expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
         assert call_kwargs["Prefix"].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")
@@ -76,8 +76,8 @@ class TestPrintTasksRegionConfig:
         assert result.exit_code == 0, result.output
         call_kwargs = mock_paginator.paginate.call_args[1]
         expected_prefix = "override_ls_geomad/"
-        if SOURCE_COOP_PREFIX:
-            expected_prefix = f"{SOURCE_COOP_PREFIX}/{expected_prefix}"
+        if SOURCE_COOP_PREFIX_GEOMAD:
+            expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
         assert call_kwargs["Prefix"].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")

@@ -169,6 +169,7 @@ make-mosaics-prediction:
 
 # Source.Coop testing:
 SOURCE_TEST_VERSION ?= 0-2-1-test
+SOURCE_TEST_VERSION_P ?= 0-0-4-test
 geomad-source-coop-test:
 	poetry run ldn geomad run \
 		--tile-id 130_012 \
@@ -190,7 +191,16 @@ mosaic-geomad-source-coop-test:
 	--version-geomad $(SOURCE_TEST_VERSION);
 
 # TODO: classify to Source.Coop and index/mosaic.
-
+classify-source-coop-test:
+	ldn classify run \
+		--tile-id 130_012 \
+		--year 2025 \
+		--version $(SOURCE_TEST_VERSION_P) \
+		--version-geomad $(SOURCE_TEST_VERSION) \
+		--region pacific \
+		--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+		--decimated \
+		--overwrite; \
 
 # export AWS_WRITE_ACCESS_KEY_ID=""
 # export AWS_WRITE_SECRET_ACCESS_KEY=""

@@ -14,11 +14,12 @@ from dask.distributed import Client as DaskClient
 from dep_tools.aws import object_exists
 from dep_tools.exceptions import EmptyCollectionError
 from dep_tools.loaders import OdcLoader
-from dep_tools.namers import S3ItemPath
+from dep_tools.stac_utils import StacCreator
+from dep_tools.writers import AwsStacWriter
+from ldn.geomad import AwsStacTask as Task
+from dep_tools.writers import AwsDsCogWriter
 from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
-from dep_tools.stac_utils import StacCreator
-from dep_tools.task import AwsStacTask as Task
 from geopandas import GeoDataFrame
 from joblib import load as joblib_load
 from sklearn.ensemble import RandomForestClassifier
@@ -37,11 +38,17 @@ from shapely.geometry import box
 from odc.geo.geom import box as odc_box
 
 
+from ldn.aws_credentials import get_write_client, get_write_session, make_write_function
+from ldn.cli_geomad import PrefixedS3ItemPath
 from ldn.grids import get_gridspec
 from ldn.utils import (
+    AWS_REGION,
     GEOMAD_VERSION,
     PREDICTION_DATASET_ID,
+    PREDICTION_VERSION,
     SENSOR,
+    SOURCE_COOP_PREFIX_PREDICTION,
+    SOURCE_COOP_PUBLIC_URL,
     LdnError,
     get_analysis_epsg,
     get_geomad_stac_geoparquet_url,
@@ -778,15 +785,14 @@ def _load_joblib_model(model_path: str):
 
 def run_classify_task(
     tile_id: Annotated[str, typer.Option()],
-    datetime: Annotated[str, typer.Option()],
+    year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     version_geomad: Annotated[str, typer.Option()],
     region: Literal["pacific", "non-pacific"],
-    output_bucket: str,
-    output_prefix: str,
+    bucket: str,
+    owner: str,
     model_path: str,
     xy_chunk_size: int,
-    asset_url_prefix: str | None,
     decimated: bool,
     overwrite: Annotated[bool, typer.Option()],
     probability_threshold: float,
@@ -802,15 +808,14 @@ def run_classify_task(
 
     Args:
         tile_id: Grid tile identifier (e.g. "136_142").
-        datetime: Year string (e.g. "2020").
+        year: Year string (e.g. "2020").
         version: Output version string (e.g. "0-0-1").
         version_geomad: Version of the GeoMAD data to use (e.g. "0-0-1").
         region: Grid region, either "pacific" or "non-pacific".
-        output_bucket: S3 bucket for output COGs, STAC metadata, and GeoMAD source data.
-        output_prefix: Output prefix for paths (e.g. "dep" or "ci").
+        bucket: S3 bucket for output COGs, STAC metadata, and input GeoMAD source data.
+        owner: Output prefix for paths (e.g. "dep" or "ci" or owner override).
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
-        asset_url_prefix: Optional URL prefix for STAC asset hrefs.
         decimated: If True, use 10x lower resolution (for testing).
         overwrite: If True, overwrite existing output.
         probability_threshold: Confidence threshold (0-100) for the binary mask.
@@ -820,14 +825,20 @@ def run_classify_task(
         threads_per_worker: Number of threads per Dask worker.
     """
     logger.info(
-        f"Starting processing. Tile ID: {tile_id}, Year: {datetime}, "
+        f"Starting processing. Tile ID: {tile_id}, Year: {year}, "
         f"Region: {region}, Version: {version}."
     )
 
     if version_geomad != GEOMAD_VERSION:
         logger.info(
-            "Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
+            f"Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
         )
+    if version != PREDICTION_VERSION:
+        logger.info(
+            f"Overriding the latest prediction version ({PREDICTION_VERSION}) with the specified version ({version})."
+        )
+
+    # TODO: Pass owner override (if present) to get_geomad_stac_geoparquet_url
     geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(
         region, version=version_geomad
     )
@@ -849,7 +860,8 @@ def run_classify_task(
 
     if decimated:
         logger.warning("Decimating geobox by 10x")
-        geobox = geobox.zoom_out(10)
+        # geobox = geobox.zoom_out(10)
+        geobox = geobox.zoom_out(100)  # Hyper decimated for faster testing
 
     logger.info("Configuring S3 access")
     configure_s3_access(cloud_defaults=True)
@@ -859,31 +871,33 @@ def run_classify_task(
     logger.info("Loading model")
     loaded_model = _load_joblib_model(model_path)
 
-    aws_region_name = boto3.client("s3").head_bucket(Bucket=output_bucket)[
-        "BucketRegion"
-    ]
+    if SOURCE_COOP_PUBLIC_URL:
+        # Source.Coop.
+        full_path_prefix = SOURCE_COOP_PUBLIC_URL
+    else:
+        # Non-Source.Coop.
+        full_path_prefix = f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/"
 
-    if asset_url_prefix is None:
-        asset_url_prefix = (
-            f"https://s3.{aws_region_name}.amazonaws.com/{output_bucket}/"
-        )
-
-    # TODO: Use PrefixedS3Path for Source.Coop (like geomad).
-    itempath = S3ItemPath(
-        prefix=output_prefix,
-        bucket=output_bucket,
+    itempath = PrefixedS3ItemPath(
+        key_prefix=SOURCE_COOP_PREFIX_PREDICTION if SOURCE_COOP_PUBLIC_URL else None,
+        prefix=owner,
+        bucket=bucket,
         sensor=SENSOR,
         dataset_id=PREDICTION_DATASET_ID,
         version=version,
-        time=datetime,
-        full_path_prefix=asset_url_prefix,
+        time=year,
+        full_path_prefix=full_path_prefix,
     )
-    stac_url = itempath.stac_path(tile_id_tuple)
+    stac_document = itempath.stac_path(tile_id_tuple, absolute=True)
+    stac_key = itempath.stac_path(tile_id_tuple, absolute=False)
 
-    if not overwrite and object_exists(output_bucket, stac_url, client=s3_client):
-        logger.info(
-            f"Item already exists at {itempath.stac_path(tile_id_tuple, absolute=True)}, skipping."
-        )
+    write_session = get_write_session()
+    write_client = get_write_client(write_session)
+
+    aws_client_to_use = write_client if SOURCE_COOP_PREFIX_PREDICTION else s3_client
+
+    if not overwrite and object_exists(bucket, stac_key, client=aws_client_to_use):
+        logger.info(f"Item already exists at {stac_document}, skipping.")
         return
 
     logger.info(
@@ -897,7 +911,7 @@ def run_classify_task(
 
     searcher = StacGeoparquetSearcher(
         stac_geoparquet_url=geomad_stac_geoparquet_url,
-        datetime=datetime,
+        datetime=year,
     )
 
     # GeopolygonOdcLoader converts the geobox to an AM-fixed WGS84
@@ -916,7 +930,22 @@ def run_classify_task(
         probability_threshold=probability_threshold,
     )
 
-    stac_creator = StacCreator(itempath=itempath, with_raster=True)
+    stac_creator = StacCreator(
+        collection_url_root=f"{full_path_prefix}/#{owner}_{SENSOR}_{PREDICTION_DATASET_ID}/",
+        itempath=itempath,
+        with_raster=True,
+    )
+
+    writer = AwsDsCogWriter(
+        itempath,
+        write_multithreaded=True,
+        write_function=make_write_function(write_session),
+    )
+
+    stac_writer = AwsStacWriter(
+        itempath,
+        client=aws_client_to_use,
+    )
 
     dask_client = DaskClient(
         n_workers=n_workers,
@@ -934,7 +963,9 @@ def run_classify_task(
             loader=loader,
             processor=processor,
             logger=logger,
+            writer=writer,
             stac_creator=stac_creator,
+            stac_writer=stac_writer,
         ).run()
     except EmptyCollectionError:
         logger.exception("No items found for this tile")
