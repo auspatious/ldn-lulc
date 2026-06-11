@@ -5,7 +5,6 @@ from typing import Iterable, Tuple
 import numpy as np
 from datacube_compute import geomedian_with_mads
 from dep_tools.loaders import StacLoader
-from dep_tools.namers import S3ItemPath
 from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
 from dep_tools.stac_utils import StacCreator
@@ -15,6 +14,7 @@ from odc.algo import mask_cleanup
 from odc.geo import GeoBox
 from xarray import DataArray, Dataset
 
+from ldn.raster import PrefixedS3ItemPath
 from ldn.utils import LS7_YEAR_THRESHOLD, LdnError
 
 logger = logging.getLogger(__name__)
@@ -386,7 +386,7 @@ class AwsStacTask(AreaTask):
 
     def __init__(
         self,
-        itempath: S3ItemPath,
+        itempath: PrefixedS3ItemPath,
         id: str,
         area: GeoBox,
         searcher: Searcher,

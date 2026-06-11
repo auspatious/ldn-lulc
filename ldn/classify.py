@@ -38,9 +38,9 @@ from sklearn.ensemble import RandomForestClassifier
 from typing_extensions import Annotated
 
 from ldn.aws_credentials import get_write_client, get_write_session, make_write_function
-from ldn.cli_geomad import PrefixedS3ItemPath
 from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
+from ldn.raster import PrefixedS3ItemPath
 from ldn.utils import (
     AWS_REGION,
     GEOMAD_VERSION,

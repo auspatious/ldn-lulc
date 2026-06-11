@@ -9,10 +9,8 @@ from dask.distributed import KilledWorker
 from dep_tools.aws import object_exists
 from dep_tools.exceptions import EmptyCollectionError
 from dep_tools.loaders import OdcLoader
-from dep_tools.namers import S3ItemPath
 from dep_tools.searchers import PystacSearcher
 from dep_tools.stac_utils import StacCreator
-from dep_tools.utils import join_path_or_url
 from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from odc.stac import configure_s3_access
 from typing_extensions import Annotated
@@ -29,6 +27,7 @@ from ldn.geomad import (
 )
 from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
+from ldn.raster import PrefixedS3ItemPath
 from ldn.utils import (
     AWS_REGION,
     BUCKET,
@@ -84,24 +83,6 @@ def count_scenes(
     logger.info(f"Found {count} {log_t2} scenes for this tile/year (grouped by day)")
 
     return count
-
-
-# This is needed to support Source.Coop prefix.
-# TODO: Move this somewhere it can be used in classify too.
-class PrefixedS3ItemPath(S3ItemPath):
-    def __init__(self, key_prefix: str | None = None, **kwargs):
-        super().__init__(**kwargs)
-        self.key_prefix = key_prefix.strip("/") if key_prefix else None
-
-    def path(self, item_id, asset_name=None, ext=".tif", absolute=False) -> str:
-        relative_path = super().path(item_id, asset_name=asset_name, ext=ext, absolute=False)
-        if self.key_prefix:
-            relative_path = f"{self.key_prefix}/{relative_path}"
-        return (
-            join_path_or_url(self.full_path_prefix, relative_path)
-            if absolute and self.full_path_prefix is not None
-            else relative_path
-        )
 
 
 @geomad_app.command()
