@@ -39,6 +39,7 @@ from ldn.utils import (
     LdnError,
     dataset_prefix,
     owner_for_region,
+    parse_years,
 )
 
 app = typer.Typer()
@@ -185,19 +186,7 @@ def print_tasks(
     """Print tasks for given years, optionally filtering out those with existing outputs."""
     logger.info(f"Generating tasks for years: {years} and region: {region}")
 
-    years_list = []
-    if "," in years:
-        years_list = years.split(",")
-    elif "-" in years:
-        start_year, end_year = map(int, years.split("-"))
-        years_list = [str(y) for y in range(start_year, end_year + 1)]
-    else:
-        years_list = [years]
-
-    if len(years_list) == 0:
-        raise LdnError("Must provide at least one year.")
-    if not all(y.isdigit() for y in years_list):
-        raise LdnError("Years must be integers")
+    years_list = parse_years(years)
 
     tiles = get_grid_tiles(format="list", grids=region, overwrite=False)
 
@@ -394,17 +383,16 @@ def _stac_self_link(feature: dict) -> str:
     return self_link
 
 
-def _build_mosaic_for_year(year: str, features: list[dict]) -> MosaicJSON:
+def _build_mosaic_for_year(year: int, features: list[dict]) -> MosaicJSON:
     """Filter features by year and build a MosaicJSON.
 
     Args:
-        year: Year string to filter for.
+        year: Year integer to filter for.
         features: All STAC item feature dicts from the index.
 
     Returns:
         MosaicJSON for the matching features.
     """
-    int_year = int(year)
 
     def _matches_year(feat: dict) -> bool:
         """Check if a feature's datetime falls within the target year."""
@@ -412,7 +400,7 @@ def _build_mosaic_for_year(year: str, features: list[dict]) -> MosaicJSON:
         if not dt_str:
             return False
         feat_year = int(dt_str[:4])
-        return feat_year == int_year
+        return feat_year == year
 
     year_features = [f for f in features if _matches_year(f)]
 
@@ -456,20 +444,20 @@ def _load_all_features(stac_geoparquet_url: str) -> list[dict]:
     return features
 
 
-def _extract_years(features: list[dict]) -> list[str]:
+def _extract_years(features: list[dict]) -> list[int]:
     """Extract sorted unique years from STAC feature datetimes.
 
     Args:
         features: List of STAC item feature dicts.
 
     Returns:
-        Sorted list of year strings.
+        Sorted list of year integers.
     """
-    years: set[str] = set()
+    years: set[int] = set()
     for feat in features:
         dt_str = feat.get("properties", {}).get("datetime", "")
         if dt_str:
-            years.add(dt_str[:4])
+            years.add(int(dt_str[:4]))
     return sorted(years)
 
 
@@ -510,13 +498,7 @@ def make_mosaics(
     """Make mosaic.jsons per year from the combined STAC-Geoparquet index."""
     logger.info(f"Making mosaics for dataset '{dataset}'")
 
-    requested_years: list[str] | None = None
-    if years is not None:
-        if "-" in years and "," not in years:
-            start, end = map(int, years.split("-"))
-            requested_years = [str(y) for y in range(start, end + 1)]
-        else:
-            requested_years = [y.strip() for y in years.split(",")]
+    requested_years: list[int] | None = parse_years(years) if years is not None else None
 
     dataset_id = GEOMAD_DATASET_ID if dataset == "geomad" else PREDICTION_DATASET_ID
     source_coop_prefix = SOURCE_COOP_PREFIX_GEOMAD if dataset == "geomad" else SOURCE_COOP_PREFIX_PREDICTION

@@ -466,3 +466,17 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     logger.info(f"DEM elevation shape: {dem['elevation'].shape}")
 
     return _compute_terrain(dem["elevation"])
+
+
+def parse_years(years: str) -> list[int]:
+    """Parse a years string into a list of integers.
+
+    Accepts a comma-separated list (e.g. '2020,2021') or a range (e.g. '2010-2023').
+    """
+    if "," in years:
+        return [int(y.strip()) for y in years.split(",")]
+    elif "-" in years:
+        start_year, end_year = map(int, years.split("-"))
+        return list(range(start_year, end_year + 1))
+    else:
+        return [int(years)]
