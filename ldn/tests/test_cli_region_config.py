@@ -14,15 +14,11 @@ class TestPrintTasksRegionConfig:
     """Verify print_tasks passes bucket/owner params through to S3ItemPath."""
 
     @patch("ldn.cli.get_grid_tiles")
-    @patch("ldn.cli.boto3")
-    def test_custom_bucket_and_owner_used_in_listing(self, mock_boto3, mock_get_tiles):
-        """Custom bucket/owner should appear in the S3 paginator call."""
+    @patch("ldn.cli._find_stac_items_s3")
+    def test_custom_bucket_and_owner_used_in_listing(self, mock_find_stac, mock_get_tiles):
+        """Custom bucket/owner should appear in the S3 listing call."""
         mock_get_tiles.return_value = [((66, 22), "pacific")]
-        mock_client = MagicMock()
-        mock_boto3.client.return_value = mock_client
-        mock_paginator = MagicMock()
-        mock_client.get_paginator.return_value = mock_paginator
-        mock_paginator.paginate.return_value = [{"Contents": []}]
+        mock_find_stac.return_value = []
 
         result = runner.invoke(
             app,
@@ -40,24 +36,22 @@ class TestPrintTasksRegionConfig:
         )
 
         assert result.exit_code == 0, result.output
-        mock_paginator.paginate.assert_called_once()
-        call_kwargs = mock_paginator.paginate.call_args[1]
-        assert call_kwargs["Bucket"] == "my-custom-bucket"
+        mock_find_stac.assert_called_once()
+        call_args = mock_find_stac.call_args
+
+        assert call_args.args[0] == "my-custom-bucket"
+
         expected_prefix = "myorg_ls_geomad/"
         if SOURCE_COOP_PREFIX_GEOMAD:
             expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
-        assert call_kwargs["Prefix"].startswith(expected_prefix)
+        assert call_args.args[1].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")
-    @patch("ldn.cli.boto3")
-    def test_product_owner_overrides_region_default(self, mock_boto3, mock_get_tiles):
+    @patch("ldn.cli._find_stac_items_s3")
+    def test_product_owner_overrides_region_default(self, mock_find_stac, mock_get_tiles):
         """--product-owner should override the region-derived owner."""
         mock_get_tiles.return_value = [((119, 126), "non-pacific")]
-        mock_client = MagicMock()
-        mock_boto3.client.return_value = mock_client
-        mock_paginator = MagicMock()
-        mock_client.get_paginator.return_value = mock_paginator
-        mock_paginator.paginate.return_value = [{"Contents": []}]
+        mock_find_stac.return_value = []
 
         result = runner.invoke(
             app,
@@ -73,22 +67,18 @@ class TestPrintTasksRegionConfig:
         )
 
         assert result.exit_code == 0, result.output
-        call_kwargs = mock_paginator.paginate.call_args[1]
+        call_args = mock_find_stac.call_args
         expected_prefix = "override_ls_geomad/"
         if SOURCE_COOP_PREFIX_GEOMAD:
             expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
-        assert call_kwargs["Prefix"].startswith(expected_prefix)
+        assert call_args.args[1].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")
-    @patch("ldn.cli.boto3")
-    def test_filter_tasks_prediction_dataset(self, mock_boto3, mock_get_tiles):
+    @patch("ldn.cli._find_stac_items_s3")
+    def test_filter_tasks_prediction_dataset(self, mock_find_stac, mock_get_tiles):
         """--dataset prediction should use lulc_prediction prefix."""
         mock_get_tiles.return_value = [((66, 22), "pacific")]
-        mock_client = MagicMock()
-        mock_boto3.client.return_value = mock_client
-        mock_paginator = MagicMock()
-        mock_client.get_paginator.return_value = mock_paginator
-        mock_paginator.paginate.return_value = [{"Contents": []}]
+        mock_find_stac.return_value = []
 
         result = runner.invoke(
             app,
@@ -104,8 +94,8 @@ class TestPrintTasksRegionConfig:
         )
 
         assert result.exit_code == 0, result.output
-        call_kwargs = mock_paginator.paginate.call_args[1]
-        assert "lulc_prediction" in call_kwargs["Prefix"]
+        call_args = mock_find_stac.call_args
+        assert "lulc_prediction" in call_args.args[1]
 
 
 class TestGeomadRegionConfig:
