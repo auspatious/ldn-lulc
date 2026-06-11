@@ -39,19 +39,20 @@ from ldn.random_sampling import random_sampling
 from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
     BUCKET,
+    CLASS_ATTR,
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     TRAINING_DATA_VERSION,
+    TRAINING_DATA_YEAR,
+    WGS84,
     LdnError,
     calculate_indices,
-    class_attr,
     dataset_prefix,
     get_analysis_epsg,
     get_geomad_stac_geoparquet_url,
     load_dem_terrain,
     owner_for_region,
     scale_offset_landsat,
-    wgs84,
 )
 from notebooks.src.Compare_LULC_func import standardise_class
 
@@ -98,8 +99,8 @@ def _load_lulc_am(
         Dataset reprojected to the target geobox.
     """
     east_bbox, west_bbox = bbox_across_180(geobox_wgs84)
-    east_gdf = gpd.GeoDataFrame(geometry=[box(*east_bbox)], crs=wgs84)
-    west_gdf = gpd.GeoDataFrame(geometry=[box(*west_bbox)], crs=wgs84)
+    east_gdf = gpd.GeoDataFrame(geometry=[box(*east_bbox)], crs=WGS84)
+    west_gdf = gpd.GeoDataFrame(geometry=[box(*west_bbox)], crs=WGS84)
 
     east_items = [i for i in lulc_items if _item_centroid_lon(i) >= 0]
     west_items = [i for i in lulc_items if _item_centroid_lon(i) < 0]
@@ -166,7 +167,7 @@ def load_lulc_for_tile(product: str, geobox, year: str) -> xr.Dataset:
     logger.info(f"Found {len(lulc_items)} {product} items")
     assert 0 < len(lulc_items) < 30
 
-    geobox_wgs84 = gpd.GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(wgs84)
+    geobox_wgs84 = gpd.GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(WGS84)
     crosses_am = isinstance(bbox_across_180(geobox_wgs84), tuple)
 
     if crosses_am:
@@ -344,7 +345,7 @@ def find_agreement(wc: xr.Dataset, cci: xr.Dataset, io_ds: xr.Dataset) -> xr.Dat
         dims=two_of_three.dims,
     )
 
-    agreed_class = majority_class.where(neighbour_mask & two_of_three, other=0).rename(class_attr).astype("uint8")
+    agreed_class = majority_class.where(neighbour_mask & two_of_three, other=0).rename(CLASS_ATTR).astype("uint8")
     agreed_class = agreed_class.where(agreed_class != 0, 255).astype("uint8")
     agreed_class.attrs["nodata"] = 255
 
@@ -399,7 +400,7 @@ def generate_samples(
         sampling="stratified_random",
         min_sample_n=min_sample_per_class_n,
         out_fname=None,
-        class_attr=class_attr,
+        class_attr=CLASS_ATTR,
         drop_value=drop_value,
     )
     logger.info(f"Generated {len(samples)} samples")
@@ -575,15 +576,15 @@ def get_buffered_country(
         analysis_crs: Projected CRS string used for buffering in meters.
 
     Returns:
-        A GeoDataFrame containing buffered country geometry in `wgs84`.
+        A GeoDataFrame containing buffered country geometry in `WGS84`.
     """
     buffer_m = 100
 
     country_gadm = get_gadm(countries=country_of_interest)
 
     country_gadm = gpd.GeoDataFrame(
-        geometry=country_gadm.to_crs(analysis_crs).buffer(buffer_m).to_crs(wgs84),
-        crs=wgs84,
+        geometry=country_gadm.to_crs(analysis_crs).buffer(buffer_m).to_crs(WGS84),
+        crs=WGS84,
     )
     # Do antimeridian fix. Needed for Fiji.
     rows = []
@@ -594,7 +595,7 @@ def get_buffered_country(
         else:
             rows.append(fixed)
 
-    return gpd.GeoDataFrame(geometry=rows, crs=wgs84)
+    return gpd.GeoDataFrame(geometry=rows, crs=WGS84)
 
 
 # get_tile_year_geomad_dem_indices uses a lot of the code in search_and_load_geomad_indices_dem,
@@ -700,7 +701,7 @@ def make_training_data(
     tile_index = tuple(int(i) for i in tile_id.split("_"))
     grid = get_gridspec(region=region)
     tile_geobox = grid.tile_geobox(tile_index)
-    tile_footprint_wgs84 = gpd.GeoDataFrame(geometry=[tile_geobox.extent.geom], crs=tile_geobox.crs).to_crs(wgs84)
+    tile_footprint_wgs84 = gpd.GeoDataFrame(geometry=[tile_geobox.extent.geom], crs=tile_geobox.crs).to_crs(WGS84)
     tile_crosses_am = isinstance(bbox_across_180(tile_footprint_wgs84), tuple)
 
     if tile_crosses_am:
@@ -708,7 +709,7 @@ def make_training_data(
     else:
         country_wgs84_buffered = gpd.GeoDataFrame(
             geometry=country_wgs84_buffered.intersection(tile_footprint_wgs84.union_all()),
-            crs=wgs84,
+            crs=WGS84,
         )
         country_wgs84_buffered = country_wgs84_buffered[
             country_wgs84_buffered.geometry.notna() & ~country_wgs84_buffered.is_empty
@@ -776,7 +777,7 @@ def make_training_data(
 @cli_training_app.command()
 def generate_training_data(
     tile_id: str = typer.Option(..., help="Grid tile identifier (e.g. 058_043)"),
-    year: str = typer.Option("2020", help="Year (e.g. 2020)"),
+    year: str = typer.Option(TRAINING_DATA_YEAR, help=f"Year (e.g. {TRAINING_DATA_YEAR})"),
     region: Literal["pacific", "non-pacific"] = typer.Option(..., help="Region: pacific or non-pacific"),
     training_data_version: str = typer.Option(
         TRAINING_DATA_VERSION, help=f"Version (default: {TRAINING_DATA_VERSION})"

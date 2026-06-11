@@ -43,13 +43,13 @@ from ldn.utils import (
     SENSOR,
     SOURCE_COOP_PREFIX_PREDICTION,
     SOURCE_COOP_PUBLIC_URL,
+    WGS84,
     LdnError,
     calculate_indices,
     get_analysis_epsg,
     get_geomad_stac_geoparquet_url,
     load_dem_terrain,
     scale_offset_landsat,
-    wgs84,
 )
 
 logger = logging.getLogger(__name__)
@@ -140,9 +140,9 @@ class GeopolygonOdcLoader(OdcLoader):
         if isinstance(areas, GeoBox):
             original_geobox = areas
             tile_geom = areas.extent.geom
-            tile_gdf = GeoDataFrame(geometry=[tile_geom], crs=areas.crs).to_crs(wgs84)
+            tile_gdf = GeoDataFrame(geometry=[tile_geom], crs=areas.crs).to_crs(WGS84)
             fixed = _fix_geometry(tile_gdf.geometry.iloc[0])
-            areas = GeoDataFrame(geometry=[fixed], crs=wgs84)
+            areas = GeoDataFrame(geometry=[fixed], crs=WGS84)
 
         result = super().load(items, areas)
 

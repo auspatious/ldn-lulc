@@ -144,12 +144,10 @@ GEOMAD_DATASET_ID = "geomad"
 PREDICTION_DATASET_ID = "lulc_prediction"
 AWS_REGION = "us-west-2"
 
-LS7_YEAR_THRESHOLD = 2012
-training_data_year = "2020"
-
-class_attr = "lulc"
-
-wgs84 = "EPSG:4326"
+LS7_YEAR_THRESHOLD: int = 2012
+TRAINING_DATA_YEAR: str = "2020"
+CLASS_ATTR: str = "lulc"
+WGS84: str = "EPSG:4326"
 
 
 def owner_for_region(
@@ -371,8 +369,8 @@ def _load_dem_am(
         Dataset with a single "elevation" variable in the target CRS.
     """
     east_bbox, west_bbox = bbox_across_180(geobox_wgs84)
-    east_gdf = GeoDataFrame(geometry=[box(*east_bbox)], crs=wgs84)
-    west_gdf = GeoDataFrame(geometry=[box(*west_bbox)], crs=wgs84)
+    east_gdf = GeoDataFrame(geometry=[box(*east_bbox)], crs=WGS84)
+    west_gdf = GeoDataFrame(geometry=[box(*west_bbox)], crs=WGS84)
 
     east_items = [i for i in dem_items if i.bbox[0] >= 0]
     west_items = [i for i in dem_items if i.bbox[0] < 0]
@@ -439,7 +437,7 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     if len(dem_items) >= 10:
         raise LdnError(f"Too many DEM items ({len(dem_items)}). Expected ~4, data may be world-spanning.")
 
-    geobox_wgs84 = GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(wgs84)
+    geobox_wgs84 = GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(WGS84)
     crosses_am = isinstance(bbox_across_180(geobox_wgs84), tuple)
 
     if crosses_am:
