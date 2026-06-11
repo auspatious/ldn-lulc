@@ -58,7 +58,7 @@ def test_build_mosaic_for_year_returns_mosaic():
         _make_feature("item-3", [103.6, 1.5, 104.0, 1.8]),
     ]
 
-    mosaic = _build_mosaic_for_year("2020", features)
+    mosaic = _build_mosaic_for_year(2020, features)
 
     assert isinstance(mosaic, MosaicJSON)
     assert mosaic.minzoom == 5
@@ -67,7 +67,7 @@ def test_build_mosaic_for_year_returns_mosaic():
 
 def test_build_mosaic_for_year_raises_on_empty():
     with pytest.raises(LdnError, match="No STAC items found for year 2020"):
-        _build_mosaic_for_year("2020", [])
+        _build_mosaic_for_year(2020, [])
 
 
 def test_build_mosaic_for_year_converts_multipolygon_to_convex_hull():
@@ -87,7 +87,7 @@ def test_build_mosaic_for_year_converts_multipolygon_to_convex_hull():
         "assets": {},
     }
 
-    mosaic = _build_mosaic_for_year("2020", [feature])
+    mosaic = _build_mosaic_for_year(2020, [feature])
 
     assert isinstance(mosaic, MosaicJSON)
 
@@ -114,17 +114,18 @@ def mock_write_session():
         yield mock_get_session
 
 
-@patch("ldn.cli.MosaicBackend")
+@patch("ldn.cli._write_mosaic")
+@patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-def test_make_mosaics_geomad_single_year(mock_load, mock_years, mock_backend, mock_write_session):
+@patch("ldn.cli.get_write_session")
+def test_make_mosaics_geomad_single_year(
+    mock_session, mock_load, mock_years, mock_build, mock_write, mock_write_session
+):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
-    mock_years.return_value = ["2020"]
-
-    mock_backend_instance = MagicMock()
-    mock_backend.return_value.__enter__ = MagicMock(return_value=mock_backend_instance)
-    mock_backend.return_value.__exit__ = MagicMock(return_value=False)
+    mock_years.return_value = [2020]
+    mock_build.return_value = MagicMock()
 
     result = runner.invoke(
         app,
@@ -140,20 +141,24 @@ def test_make_mosaics_geomad_single_year(mock_load, mock_years, mock_backend, mo
     )
 
     assert result.exit_code == 0, result.output
-    mock_backend.assert_called_once()
-    assert "geomad_2020_mosaic.json" in mock_backend.call_args[0][0]
+    mock_build.assert_called_once()
+    mock_write.assert_called_once()
+    out_path = mock_write.call_args[0][1]
+    assert "geomad_2020_mosaic.json" in out_path
 
 
-@patch("ldn.cli.MosaicBackend")
+@patch("ldn.cli._write_mosaic")
+@patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-def test_make_mosaics_prediction_single_year(mock_load, mock_years, mock_backend, mock_write_session):
+@patch("ldn.cli.get_write_session")
+def test_make_mosaics_prediction_single_year(
+    mock_session, mock_load, mock_years, mock_build, mock_write, mock_write_session
+):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
-    mock_years.return_value = ["2020"]
-
-    mock_backend.return_value.__enter__ = MagicMock(return_value=MagicMock())
-    mock_backend.return_value.__exit__ = MagicMock(return_value=False)
+    mock_years.return_value = [2020]
+    mock_build.return_value = MagicMock()
 
     result = runner.invoke(
         app,
@@ -169,24 +174,24 @@ def test_make_mosaics_prediction_single_year(mock_load, mock_years, mock_backend
     )
 
     assert result.exit_code == 0, result.output
-    mock_backend.assert_called_once()
-    out_path = mock_backend.call_args[0][0]
+    mock_write.assert_called_once()
+    out_path = mock_write.call_args[0][1]
     assert "prediction_2020_mosaic.json" in out_path
 
 
-@patch("ldn.cli.MosaicBackend")
+@patch("ldn.cli._write_mosaic")
+@patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-def test_make_mosaics_multiple_years(mock_load, mock_years, mock_backend, mock_write_session):
+@patch("ldn.cli.get_write_session")
+def test_make_mosaics_multiple_years(mock_session, mock_load, mock_years, mock_build, mock_write, mock_write_session):
     features = [
         _make_feature("item-1", [103.6, 1.2, 104.0, 1.5], "2020"),
         _make_feature("item-2", [104.0, 1.2, 104.4, 1.5], "2021"),
     ]
     mock_load.return_value = features
-    mock_years.return_value = ["2020", "2021"]
-
-    mock_backend.return_value.__enter__ = MagicMock(return_value=MagicMock())
-    mock_backend.return_value.__exit__ = MagicMock(return_value=False)
+    mock_years.return_value = [2020, 2021]
+    mock_build.return_value = MagicMock()
 
     result = runner.invoke(
         app,
@@ -202,24 +207,26 @@ def test_make_mosaics_multiple_years(mock_load, mock_years, mock_backend, mock_w
     )
 
     assert result.exit_code == 0, result.output
-    assert mock_backend.call_count == 2
-
-    out_paths = [c[0][0] for c in mock_backend.call_args_list]
+    assert mock_write.call_count == 2
+    out_paths = [c[0][1] for c in mock_write.call_args_list]
     assert any("geomad_2020_mosaic.json" in p for p in out_paths)
     assert any("geomad_2021_mosaic.json" in p for p in out_paths)
 
 
-@patch("ldn.cli.MosaicBackend")
+@patch("ldn.cli._write_mosaic")
+@patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-def test_make_mosaics_writes_with_overwrite(mock_load, mock_years, mock_backend, mock_write_session):
+@patch("ldn.cli.get_write_session")
+def test_make_mosaics_passes_session_to_write(
+    mock_session, mock_load, mock_years, mock_build, mock_write, mock_write_session
+):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
-    mock_years.return_value = ["2020"]
-
-    mock_writer = MagicMock()
-    mock_backend.return_value.__enter__ = MagicMock(return_value=mock_writer)
-    mock_backend.return_value.__exit__ = MagicMock(return_value=False)
+    mock_years.return_value = [2020]
+    mock_build.return_value = MagicMock()
+    fake_session = MagicMock()
+    mock_session.return_value = fake_session
 
     result = runner.invoke(
         app,
@@ -235,4 +242,4 @@ def test_make_mosaics_writes_with_overwrite(mock_load, mock_years, mock_backend,
     )
 
     assert result.exit_code == 0, result.output
-    mock_writer.write.assert_called_once_with(overwrite=True)
+    assert mock_write.call_args[0][2] is fake_session
