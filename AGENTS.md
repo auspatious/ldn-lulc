@@ -7,7 +7,7 @@
 - Testing using pytest. Update tests as needed.
 
 ## General
-- Never use emojis or uncommon characters like "→".
+- Never use emojis or uncommon characters like "→" or "—".
 - Use f strings, not %s, %d.
 
 ## Comments

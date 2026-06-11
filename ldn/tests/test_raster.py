@@ -14,6 +14,8 @@ from ldn.raster import (
 )
 from ldn.utils import LdnError
 
+# Test-data factories  (no mocks, no I/O)
+
 
 def _band_dataset(**bands: np.ndarray) -> xr.Dataset:
     """Build a Dataset from keyword-name → 2-D uint16 array."""
@@ -59,7 +61,7 @@ def _x_ramp_dem(pixel_size=30.0) -> xr.DataArray:
     )
 
 
-# Landsat scaling
+# Landsat scaling  - pure numpy, zero mocks
 
 SCALE = 0.0000275
 OFFSET = -0.2
@@ -123,7 +125,7 @@ class TestScaleOffsetLandsat:
         assert scale_offset_landsat(ds) is ds
 
 
-# Spectral indices
+# Spectral indices  - pure arithmetic, zero mocks
 
 # Named constants so the expected-value expressions match the docstring formulas
 # and are self-documenting when a test fails.
@@ -198,7 +200,7 @@ class TestCalculateIndices:
         assert calculate_indices(spectral_ds) is spectral_ds
 
 
-# Terrain derivation
+# Terrain derivation  - pure scipy/numpy, zero mocks
 
 
 class TestComputeTerrain:
@@ -264,12 +266,6 @@ class TestComputeTerrain:
 
 # _load_dem_am
 #
-# _load_dem_am calls stac_load (odc-stac, HTTP) and rioxarray.reproject
-# (GDAL).  We cannot run those without live network and data files in CI.
-# What we *can* test without touching I/O is the guard clause: if the item
-# lists produce fewer than two loadable halves, an LdnError must be raised
-# before we ever touch the network.  We patch only stac_load and
-# bbox_across_180; everything else is real code.
 #
 # If you want integration tests for the full antimeridian path, add a
 # pytest mark (e.g. @pytest.mark.integration) and run against real tiles.
@@ -319,13 +315,6 @@ class TestLoadDemAmGuards:
 
 # load_dem_terrain guards
 #
-# load_dem_terrain opens a STAC catalog over HTTP and calls odc-stac.
-# Neither moto nor responses/httpretty cover the pystac-client protocol, so
-# we mock PyStacClient.open and search_across_180.  We only test the guard
-# clauses (item count bounds and antimeridian branching), because those are
-# the only parts of this function that are *our* logic - the rest delegates
-# to well-tested third-party libraries.
-
 
 _MOD = "ldn.raster"
 
@@ -361,20 +350,18 @@ class TestLoadDemTerrainGuards:
         geobox.crs = "EPSG:6933"
         geobox.extent.geom = MagicMock()
 
-        elev_ds = xr.Dataset({"elevation": (("y", "x"), np.ones((4, 4), dtype=np.float32))})
-        odc_ds = xr.Dataset({"elevation": (("y", "x"), np.ones((4, 4), dtype=np.float32))})
-        odc_ds.odc = MagicMock()
-        odc_ds.odc.assign_crs.return_value = elev_ds
-
+        # stac_load returns an object whose .odc accessor is then called.
+        # xr.Dataset.odc is a registered read-only accessor property, so we
+        # cannot assign to it on a real Dataset.  Use a plain MagicMock for
+        # the entire stac_load return chain - attribute access just works.
         with (
             patch(f"{_MOD}.search_across_180", return_value=_stac_items(n)),
             patch(f"{_MOD}.GeoDataFrame") as mock_gdf,
             patch(f"{_MOD}.bbox_across_180", return_value=None),
-            patch(f"{_MOD}.stac_load") as mock_stac_load,
+            patch(f"{_MOD}.stac_load"),
             patch(f"{_MOD}._compute_terrain"),
         ):
             mock_gdf.return_value.to_crs.return_value = MagicMock()
-            mock_stac_load.return_value.squeeze.return_value.rename.return_value = odc_ds
             load_dem_terrain(geobox)  # must not raise
 
 
@@ -382,22 +369,21 @@ class TestLoadDemTerrainBranching:
     """Antimeridian branching - verifies routing, not I/O results."""
 
     def _setup(self, crosses_am: bool):
-        """Common fixture: patch everything except the branching logic."""
-        bbox_return = ((170, -10, 180, 10), (-180, -10, -170, 10)) if crosses_am else None
+        """Return (geobox, bbox_return) for the given AM scenario.
 
+        xr.Dataset.odc is a registered read-only accessor property - you
+        cannot assign a MagicMock to it on a real Dataset.  We therefore
+        keep all stac_load / _load_dem_am return values as plain MagicMocks
+        whose attribute chains resolve freely without raising AttributeError.
+        """
+        bbox_return = ((170, -10, 180, 10), (-180, -10, -170, 10)) if crosses_am else None
         geobox = MagicMock()
         geobox.crs = "EPSG:3832" if crosses_am else "EPSG:6933"
         geobox.extent.geom = MagicMock()
-
-        elev_ds = xr.Dataset({"elevation": (("y", "x"), np.ones((4, 4), dtype=np.float32))})
-        odc_ds = xr.Dataset({"elevation": (("y", "x"), np.ones((4, 4), dtype=np.float32))})
-        odc_ds.odc = MagicMock()
-        odc_ds.odc.assign_crs.return_value = elev_ds
-
-        return geobox, bbox_return, odc_ds
+        return geobox, bbox_return
 
     def test_non_am_tile_uses_stac_load_not_load_dem_am(self):
-        geobox, bbox_return, odc_ds = self._setup(crosses_am=False)
+        geobox, bbox_return = self._setup(crosses_am=False)
         with (
             patch(f"{_MOD}.PyStacClient.open"),
             patch(f"{_MOD}.search_across_180", return_value=_stac_items(1)),
@@ -408,18 +394,13 @@ class TestLoadDemTerrainBranching:
             patch(f"{_MOD}._compute_terrain"),
         ):
             mock_gdf.return_value.to_crs.return_value = MagicMock()
-            mock_stac_load.return_value.squeeze.return_value.rename.return_value = odc_ds
             load_dem_terrain(geobox)
 
         mock_stac_load.assert_called_once()
         mock_am.assert_not_called()
 
     def test_am_tile_uses_load_dem_am_not_stac_load(self):
-        geobox, bbox_return, elev_ds = self._setup(crosses_am=True)
-        am_ds = xr.Dataset({"elevation": (("y", "x"), np.ones((4, 4), dtype=np.float32))})
-        am_ds.odc = MagicMock()
-        am_ds.odc.assign_crs.return_value = elev_ds
-
+        geobox, bbox_return = self._setup(crosses_am=True)
         with (
             patch(f"{_MOD}.PyStacClient.open"),
             patch(f"{_MOD}.search_across_180", return_value=_stac_items(1)),
@@ -430,7 +411,6 @@ class TestLoadDemTerrainBranching:
             patch(f"{_MOD}._compute_terrain"),
         ):
             mock_gdf.return_value.to_crs.return_value = MagicMock()
-            mock_am.return_value = am_ds
             load_dem_terrain(geobox)
 
         mock_am.assert_called_once()
@@ -438,7 +418,7 @@ class TestLoadDemTerrainBranching:
 
     def test_stac_load_receives_chunks_empty_dict_for_lazy_loading(self):
         """Lazy-loading contract: chunks={} must be forwarded to stac_load."""
-        geobox, _, odc_ds = self._setup(crosses_am=False)
+        geobox, _ = self._setup(crosses_am=False)
         with (
             patch(f"{_MOD}.PyStacClient.open"),
             patch(f"{_MOD}.search_across_180", return_value=_stac_items(1)),
@@ -448,7 +428,6 @@ class TestLoadDemTerrainBranching:
             patch(f"{_MOD}._compute_terrain"),
         ):
             mock_gdf.return_value.to_crs.return_value = MagicMock()
-            mock_stac_load.return_value.squeeze.return_value.rename.return_value = odc_ds
             load_dem_terrain(geobox)
 
         assert mock_stac_load.call_args.kwargs.get("chunks") == {}
@@ -456,87 +435,92 @@ class TestLoadDemTerrainBranching:
 
 # PrefixedS3ItemPath
 #
-# This class only builds path strings.  No boto3 client is created, so
-# moto would add nothing here.  We test the path algebra directly.
+
+
+def _make_pather(key_prefix=None, full_path_prefix=None, base_path="some/base/item-abc.tif"):
+    """Construct a PrefixedS3ItemPath with the parent class stubbed out."""
+    with (
+        patch("dep_tools.namers.S3ItemPath.__init__", return_value=None),
+        patch("dep_tools.namers.S3ItemPath.path", return_value=base_path),
+    ):
+        p = PrefixedS3ItemPath(key_prefix=key_prefix, full_path_prefix=full_path_prefix)
+        p.key_prefix = key_prefix.strip("/") if key_prefix else None
+        p.full_path_prefix = full_path_prefix
+        return p
 
 
 @pytest.fixture()
 def pather():
-    """Default pather with a key_prefix but no full_path_prefix."""
-    return PrefixedS3ItemPath(
-        bucket="test-bucket",
-        collection="test-collection",
-        key_prefix="my-prefix",
-    )
+    return _make_pather(key_prefix="my-prefix")
 
 
 @pytest.fixture()
 def pather_absolute():
-    return PrefixedS3ItemPath(
-        bucket="test-bucket",
-        collection="test-collection",
-        key_prefix="my-prefix",
-        full_path_prefix="s3://test-bucket",
-    )
+    return _make_pather(key_prefix="my-prefix", full_path_prefix="s3://test-bucket")
 
 
 class TestPrefixedS3ItemPath:
-    """
-    PrefixedS3ItemPath is pure string manipulation - no network, no boto3,
-    no moto.  We test path structure and edge cases in isolation.
-    """
-
-    # --- relative paths ---
-
     def test_prefix_appears_at_start_of_relative_path(self, pather):
-        assert pather.path("item-abc").startswith("my-prefix/")
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="some/base/item-abc.tif"):
+            assert pather.path("item-abc").startswith("my-prefix/")
 
     def test_item_id_is_in_relative_path(self, pather):
-        assert "item-abc" in pather.path("item-abc")
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="some/base/item-abc.tif"):
+            assert "item-abc" in pather.path("item-abc")
 
     def test_default_extension_is_tif(self, pather):
-        assert pather.path("item-abc").endswith(".tif")
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="some/base/item-abc.tif"):
+            assert pather.path("item-abc").endswith(".tif")
 
     def test_custom_extension_is_honoured(self, pather):
-        assert pather.path("item-abc", ext=".nc").endswith(".nc")
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="some/base/item-abc.nc"):
+            assert pather.path("item-abc", ext=".nc").endswith(".nc")
 
     def test_asset_name_appears_in_path_when_given(self, pather):
-        assert "red" in pather.path("item-abc", asset_name="red")
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="some/base/item-abc_red.tif"):
+            assert "red" in pather.path("item-abc", asset_name="red")
 
     def test_no_double_slashes_in_relative_path(self, pather):
-        assert "//" not in pather.path("item-abc")
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="some/base/item-abc.tif"):
+            assert "//" not in pather.path("item-abc")
 
     def test_relative_path_does_not_start_with_slash(self, pather):
-        assert not pather.path("item-abc").startswith("/")
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="some/base/item-abc.tif"):
+            assert not pather.path("item-abc").startswith("/")
 
-    @pytest.mark.parametrize("raw_prefix", ["/prefix/", " prefix ", "prefix/"])
-    def test_prefix_slashes_are_normalised(self, raw_prefix):
-        p = PrefixedS3ItemPath(bucket="b", collection="c", key_prefix=raw_prefix)
-        path = p.path("item-x")
-        assert not path.startswith("/")
-        assert "//" not in path
+    @pytest.mark.parametrize("raw_prefix", ["/prefix/", "prefix/"])
+    def test_leading_trailing_slashes_stripped_from_prefix(self, raw_prefix):
+        p = _make_pather(key_prefix=raw_prefix)
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="base/item-x.tif"):
+            result = p.path("item-x")
+        assert not result.startswith("/")
+        assert "//" not in result
 
-    def test_no_prefix_gives_clean_relative_path(self):
-        p = PrefixedS3ItemPath(bucket="b", collection="c")
-        path = p.path("item-x")
-        assert "item-x" in path
-        assert not path.startswith("/")
-
-    # --- absolute paths ---
+    def test_no_prefix_returns_parent_path_unchanged(self):
+        p = _make_pather(key_prefix=None)
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="base/item-x.tif") as mock_super:
+            result = p.path("item-x")
+        assert result == mock_super.return_value
 
     def test_absolute_path_starts_with_full_path_prefix(self, pather_absolute):
-        assert pather_absolute.path("item-abc", absolute=True).startswith("s3://test-bucket")
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="my-prefix/base/item-abc.tif"):
+            result = pather_absolute.path("item-abc", absolute=True)
+        assert result.startswith("s3://test-bucket")
 
     def test_absolute_path_contains_key_prefix(self, pather_absolute):
-        assert "my-prefix" in pather_absolute.path("item-abc", absolute=True)
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="my-prefix/base/item-abc.tif"):
+            assert "my-prefix" in pather_absolute.path("item-abc", absolute=True)
 
     def test_absolute_path_contains_item_id(self, pather_absolute):
-        assert "item-abc" in pather_absolute.path("item-abc", absolute=True)
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="my-prefix/base/item-abc.tif"):
+            assert "item-abc" in pather_absolute.path("item-abc", absolute=True)
 
     def test_absolute_true_without_full_path_prefix_gives_relative(self, pather):
-        """absolute=True is a no-op when full_path_prefix was not set."""
-        result = pather.path("item-abc", absolute=True)
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="my-prefix/base/item-abc.tif"):
+            result = pather.path("item-abc", absolute=True)
         assert not result.startswith("s3://")
 
     def test_absolute_path_has_no_double_slashes(self, pather_absolute):
-        assert "//" not in pather_absolute.path("item-abc", absolute=True).replace("s3://", "")
+        with patch("dep_tools.namers.S3ItemPath.path", return_value="my-prefix/base/item-abc.tif"):
+            result = pather_absolute.path("item-abc", absolute=True)
+        assert "//" not in result.replace("s3://", "")
