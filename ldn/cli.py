@@ -8,7 +8,6 @@ import obstore
 import typer
 from cogeo_mosaic.backends import MosaicBackend
 from cogeo_mosaic.mosaic import MosaicJSON
-from dep_tools.namers import S3ItemPath
 from pystac import ItemCollection
 from rustac import search_sync, write_sync
 from shapely.geometry import mapping, shape
@@ -21,7 +20,7 @@ from ldn.aws_credentials import (
     write_credentials_as_env,
 )
 from ldn.cli_classify import classify_app
-from ldn.cli_geomad import geomad_app
+from ldn.cli_geomad import PrefixedS3ItemPath, geomad_app
 from ldn.cli_grid import cli_grid_app
 from ldn.grids import get_grid_tiles
 from ldn.training_data import cli_training_app
@@ -99,9 +98,10 @@ def _find_existing_tasks(
         """Return the source.coop path prefix for a dataset, or None."""
         if dataset_id == GEOMAD_DATASET_ID:
             return SOURCE_COOP_PREFIX_GEOMAD
-        elif dataset_id == PREDICTION_DATASET_ID:
+        else:
             return SOURCE_COOP_PREFIX_PREDICTION
-        return None
+
+    sc_prefix = _source_coop_prefix(dataset_id)
 
     # Collect unique (bucket, owner) combos
     region_combos: set[tuple[str, str]] = set()
@@ -118,7 +118,6 @@ def _find_existing_tasks(
     existing_keys: dict[str, set[str]] = {}
     for combo_bucket, combo_owner in region_combos:
         s3_prefix = f"{dataset_prefix(combo_owner, dataset_id)}/{version}/"
-        sc_prefix = _source_coop_prefix(dataset_id)
         if is_public and sc_prefix:
             s3_prefix = f"{sc_prefix}/{s3_prefix}"
 
@@ -138,14 +137,14 @@ def _find_existing_tasks(
         r = task["region"]
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
 
-        full_path_prefix = f"https://{BUCKET}.s3.{AWS_REGION}.amazonaws.com"
-        sc_prefix = _source_coop_prefix(dataset_id)
+        full_path_prefix = f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
         if is_public and sc_prefix:
             full_path_prefix = f"{SOURCE_COOP_PUBLIC_URL}/{sc_prefix}"
 
-        itempath = S3ItemPath(
+        itempath = PrefixedS3ItemPath(
+            key_prefix=sc_prefix if is_public else None,
             prefix=owner,
-            bucket=BUCKET,
+            bucket=bucket,
             sensor=SENSOR,
             dataset_id=dataset_id,
             version=version,
@@ -154,7 +153,7 @@ def _find_existing_tasks(
         )
         stac_key = itempath.stac_path(tile_index, absolute=False)
 
-        lookup_key = f"{BUCKET}/{owner}"
+        lookup_key = f"{bucket}/{owner}"
         if stac_key in existing_keys.get(lookup_key, set()):
             existing_tasks.add((task["id"], task["year"]))
 
