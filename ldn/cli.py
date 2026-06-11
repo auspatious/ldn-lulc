@@ -79,6 +79,42 @@ if __name__ == "__main__":
     app()
 
 
+def _find_stac_items_s3(
+    bucket: str,
+    prefix: str,
+    suffix: str = ".stac-item.json",
+    chunk_size: int = 200,
+    public: bool = False,
+) -> list[str]:
+    """List S3 keys ending in suffix under bucket/prefix.
+
+    Args:
+        bucket: S3 bucket name.
+        prefix: Key prefix to search under.
+        suffix: File suffix to match.
+        chunk_size: Number of objects per listing page.
+        public: If True, skip signing (for public buckets like source.coop).
+
+    Returns:
+        List of S3 keys (without the s3://bucket/ prefix) that match.
+    """
+    store = obstore.store.S3Store(
+        bucket=bucket,
+        region=AWS_REGION,
+        skip_signature=public,
+    )
+    matches: list[str] = []
+    stream = obstore.list(store, prefix=prefix.lstrip("/"), chunk_size=chunk_size)
+
+    for chunk in stream:
+        for obj in chunk:
+            path = obj.get("path", "")
+            if path.endswith(suffix):
+                matches.append(path)
+
+    return matches
+
+
 def _find_existing_tasks(
     tasks,
     version,
@@ -227,42 +263,6 @@ def print_tasks(
     sys.stdout.write(tasks_json_str)
     logger.info(f"{len(tasks)} tasks output for years: {years} and region: {region}.")
     return
-
-
-def _find_stac_items_s3(
-    bucket: str,
-    prefix: str,
-    suffix: str = ".stac-item.json",
-    chunk_size: int = 200,
-    public: bool = False,
-) -> list[str]:
-    """List S3 keys ending in suffix under bucket/prefix.
-
-    Args:
-        bucket: S3 bucket name.
-        prefix: Key prefix to search under.
-        suffix: File suffix to match.
-        chunk_size: Number of objects per listing page.
-        public: If True, skip signing (for public buckets like source.coop).
-
-    Returns:
-        List of S3 keys (without the s3://bucket/ prefix) that match.
-    """
-    store = obstore.store.S3Store(
-        bucket=bucket,
-        region=AWS_REGION,
-        skip_signature=public,
-    )
-    matches: list[str] = []
-    stream = obstore.list(store, prefix=prefix.lstrip("/"), chunk_size=chunk_size)
-
-    for chunk in stream:
-        for obj in chunk:
-            path = obj.get("path", "")
-            if path.endswith(suffix):
-                matches.append(path)
-
-    return matches
 
 
 async def _load_stac_docs_async(
