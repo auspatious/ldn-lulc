@@ -462,7 +462,8 @@ def _extract_years(features: list[dict]) -> list[int]:
 def _write_mosaic(mosaic: MosaicJSON, out_path: str, session: boto3.Session) -> None:
     """Write a MosaicJSON to S3 using an explicit boto3 session."""
     # out_path is like s3://bucket/prefix/mosaic.json
-    assert out_path.startswith("s3://")
+    if not out_path.startswith("s3://"):
+        raise LdnError(f"Output path must start with s3://, got: {out_path}")
     _, _, rest = out_path.partition("s3://")
     bucket, _, key = rest.partition("/")
 

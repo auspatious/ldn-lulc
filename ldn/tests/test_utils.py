@@ -75,3 +75,6 @@ class TestGetGeomadStacGeoparquetUrl:
                 f"/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
             )
         assert url == expected
+
+
+# TODO: parse_years, resolve_dataset

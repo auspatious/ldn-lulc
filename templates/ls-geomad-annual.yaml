@@ -44,7 +44,9 @@ spec:
         # value: "2009-2016"
         # value: "2017-2025"
         # value: "2000-2025"
-        value: "2000"
+        # value: "2010"
+        value: "2001-2005"
+        # value: "2006-2010"
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated

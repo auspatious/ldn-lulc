@@ -36,6 +36,7 @@ from sklearn.preprocessing import StandardScaler
 
 from ldn.grids import get_gadm, get_gridspec
 from ldn.random_sampling import random_sampling
+from ldn.raster import calculate_indices, load_dem_terrain, scale_offset_landsat
 from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
     BUCKET,
@@ -46,13 +47,10 @@ from ldn.utils import (
     TRAINING_DATA_YEAR,
     WGS84,
     LdnError,
-    calculate_indices,
     dataset_prefix,
     get_analysis_epsg,
     get_geomad_stac_geoparquet_url,
-    load_dem_terrain,
     owner_for_region,
-    scale_offset_landsat,
 )
 from notebooks.src.Compare_LULC_func import standardise_class
 
