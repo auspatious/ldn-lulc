@@ -4,7 +4,6 @@
 
 import logging
 import os
-from contextlib import contextmanager
 
 import boto3
 import obstore
@@ -68,39 +67,6 @@ def _session_credentials(session: boto3.Session) -> dict:
         "token": creds.token,  # None for long-lived creds
         "region": session.region_name,
     }
-
-
-# The env-var swap in write_credentials_as_env is not thread-safe. Since make_mosaics is synchronous/sequential
-# this is fine, but worth noting if it ever gets parallelised.
-@contextmanager
-def write_credentials_as_env(session: boto3.Session):
-    """Context manager that temporarily sets AWS env vars from a boto3 session.
-
-    Used for clients like MosaicBackend that build their own boto3 client
-    internally and can't accept an explicit client or session.
-    Restores the original environment on exit.
-    """
-    creds = _session_credentials(session)
-
-    overrides = {
-        "AWS_ACCESS_KEY_ID": creds["access_key_id"],
-        "AWS_SECRET_ACCESS_KEY": creds["secret_access_key"],
-    }
-    if creds["token"]:
-        overrides["AWS_SESSION_TOKEN"] = creds["token"]
-    if creds["region"]:
-        overrides["AWS_DEFAULT_REGION"] = creds["region"]
-
-    originals = {k: os.environ.get(k) for k in overrides}
-    try:
-        os.environ.update(overrides)
-        yield
-    finally:
-        for k, v in originals.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
 
 
 def make_obstore_s3(bucket: str, session: boto3.Session) -> "obstore.store.S3Store":

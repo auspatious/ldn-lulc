@@ -4,9 +4,9 @@ import logging
 import sys
 from typing import Literal
 
+import boto3
 import obstore
 import typer
-from cogeo_mosaic.backends import MosaicBackend
 from cogeo_mosaic.mosaic import MosaicJSON
 from pystac import ItemCollection
 from rustac import search_sync, write_sync
@@ -17,7 +17,6 @@ from ldn import get_version
 from ldn.aws_credentials import (
     get_write_session,
     make_obstore_s3,
-    write_credentials_as_env,
 )
 from ldn.cli_classify import classify_app
 from ldn.cli_geomad import PrefixedS3ItemPath, geomad_app
@@ -472,6 +471,18 @@ def _extract_years(features: list[dict]) -> list[str]:
     return sorted(years)
 
 
+def _write_mosaic(mosaic: MosaicJSON, out_path: str, session: boto3.Session) -> None:
+    """Write a MosaicJSON to S3 using an explicit boto3 session."""
+    # out_path is like s3://bucket/prefix/mosaic.json
+    assert out_path.startswith("s3://")
+    _, _, rest = out_path.partition("s3://")
+    bucket, _, key = rest.partition("/")
+
+    body = mosaic.model_dump_json(exclude_none=True).encode("utf-8")
+    client = session.client("s3", region_name=AWS_REGION)
+    client.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/json")
+
+
 @app.command()
 def make_mosaics(
     dataset: Annotated[
@@ -548,9 +559,7 @@ def make_mosaics(
         out_path = f"{output_path}{combined_short}_{_year}_mosaic.json"
         logger.info(f"  {_year} built successfully, writing to {out_path}")
 
-        with write_credentials_as_env(write_session):
-            with MosaicBackend(out_path, mosaic_def=mosaic) as m:
-                m.write(overwrite=True)
+        _write_mosaic(mosaic, out_path, write_session)
 
         logger.info(f"  {_year} written.")
 
