@@ -40,6 +40,7 @@ from ldn.utils import (
     dataset_prefix,
     owner_for_region,
     parse_years,
+    resolve_dataset,
 )
 
 app = typer.Typer()
@@ -205,8 +206,7 @@ def print_tasks(
 
     # Filter out tasks whose output already exists in S3
     if not overwrite:
-        dataset_id = PREDICTION_DATASET_ID if dataset == "prediction" else GEOMAD_DATASET_ID
-        version = version_prediction if dataset == "prediction" else version_geomad
+        dataset_id, version, _source_coop_prefix = resolve_dataset(dataset, version_geomad, version_prediction)
 
         existing = _find_existing_tasks(
             tasks,
@@ -321,9 +321,7 @@ def index_to_stac_geoparquet(
     """Build STAC-Geoparquet indexes from STAC items for given dataset and region(s)."""
     regions: list[Literal["pacific", "non-pacific"]] = ["pacific", "non-pacific"] if region == "all" else [region]
 
-    dataset_id = GEOMAD_DATASET_ID if dataset == "geomad" else PREDICTION_DATASET_ID
-    source_coop_prefix = SOURCE_COOP_PREFIX_GEOMAD if dataset == "geomad" else SOURCE_COOP_PREFIX_PREDICTION
-    version = version_geomad if dataset == "geomad" else version_prediction
+    dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_prediction)
 
     targets: list[tuple[str, str]] = []
     for r in regions:
@@ -500,9 +498,7 @@ def make_mosaics(
 
     requested_years: list[int] | None = parse_years(years) if years is not None else None
 
-    dataset_id = GEOMAD_DATASET_ID if dataset == "geomad" else PREDICTION_DATASET_ID
-    source_coop_prefix = SOURCE_COOP_PREFIX_GEOMAD if dataset == "geomad" else SOURCE_COOP_PREFIX_PREDICTION
-    version = version_geomad if dataset == "geomad" else version_prediction
+    dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_prediction)
 
     combined_short = f"{SENSOR}_{dataset_id}"
 

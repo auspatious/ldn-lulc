@@ -480,3 +480,14 @@ def parse_years(years: str) -> list[int]:
         return list(range(start_year, end_year + 1))
     else:
         return [int(years)]
+
+
+def resolve_dataset(
+    dataset: Literal["geomad", "prediction"],
+    version_geomad: str,
+    version_prediction: str,
+) -> tuple[str, str, str | None]:
+    """Return (dataset_id, version, source_coop_prefix) for the given dataset name."""
+    if dataset == "geomad":
+        return GEOMAD_DATASET_ID, version_geomad, SOURCE_COOP_PREFIX_GEOMAD
+    return PREDICTION_DATASET_ID, version_prediction, SOURCE_COOP_PREFIX_PREDICTION
