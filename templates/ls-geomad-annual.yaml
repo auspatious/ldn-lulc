@@ -6,6 +6,7 @@ metadata:
 spec:
   entrypoint: workflow-entrypoint
   serviceAccountName: public-bucket-writer
+  activeDeadlineSeconds: 3600  # 1 hour. Limit due to temporary AWS Source.Coop credentials.
   ttlStrategy:
     secondsAfterCompletion: 300
   podGC:
@@ -43,7 +44,7 @@ spec:
         # value: "2009-2016"
         # value: "2017-2025"
         # value: "2000-2025"
-        value: "2000,2025"
+        value: "2000"
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated
@@ -66,9 +67,9 @@ spec:
                   value: "{{item.year}}"
                 - name: region
                   value: "{{item.region}}"
-            # withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
+            withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
             # Test tiles (2 regions and 2 years)
-            withParam: '[{"id":"115_14","year":"2000","region":"pacific"}, {"id":"115_14","year":"2025","region":"pacific"},{"id":"252_87","year":"2000","region":"non-pacific"},{"id":"252_87","year":"2025","region":"non-pacific"}]'
+            # withParam: '[{"id":"115_14","year":"2000","region":"pacific"}, {"id":"115_14","year":"2025","region":"pacific"},{"id":"252_87","year":"2000","region":"non-pacific"},{"id":"252_87","year":"2025","region":"non-pacific"}]'
 
 
     - name: print-tasks

@@ -7,7 +7,6 @@ from ldn.utils import (
     SOURCE_COOP_PREFIX_GEOMAD,
     SOURCE_COOP_PUBLIC_URL,
     dataset_prefix,
-    get_geomad_item_id,
     get_geomad_stac_geoparquet_url,
     owner_for_region,
 )
@@ -46,7 +45,7 @@ class TestDatasetPrefix:
 
 class TestGetGeomadStacGeoparquetUrl:
     def test_pacific(self):
-        url = get_geomad_stac_geoparquet_url("pacific")
+        url = get_geomad_stac_geoparquet_url("pacific", bucket=BUCKET)
         expected = (
             f"https://s3.{AWS_REGION}.amazonaws.com/{BUCKET}/dep_ls_geomad/{GEOMAD_VERSION}/dep_ls_geomad.parquet"
         )
@@ -58,7 +57,7 @@ class TestGetGeomadStacGeoparquetUrl:
         assert url == expected
 
     def test_non_pacific(self):
-        url = get_geomad_stac_geoparquet_url("non-pacific")
+        url = get_geomad_stac_geoparquet_url("non-pacific", bucket=BUCKET)
         expected = f"https://s3.{AWS_REGION}.amazonaws.com/{BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
         if SOURCE_COOP_PUBLIC_URL:
             expected = (
@@ -68,7 +67,7 @@ class TestGetGeomadStacGeoparquetUrl:
         assert url == expected
 
     def test_product_owner_override(self):
-        url = get_geomad_stac_geoparquet_url("pacific", product_owner="ci")
+        url = get_geomad_stac_geoparquet_url("pacific", product_owner="ci", bucket=BUCKET)
         expected = f"https://s3.{AWS_REGION}.amazonaws.com/{BUCKET}/ci_ls_geomad/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
         if SOURCE_COOP_PUBLIC_URL:
             expected = (
@@ -76,17 +75,3 @@ class TestGetGeomadStacGeoparquetUrl:
                 f"/{GEOMAD_VERSION}/ci_ls_geomad.parquet"
             )
         assert url == expected
-
-
-class TestGetGeomadItemId:
-    def test_pacific(self):
-        item_id = get_geomad_item_id("pacific", "058_043", "2020")
-        assert item_id == "dep_ls_geomad_058_043_2020"
-
-    def test_non_pacific(self):
-        item_id = get_geomad_item_id("non-pacific", "119_126", "2023")
-        assert item_id == "ci_ls_geomad_119_126_2023"
-
-    def test_product_owner_override(self):
-        item_id = get_geomad_item_id("pacific", "058_043", "2020", product_owner="ci")
-        assert item_id == "ci_ls_geomad_058_043_2020"

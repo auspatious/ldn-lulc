@@ -20,11 +20,13 @@ import xarray as xr
 from dep_tools.aws import object_exists
 from dep_tools.utils import _fix_geometry, bbox_across_180, search_across_180
 from odc.geo.geom import Geometry
-from odc.stac import load
+from odc.geo.geom import box as odc_box
+from odc.stac import load, stac_load
 from planetary_computer import sign_url
-from pystac import ItemCollection
+from pystac import Item, ItemCollection
 from pystac.client import Client
 from rasterio.enums import Resampling
+from rustac import search_sync
 from scipy.ndimage import minimum_filter
 from scipy.spatial.distance import cdist
 from shapely.geometry import box
@@ -32,16 +34,23 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
-from ldn.classify import search_and_load_geomad_indices_dem
 from ldn.grids import get_gadm, get_gridspec
 from ldn.random_sampling import random_sampling
 from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
     BUCKET,
+    GEOMAD_DATASET_ID,
+    GEOMAD_VERSION,
     TRAINING_DATA_VERSION,
     LdnError,
+    calculate_indices,
     class_attr,
+    dataset_prefix,
     get_analysis_epsg,
+    get_geomad_stac_geoparquet_url,
+    load_dem_terrain,
+    owner_for_region,
+    scale_offset_landsat,
     wgs84,
 )
 from notebooks.src.Compare_LULC_func import standardise_class
@@ -597,6 +606,7 @@ def get_tile_year_geomad_dem_indices(
     country_wgs84_buffered: gpd.GeoDataFrame,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     product_owner: str | None,
+    bucket: str,
     version_geomad: str | None = None,
 ) -> xr.Dataset:
     """Load GeoMAD + DEM features for a tile, clipped to buffered country.
@@ -626,6 +636,7 @@ def get_tile_year_geomad_dem_indices(
         geopolygon=country_wgs84_buffered,
         product_owner=product_owner,
         version_geomad=version_geomad,
+        bucket=bucket,
     )
 
     # Clip to intersection of tile extent and buffered country
@@ -715,6 +726,7 @@ def make_training_data(
         country_wgs84_buffered=country_wgs84_buffered,
         analysis_crs=analysis_crs,
         product_owner=None,
+        bucket=BUCKET,
     )
     geobox = geomad_dem_indices.odc.geobox
 
@@ -822,3 +834,121 @@ def generate_training_data(
         n=n,
         min_sample_per_class_n=min_sample_per_class_n,
     )
+
+
+def get_geomad_item_id(
+    region: Literal["pacific", "non-pacific"],
+    tile_id: str,
+    year: str,
+    product_owner: str | None = None,
+) -> str:
+    """Build the STAC item ID for a GeoMAD tile.
+
+    Args:
+        region: Either "pacific" or "non-pacific".
+        tile_id: Grid tile identifier (e.g. "058_043").
+        year: Year string (e.g. "2020").
+        product_owner: Optional override for the region-derived owner prefix.
+
+    Returns:
+        The full STAC item ID string.
+    """
+    owner = owner_for_region(region, product_owner=product_owner)
+    prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
+    return f"{prefix}_{tile_id}_{year}"
+
+
+def search_and_load_geomad_indices_dem(
+    tile_id: str,
+    year: str,
+    region: Literal["pacific", "non-pacific"],
+    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
+    geopolygon: gpd.GeoDataFrame,
+    product_owner: str | None,
+    bucket: str,
+    version_geomad: str | None = None,
+) -> xr.Dataset:
+    """Search, load, scale, and merge GeoMAD bands, spectral indices, and DEM terrain for a tile.
+        Supports antimeridian-crossing tiles.
+
+    Args:
+        tile_id: Grid tile identifier (e.g. "058_043").
+        year: Year string for the GeoMAD item search (e.g. "2020").
+        region: Grid region, either "pacific" or "non-pacific".
+        analysis_crs: The expected CRS of the GeoMAD data (either "EPSG:3832" or "EPSG:6933").
+        geopolygon: GeoDataFrame used to constrain the stac_load extent (the country geom).
+        product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
+        bucket: S3 bucket name where the GeoMAD data is stored.
+        version_geomad: Optional GeoMAD version override.
+
+    Returns:
+        Merged dataset with GeoMAD bands, spectral indices, elevation,
+        slope, and aspect, clipped to the tile proj:bbox.
+    """
+    geomad_url = get_geomad_stac_geoparquet_url(
+        region, product_owner=product_owner, version=version_geomad, bucket=bucket
+    )
+    item_id = get_geomad_item_id(region, tile_id, year, product_owner=product_owner)
+
+    logging.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}, using latest version {GEOMAD_VERSION}")
+    geomad_items = search_sync(
+        geomad_url,
+        ids=item_id,
+    )
+    geomad_items = [Item.from_dict(doc) for doc in geomad_items]
+    geomad_items_n = len(geomad_items)
+    logger.info(f"Found {geomad_items_n} GeoMAD items for tile {tile_id} and year {year}")
+
+    if geomad_items_n != 1:
+        raise LdnError(f"Must find exactly 1 GeoMAD item for this tile and year, found {geomad_items_n} instead.")
+
+    proj_bbox = geomad_items[0].properties.get("proj:bbox")
+    logger.info(f"proj:bbox = {proj_bbox}")
+
+    bands = [b for b in geomad_items[0].assets.keys() if b != "count"]
+    logger.info(f"Loading bands: {bands}")
+
+    geomad_ds = stac_load(
+        geomad_items,
+        chunks={},  # Force lazy.
+        bands=bands,
+        fail_on_error=True,  # We control the data so it shouldn't fail.
+        geopolygon=geopolygon,
+    )
+
+    if geomad_ds.odc.crs.epsg != int(analysis_crs.split(":")[1]):
+        raise LdnError(
+            f"GeoMAD dataset CRS (EPSG:{geomad_ds.odc.crs.epsg}) does not match analysis CRS ({analysis_crs})"
+        )
+    logger.info(f"GeoMAD CRS: EPSG:{geomad_ds.odc.crs.epsg}")
+    logger.info(f"GeoMAD shape: {geomad_ds.dims}")
+
+    geomad_ds = geomad_ds.squeeze()
+
+    # Clip to tile proj:bbox (the dataset may span the full country extent)
+    tile_geom = odc_box(
+        proj_bbox[0],
+        proj_bbox[1],
+        proj_bbox[2],
+        proj_bbox[3],
+        crs=analysis_crs,
+    )
+    # apply_mask not needed for this box crop.
+    geomad_ds = geomad_ds.odc.crop(tile_geom, apply_mask=False)
+    logger.info(f"GeoMAD shape (after tile clip): {geomad_ds.dims}")
+
+    geomad_ds = scale_offset_landsat(geomad_ds)
+    geomad_ds = calculate_indices(geomad_ds)
+
+    dem_ds = load_dem_terrain(geomad_ds.odc.geobox)
+
+    # Drop spatial_ref from DEM to avoid WKT encoding conflicts with
+    # the GeoMAD spatial_ref during merge (odc vs rioxarray encodings).
+    if "spatial_ref" in dem_ds.coords:
+        dem_ds = dem_ds.drop_vars("spatial_ref")
+
+    # Fix: assign GeoMAD coords to DEM before merge
+    dem_ds = dem_ds.assign_coords(x=geomad_ds.x, y=geomad_ds.y)
+    merged = xr.merge([geomad_ds, dem_ds], join="override")  # Override prefers geomad
+    logger.info(f"Merged GeoMAD+DEM shape: {merged.dims}")
+    return merged
