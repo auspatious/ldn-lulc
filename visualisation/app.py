@@ -195,13 +195,6 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/sids-tiles.geojson", tags=["Viewer"])
-def sids_tiles():
-    """Serve the SIDS tiles GeoJSON for map overlay."""
-    path = os.path.join(STATIC_DIR, "sids_all_tiles.geojson")
-    return FileResponse(path, media_type="application/json")
-
-
 @app.get("/config.json", tags=["Viewer"])
 def config():
     """Return dynamic configuration for the frontend."""
@@ -220,6 +213,12 @@ def config():
 
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+
+@app.get("/sids-tiles.geojson", tags=["Viewer"])
+def sids_tiles():
+    """Serve the SIDS tiles GeoJSON for map overlay."""
+    return FileResponse(os.path.join(STATIC_DIR, "sids_all_tiles.geojson"), media_type="application/json")
 
 
 @app.get("/", tags=["Viewer"])
