@@ -39,14 +39,7 @@ spec:
         # Just run Pacific in DEP Argo instance.
         value: "all" # "all", "pacific", or "non-pacific"
       - name: years
-      # TODO: Remove workaround of year subset blocks once the JSON issue is resolved.
-        # value: "2000-2008"
-        # value: "2009-2016"
-        # value: "2017-2025"
-        # value: "2000-2025"
-        # value: "2010"
-        value: "2001-2005"
-        # value: "2006-2010"
+        value: "2000-2025"
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated
@@ -79,8 +72,8 @@ spec:
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         # TODO: Reenable IfNotPresent once image is stable
-        imagePullPolicy: Always
-        # imagePullPolicy: IfNotPresent
+        # imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         resources:
           requests:
             # Requesting a lot of resources for this simple task
@@ -131,8 +124,8 @@ spec:
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         # TODO: Reenable IfNotPresent once image is stable
-        imagePullPolicy: Always
-        # imagePullPolicy: IfNotPresent
+        # imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         command: [ldn]
         args:
           - geomad

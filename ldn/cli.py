@@ -330,6 +330,7 @@ def index_to_stac_geoparquet(
             f"{source_coop_prefix}/{short_prefix}/{version}" if SOURCE_COOP_PUBLIC_URL else f"{short_prefix}/{version}"
         )
         targets.append((full_prefix, short_prefix))
+        logger.info(f"Region for indexing: '{full_prefix}'")
 
     combined_short = f"{SENSOR}_{dataset_id}"
     parquet_key = f"{source_coop_prefix}/{combined_short}/{version}/{combined_short}.parquet"

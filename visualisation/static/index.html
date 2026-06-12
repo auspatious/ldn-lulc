@@ -193,6 +193,15 @@
         <label><input type="checkbox" id="chk-geomad"/> GeoMAD (S, E, BC)</label>
         <label><input type="checkbox" id="chk-count"/> Observation count</label>
       </div>
+
+      <div class="layer-group" style="margin-top:8px;">
+        <p class="layer-group-title">Reference</p>
+        <label><input type="checkbox" id="chk-grid" checked/> SIDS tile grid</label>
+        <div class="opacity-row" style="padding-left:2px;">
+          <input type="range" id="grid-opacity" min="0" max="1" step="0.05" value="0.6"/>
+          <span id="grid-opacity-val" style="min-width:32px;text-align:right;font-size:11px;color:var(--color-light-2);">60%</span>
+        </div>
+      </div>
     </div>
 
     <div class="section">
@@ -757,6 +766,66 @@
       msg.style.cssText = "color:#c00;font-size:12px;padding:10px 0;";
       msg.textContent = "Failed to load configuration. Please refresh the page.";
       panel.appendChild(msg);
+    });
+
+    // --- SIDS tile grid layer ---
+    var gridLayer = null;
+
+    function setGridOpacity(op) {
+      if (!gridLayer) return;
+      gridLayer.setStyle(function(feature) {
+        return {
+          fillOpacity: op * 0.25,
+          opacity: op,
+        };
+      });
+    }
+
+    function styleGrid(feature) {
+      var op = parseFloat(document.getElementById("grid-opacity").value);
+      var pacific = feature.properties.region === "pacific";
+      return {
+        color:        pacific ? "#b45309" : "#991b1b",
+        fillColor:    pacific ? "#facc15" : "#ef4444",
+        weight:       1,
+        opacity:      op,
+        fillOpacity:  op * 0.15,
+      };
+    }
+
+    fetch("/sids-tiles.geojson")
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        gridLayer = L.geoJSON(data, {
+          style: styleGrid,
+          onEachFeature: function(feature, layer) {
+            var p = feature.properties;
+            layer.bindTooltip(
+              p.label + (p.region ? " (" + p.region + ")" : ""),
+              { sticky: true, className: "leaflet-tooltip" }
+            );
+          }
+        });
+
+        if (document.getElementById("chk-grid").checked) {
+          gridLayer.addTo(map);
+        }
+      })
+      .catch(function(err) { console.warn("Failed to load SIDS grid:", err); });
+
+    document.getElementById("chk-grid").addEventListener("change", function() {
+      if (!gridLayer) return;
+      if (this.checked) {
+        gridLayer.addTo(map);
+      } else {
+        map.removeLayer(gridLayer);
+      }
+    });
+
+    document.getElementById("grid-opacity").addEventListener("input", function() {
+      var op = parseFloat(this.value);
+      document.getElementById("grid-opacity-val").textContent = Math.round(op * 100) + "%";
+      setGridOpacity(op);
     });
   </script>
 </body>

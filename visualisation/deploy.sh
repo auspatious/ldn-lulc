@@ -17,6 +17,10 @@ echo "==> Function name: ${FUNCTION_NAME}"
 
 poetry check --lock || { echo "poetry.lock is out of date. Run 'poetry lock' first."; exit 1; }
 
+echo "==> Copying SIDS tiles GeoJSON..."
+# This minifies too.
+python -c "import json; import sys; json.dump(json.load(open('ldn/sids_all_tiles.geojson')), open('visualisation/static/sids_all_tiles.geojson','w'), separators=(',',':'))"
+
 echo "==> Building Docker image..."
 docker build --platform=linux/arm64 --provenance=false -f visualisation/Dockerfile -t ${FUNCTION_NAME} .
 

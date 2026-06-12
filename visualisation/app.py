@@ -12,7 +12,9 @@ import re
 import sys
 from typing import Annotated, Literal
 
-import httpx
+import boto3
+from botocore import UNSIGNED
+from botocore.config import Config
 from cogeo_mosaic.backends import MosaicBackend
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,8 +30,8 @@ from titiler.mosaic.factory import MosaicTilerFactory
 GEOMAD_VERSION = "0-2-1"
 PREDICTION_VERSION = "0-0-4-test"  # TODO: Update.
 
-GEOMAD_MOSAIC_BASE = f"https://source.coop/auspatious/geomad-sids/ls_geomad/{GEOMAD_VERSION}/mosaics"
-PREDICTION_MOSAIC_BASE = f"https://source.coop/auspatious/lulc-sids/ls_lulc_prediction/{PREDICTION_VERSION}/mosaics"
+SOURCE_COOP_ENDPOINT = "https://data.source.coop"
+SOURCE_COOP_ACCOUNT = "auspatious"
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,6 @@ logging.basicConfig(
     force=True,
 )
 logger.setLevel(logging.INFO)  # Our logging level.
-
 
 cmap = default_cmap.register(
     {
@@ -59,46 +60,51 @@ cmap = default_cmap.register(
 )
 ColorMapParams = create_colormap_dependency(cmap)
 
-# Discover available mosaics by fetching the directory listing over HTTPS.
-# Expects filenames like geomad_2020_mosaic.json or prediction_2020_mosaic.json.
-
-MOSAIC_PATHS_GEOMAD: dict[str, str] = {}
-MOSAIC_PATHS_PREDICTION: dict[str, str] = {}
-
 MOSAIC_PATTERN = re.compile(r"_(\d{4})_mosaic\.json$")
 
 
+def _make_s3_client(endpoint_url: str | None = None) -> boto3.client:
+    """Create an unsigned S3 client, optionally with a custom endpoint."""
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint_url,
+        config=Config(signature_version=UNSIGNED),
+    )
+
+
 # TODO: this should use boto3 s3.list_objects_v2 for non-source.coop buckets.
-def _discover_mosaics(base_url: str) -> dict[str, str]:
-    """Fetch an HTTPS directory listing and return {year: full_url} for each mosaic JSON found."""
+def _discover_mosaics_source_coop(repo: str, prefix: str) -> dict[str, str]:
+    """
+    List mosaics on source.coop via its S3-compatible data proxy.
+    Returns {year: https_url}.
+    """
+    s3 = _make_s3_client(endpoint_url=SOURCE_COOP_ENDPOINT)
     paths: dict[str, str] = {}
-    try:
-        response = httpx.get(base_url, follow_redirects=True, timeout=10)
-        response.raise_for_status()
-        # Parse hrefs from the HTML directory listing
-        for href in re.findall(r'href="([^"]+_mosaic\.json)"', response.text):
-            filename = href.split("/")[-1]
-            match = MOSAIC_PATTERN.search(filename)
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=SOURCE_COOP_ACCOUNT, Prefix=f"{repo}/{prefix}/"):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            match = MOSAIC_PATTERN.search(key)
             if match:
                 year = match.group(1)
-                # Resolve relative or absolute hrefs
-                url = href if href.startswith("http") else f"{base_url}/{filename}"
-                paths[year] = url
-    except Exception as e:
-        logger.error(f"Failed to discover mosaics from {base_url}: {e}")
+                # HTTPS URL — opened by cogeo-mosaic's HTTPBackend
+                paths[year] = f"{SOURCE_COOP_ENDPOINT}/{SOURCE_COOP_ACCOUNT}/{key}"
+                logger.info(f"Discovered mosaic: {year} → {paths[year]}")
     return paths
 
 
-try:
-    MOSAIC_PATHS_GEOMAD = _discover_mosaics(GEOMAD_MOSAIC_BASE)
-    MOSAIC_PATHS_PREDICTION = _discover_mosaics(PREDICTION_MOSAIC_BASE)
-except Exception as e:
-    logger.error(f"Failed to discover mosaics: {e}")
+MOSAIC_PATHS_GEOMAD = _discover_mosaics_source_coop(
+    repo="geomad-sids",
+    prefix=f"ls_geomad/{GEOMAD_VERSION}/mosaics",
+)
+MOSAIC_PATHS_PREDICTION = _discover_mosaics_source_coop(
+    repo="lulc-sids",
+    prefix=f"ls_lulc_prediction/{PREDICTION_VERSION}/mosaics",
+)
 
 if not MOSAIC_PATHS_GEOMAD and not MOSAIC_PATHS_PREDICTION:
     raise RuntimeError(
-        "Cannot start: failed to discover any mosaics from source.coop. "
-        "Check network connectivity and that the base URLs are correct."
+        "Cannot start: no mosaics discovered. Check network connectivity and that version strings are correct."
     )
 
 logger.info(f"GeoMAD mosaics: {sorted(MOSAIC_PATHS_GEOMAD.keys())}")
@@ -187,6 +193,13 @@ add_exception_handlers(app, MOSAIC_STATUS_CODES)
 def health():
     """Health check endpoint for load balancers and monitoring."""
     return {"status": "ok"}
+
+
+@app.get("/sids-tiles.geojson", tags=["Viewer"])
+def sids_tiles():
+    """Serve the SIDS tiles GeoJSON for map overlay."""
+    path = os.path.join(STATIC_DIR, "sids_all_tiles.geojson")
+    return FileResponse(path, media_type="application/json")
 
 
 @app.get("/config.json", tags=["Viewer"])
