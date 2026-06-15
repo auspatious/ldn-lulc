@@ -21,7 +21,6 @@ rustup-init
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-TODO: Migrate from Poetry to UV.
 ```bash
 poetry lock --no-update
 poetry export -f requirements.txt --output requirements.txt --with dev --with visualisation --without-hashes
@@ -131,6 +130,13 @@ A tile server for viewing GeoMedian/GeoMAD and predicted LULC mosaics, built wit
 - [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
 - Docker
 
+### Run locally
+
+```bash
+poetry install --with visualisation
+poetry run uvicorn visualisation.app:app --host 0.0.0.0 --port 8081 --reload
+```
+
 ### Deploy
 
 From the project root:
@@ -145,13 +151,6 @@ This will:
 3. Build and push the Docker image
 4. Deploy the Lambda + API Gateway via Terraform
 
-### Run locally
-
-```bash
-poetry install --with visualisation
-poetry run uvicorn visualisation.app:app --host 0.0.0.0 --port 8081 --reload
-```
-
 ### Current deployment
 
 https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
@@ -163,7 +162,7 @@ Data product: https://source.coop/auspatious/geomad-sids
 
 Info here: https://github.com/auspatious/ldn-lulc/Source.Coop_README.md
 
-Writing to this requires these env vars set:
+Writing to this requires these env vars set. These env vars come from the credentials given by Source.Coop for this data repo.
 ```bash
 export AWS_WRITE_ACCESS_KEY_ID="..."
 export AWS_WRITE_SECRET_ACCESS_KEY="..."
