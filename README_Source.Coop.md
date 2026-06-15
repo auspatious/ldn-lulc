@@ -1,6 +1,6 @@
-# Geometric Median & Median Absolute Deviation Mosaics for Small Island Developing States (SIDS) and Secretariat of the Pacific Community (SPC)'s countries/territories
+# Geometric Median & Median Absolute Deviation Mosaics for Small Island Developing States (SIDS) and Pacific Community (SPC)'s countries/territories
 
-Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS) and Secretariat of the Pacific Community (SPC)'s countries/territories for  2000-2025, generated using robust pixel compositing methods for long-term environmental monitoring, land cover mapping, coastal change detection, and machine learning applications.
+Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS) and Pacific Community (SPC)'s countries/territories for  2000-2025, generated using robust pixel compositing methods for long-term environmental monitoring, land cover mapping, coastal change detection, and machine learning applications.
 
 **Created by:** [Auspatious](https://auspatious.com/)
 
@@ -36,7 +36,7 @@ Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS)
 Coverage includes:
 
 - [Small Island Developing States](https://www.un.org/ohrlls/content/about-small-island-developing-states)
-- [Secretariat of the Pacific Community (SPC) countries/territories](https://en.wikipedia.org/wiki/Pacific_Community#Membership)
+- [Pacific Community (SPC)'s countries/territories](https://en.wikipedia.org/wiki/Pacific_Community#Membership)
 
 Many countries/territories belong to both of these groups. In that case, they are placed in the Pacific region.
 
@@ -114,8 +114,8 @@ Tiling is done using [ODC Gridspec](https://odc-geo.readthedocs.io/en/latest/_ap
 
 | Region | Countries/Territories | Grid tiles | Grid GeoJSON | Output | CRS |
 | --- | --- | --- | --- | --- | --- |
-| Pacific | 22 | 517 | [sids_pacific_tiles.geojson](https://github.com/auspatious/ldn-lulc/blob/clean-up/ldn/sids_pacific_tiles.geojson) | [dep_ls_geomad](https://source.coop/auspatious/geomad-sids/dep_ls_geomad) | EPSG:3832 |
-| Non-Pacific | 38 | 300 | [sids_non_pacific_tiles.geojson](https://github.com/auspatious/ldn-lulc/blob/clean-up/ldn/sids_non_pacific_tiles.geojson) | [ci_ls_geomad](https://source.coop/auspatious/geomad-sids/ci_ls_geomad) | EPSG:6933 |
+| Pacific | 22 | 517 | [sids_pacific_tiles.geojson](https://github.com/auspatious/ldn-lulc/blob/main/ldn/sids_pacific_tiles.geojson) | [dep_ls_geomad](https://source.coop/auspatious/geomad-sids/dep_ls_geomad) | EPSG:3832 |
+| Non-Pacific | 38 | 300 | [sids_non_pacific_tiles.geojson](https://github.com/auspatious/ldn-lulc/blob/main/ldn/sids_non_pacific_tiles.geojson) | [ci_ls_geomad](https://source.coop/auspatious/geomad-sids/ci_ls_geomad) | EPSG:6933 |
 
 ---
 
@@ -231,21 +231,11 @@ print(ds)
 ### Visualise the GeoMedian (RGB)
 
 ```python
-import matplotlib.pyplot as plt
-
 rgb = (
     ds[["red", "green", "blue"]]  # Visualise any band or combination of bands: blue, green, red, nir08, swir16, swir22, count, smad, emad, bcmad
-    .isel(time=0) # Select first timestep
-    .to_array()
-    .transpose("y", "x", "variable")
+    .isel(time=0)  # select first timestep
     .squeeze()
 )
-# Percentile stretch for visualisation
-p2, p98 = rgb.quantile([0.02, 0.98])
-rgb_norm = ((rgb - p2) / (p98 - p2)).clip(0, 1)
 
-plt.figure(figsize=(10, 10))
-plt.imshow(rgb_norm)
-plt.axis("off")
-plt.show()
+rgb.odc.explore(vmin=7500, vmax=12000)
 ```
