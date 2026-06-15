@@ -4,7 +4,7 @@ Annual cloud-free Landsat mosaics for Small Island Developing States (SIDS) and 
 
 The dataset provides annual 30 m Landsat surface reflectance mosaics and associated Median Absolute Deviation (MAD) layers for every year from **2000–2025**, enabling long-term environmental monitoring, land cover mapping, coastal change detection, and machine learning applications.
 
-Created by [Auspatious](https://auspatious.com/).
+**Created by:** [Auspatious](https://auspatious.com/).
 
 **Data repository:** https://source.coop/auspatious/geomad-sids
 
@@ -14,17 +14,16 @@ Created by [Auspatious](https://auspatious.com/).
 
 ## Dataset Summary
 
-| Property            | Value                   |
-| ------------------- | ----------------------- |
-| Spatial resolution  | 30 m                    |
-| Temporal coverage   | 2000–2025               |
-| Temporal resolution | Annual                  |
-| Sensors             | Landsat 5, 7, 8, 9      |
-| Products            | Geometric Median, MAD   |
+| Spatial resolution  | 30 m || Spatial resolution  | 30 m |
+| Temporal coverage   | 2000–2025 |
+| Temporal resolution | Annual |
+| Sensors             | Landsat 5, 7, 8, 9 |
+| Products            | Geometric Median, Median Absolute Deviation (MAD) |
 | Format              | Cloud-Optimized GeoTIFF |
-| Metadata            | Spatio-Temporal Asset Catalog (STAC)   |
-| Count Countries/territories     | 60      |
-| Total grid tiles    | 817                  |
+| Metadata            | Spatio-Temporal Asset Catalog (STAC) |
+| Countries/territories | 60 |
+| Regions             | 2   |
+| Total grid tiles    | 817 |
 
 ## Area of Interests - Small Island Developing States + Digital Earth Pacific countries
 
@@ -34,31 +33,98 @@ Coverage includes sovereign states, overseas territories, and dependencies commo
 
 Processing extents extend beyond administrative boundaries where required to ensure complete land coverage and consistent tiling.
 
-List of SIDs: TODO
-List of Pacific countries/territoris: TODO
+List of Pacific SIDs (22):
+
+- American Samoa ASM
+- Cook Islands COK
+- Fiji FJI
+- French Polynesia PYF
+- Guam GUM
+- Kiribati KIR
+- Marshall Islands MHL
+- Micronesia FSM
+- Nauru NRU
+- New Caledonia NCL
+- Niue NIU
+- Northern Mariana Islands MNP
+- Palau PLW
+- Papua New Guinea PNG
+- Pitcairn Islands PCN
+- Samoa WSM
+- Solomon Islands SLB
+- Tokelau TKL
+- Tonga TON
+- Tuvalu TUV
+- Vanuatu VUT
+- Wallis and Futuna WLF
+
+List of non-Pacific countries/territories (38):
+
+- Anguilla AIA
+- Antigua and Barbuda ATG
+- Aruba ABW
+- Bahamas BHS
+- Barbados BRB
+- Belize BLZ
+- Bermuda BMU
+- British Virgin Islands VGB
+- Cabo Verde CPV
+- Cayman Islands CYM
+- Comoros COM
+- Cuba CUB
+- Curaçao CUW
+- Dominica DMA
+- Dominican Republic DOM
+- Grenada GRD
+- Guadeloupe GLP
+- Guinea-Bissau GNB
+- Guyana GUY
+- Haiti HTI
+- Jamaica JAM
+- Maldives MDV
+- Martinique MTQ
+- Mauritius MUS
+- Montserrat MSR
+- Puerto Rico PRI
+- Saint Kitts and Nevis KNA
+- Saint Lucia LCA
+- Saint Vincent and the Grenadines VCT
+- Seychelles SYC
+- Singapore SGP
+- Sint Maarten SXM
+- Suriname SUR
+- São Tomé and Príncipe STP
+- Timor-Leste TLS
+- Trinidad and Tobago TTO
+- Turks and Caicos Islands TCA
+- Virgin Islands, U.S. VIR
 
 
-### Regions/Grid
+### Regions/Grids
 
 We use [ODC Gridspec](https://odc-geo.readthedocs.io/en/latest/_api/odc.geo.gridspec.GridSpec.html) to tile the so it can be processed in spatial chunks.
 
-We use 2 gridspecs because of the antimeridian. Otherwise the single grid in 6933 would break at this margin (in geographic CRSs?).
+We use 2 gridspecs because the Pacific region straddles the antimeridian, which would cause a single grid in EPSG:6933 to break at that boundary.
 
-| Region            | Number of Countries/Territories  | Number of grid tiles intersecting | Link to list of countries/territories | Link to geojson of grid tiles | Link to ouput |
+| Region            | Number of Countries/Territories  | Number of grid tiles intersecting | Link to geojson of grid tiles | Link to ouput |
 | --------- | ------- | ------- | ------- | -- | CRS |
-| Pacific  |  22  | 517 | XXX | XXX | https://source.coop/auspatious/geomad-sids/dep_ls_geomad | EPSG:3832 |
-| Non-Pacific  | 38  | 300  | XXX | XXX | https://source.coop/auspatious/geomad-sids/ci_ls_geomad | EPSG:6933 |
+| Pacific  |  22  | 517 | https://github.com/auspatious/ldn-lulc/blob/clean-up/ldn/sids_pacific_tiles.geojson | https://source.coop/auspatious/geomad-sids/dep_ls_geomad | EPSG:3832 |
+| Non-Pacific  | 38  | 300  | https://github.com/auspatious/ldn-lulc/blob/clean-up/ldn/sids_non_pacific_tiles.geojson | https://source.coop/auspatious/geomad-sids/ci_ls_geomad | EPSG:6933 |
 
 
 ## Products
 
-Each annual tile includes:
+Each output has a single cloud optimised geotiff e.g. https://source.coop/auspatious/geomad-sids/ci_ls_geomad/0-2-1/118/125/2000/ci_ls_geomad_118_125_2000_bcmad.tif. These are structured using their grid index and the year (x, y, year).
+
+Each annual tile's output includes:
 
 ### Geometric Median Mosaic
 
 A cloud-free annual surface reflectance composite generated using the geometric median of all valid observations within the compositing window.
 
 The geometric median preserves spectral relationships between bands better than independent per-band median compositing and generally produces more physically realistic reflectance values.
+
+More technical information here: https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#geometric-median
 
 ### Median Absolute Deviation (MAD)
 
@@ -71,7 +137,8 @@ MAD provides a robust measure of temporal variability and can be used to:
 * Detect environmental change
 * Support machine learning workflows
 
-Each output has a single cloud optimised geotiff e.g. https://source.coop/auspatious/geomad-sids/ci_ls_geomad/0-2-1/118/125/2000/ci_ls_geomad_118_125_2000_bcmad.tif. These are structured using their grid index and the year (x, y, year).
+More technical information here https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#median-absolute-deviation
+
 
 ## Bands
 
@@ -89,14 +156,11 @@ The geometric median product contains the standard Landsat surface reflectance b
 
 The MAD product contains corresponding variability layers for each spectral band.
 
-| Band  | Description           |
-| ----- | --------------------- |
-| emad   | Euclidean distance (EMAD)  |
-| smad | Cosine (spectral) distance                 |
-| bcmad | Bray Curtis dissimilarity                 |
-
-More technical information here https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#median-absolute-deviation
-
+| Band  | Description                |
+| ----- | -------------------------- |
+| emad  | Euclidean distance         |
+| smad  | Cosine (spectral) distance |
+| bcmad | Bray Curtis dissimilarity  |
 
 There is also a count band which has the total number of observations used to created these products, per pixel.
 
