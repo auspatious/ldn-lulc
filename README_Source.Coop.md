@@ -206,36 +206,34 @@ Queryable directly - no need to download the full catalog. Within seconds you ca
 ### Search the Index
 
 ```python
+from odc.stac import load
 from rustac import search_sync
-from pystac import Item, ItemCollection
+from pystac import Item
 
 url = "https://data.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet"
-bbox = [166.0, -22.5, 167.0, -21.5]  # subset of New Caledonia example
+bbox = [166.0, -22.5, 167.0, -21.5]  # Subset of New Caledonia example
 
 search_items = search_sync(url, bbox=bbox, datetime="2023")
 items = [Item.from_dict(doc) for doc in search_items]
-collection = ItemCollection(items)
 
-print(f"Found {len(collection.items)} items for the AOI in New Caledonia in 2023")
+print(f"Found {len(items)} items for the AOI in New Caledonia in 2023")
 ```
 
 ### Load with odc-stac
 
 ```python
-from odc.stac import load
-
-ds = load(collection, chunks={})  # Lazy load with chunks
+ds = load(items, chunks={}, bbox=bbox)  # Lazy load with chunks
 print(ds)
 ```
 
-### Visualise in Visual Colours (RGB)
+### Visualise on an interactive map
 
 ```python
-rgb = (
-    ds[["red", "green", "blue"]]  # Visualise any band or combination of bands: blue, green, red, nir08, swir16, swir22, count, smad, emad, bcmad
-    .isel(time=0)  # select first timestep
-    .squeeze()
-)
+ds.odc.explore(vmin=7500, vmax=12000)
+```
 
-rgb.odc.explore(vmin=7500, vmax=12000)
+### Visualise using Xarray
+
+```python
+ds[["red", "green", "blue"]].isel(time=0).to_array().squeeze().plot.imshow(vmin=7500, vmax=12000)
 ```
