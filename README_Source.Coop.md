@@ -1,20 +1,19 @@
 # Geometric Median & Median Absolute Deviation Mosaics for Small Island Developing States (SIDS)
 
-Annual cloud-free Landsat mosaics for Small Island Developing States (SIDS) and selected Pacific territories, generated using robust pixel compositing methods.
+Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS) and selected Pacific territories for  2000-2025, generated using robust pixel compositing methods for long-term environmental monitoring, land cover mapping, coastal change detection, and machine learning applications.
 
-The dataset provides annual 30 m Landsat surface reflectance mosaics and associated Median Absolute Deviation (MAD) layers for every year from **2000–2025**, enabling long-term environmental monitoring, land cover mapping, coastal change detection, and machine learning applications.
-
-**Created by:** [Auspatious](https://auspatious.com/).
-
-**Data repository:** https://source.coop/auspatious/geomad-sids
-
+**Created by:** [Auspatious](https://auspatious.com/)
+**Repository:** https://source.coop/auspatious/geomad-sids
 **Code:** https://github.com/auspatious/ldn-lulc
-
 **License:** Open Data Commons Attribution License (ODC-By)
+
+**Visualisation app:** https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
+
+---
 
 ## Dataset Summary
 
-| Spatial resolution  | 30 m || Spatial resolution  | 30 m |
+| Spatial resolution  | 30 m |
 | Temporal coverage   | 2000–2025 |
 | Temporal resolution | Annual |
 | Sensors             | Landsat 5, 7, 8, 9 |
@@ -22,218 +21,207 @@ The dataset provides annual 30 m Landsat surface reflectance mosaics and associa
 | Format              | Cloud-Optimized GeoTIFF |
 | Metadata            | Spatio-Temporal Asset Catalog (STAC) |
 | Countries/territories | 60 |
-| Regions             | 2   |
+| Regions             | 2 |
 | Total grid tiles    | 817 |
 
-## Area of Interests - Small Island Developing States + Digital Earth Pacific countries
+---
 
-The dataset covers Small Island Developing States (SIDS) and selected Pacific countries and territories.
+## Area of Interest
 
-Coverage includes sovereign states, overseas territories, and dependencies commonly included in SIDS-focused environmental monitoring programs.
+Coverage includes:
 
-Processing extents extend beyond administrative boundaries where required to ensure complete land coverage and consistent tiling.
+- Small Island Developing States
+- Digital Earth Pacific countries/territories
 
-List of Pacific SIDs (22):
+There is overlap between these 2 groups.
 
-- American Samoa ASM
-- Cook Islands COK
-- Fiji FJI
-- French Polynesia PYF
-- Guam GUM
-- Kiribati KIR
-- Marshall Islands MHL
-- Micronesia FSM
-- Nauru NRU
-- New Caledonia NCL
-- Niue NIU
-- Northern Mariana Islands MNP
-- Palau PLW
-- Papua New Guinea PNG
-- Pitcairn Islands PCN
-- Samoa WSM
-- Solomon Islands SLB
-- Tokelau TKL
-- Tonga TON
-- Tuvalu TUV
-- Vanuatu VUT
-- Wallis and Futuna WLF
+#### Pacific (22)
 
-List of non-Pacific countries/territories (38):
+- American Samoa `ASM`
+- Cook Islands `COK`
+- Fiji `FJI`
+- French Polynesia `PYF`
+- Guam `GUM`
+- Kiribati `KIR`
+- Marshall Islands `MHL`
+- Micronesia `FSM`
+- Nauru `NRU`
+- New Caledonia `NCL`
+- Niue `NIU`
+- Northern Mariana Islands `MNP`
+- Palau `PLW`
+- Papua New Guinea `PNG`
+- Pitcairn Islands `PCN`
+- Samoa `WSM`
+- Solomon Islands `SLB`
+- Tokelau `TKL`
+- Tonga `TON`
+- Tuvalu `TUV`
+- Vanuatu `VUT`
+- Wallis and Futuna `WLF`
 
-- Anguilla AIA
-- Antigua and Barbuda ATG
-- Aruba ABW
-- Bahamas BHS
-- Barbados BRB
-- Belize BLZ
-- Bermuda BMU
-- British Virgin Islands VGB
-- Cabo Verde CPV
-- Cayman Islands CYM
-- Comoros COM
-- Cuba CUB
-- Curaçao CUW
-- Dominica DMA
-- Dominican Republic DOM
-- Grenada GRD
-- Guadeloupe GLP
-- Guinea-Bissau GNB
-- Guyana GUY
-- Haiti HTI
-- Jamaica JAM
-- Maldives MDV
-- Martinique MTQ
-- Mauritius MUS
-- Montserrat MSR
-- Puerto Rico PRI
-- Saint Kitts and Nevis KNA
-- Saint Lucia LCA
-- Saint Vincent and the Grenadines VCT
-- Seychelles SYC
-- Singapore SGP
-- Sint Maarten SXM
-- Suriname SUR
-- São Tomé and Príncipe STP
-- Timor-Leste TLS
-- Trinidad and Tobago TTO
-- Turks and Caicos Islands TCA
-- Virgin Islands, U.S. VIR
+#### Non-Pacific (38)
 
+- Anguilla `AIA`
+- Antigua and Barbuda `ATG`
+- Aruba `ABW`
+- Bahamas `BHS`
+- Barbados `BRB`
+- Belize `BLZ`
+- Bermuda `BMU`
+- British Virgin Islands `VGB`
+- Cabo Verde `CPV`
+- Cayman Islands `CYM`
+- Comoros `COM`
+- Cuba `CUB`
+- Curaçao `CUW`
+- Dominica `DMA`
+- Dominican Republic `DOM`
+- Grenada `GRD`
+- Guadeloupe `GLP`
+- Guinea-Bissau `GNB`
+- Guyana `GUY`
+- Haiti `HTI`
+- Jamaica `JAM`
+- Maldives `MDV`
+- Martinique `MTQ`
+- Mauritius `MUS`
+- Montserrat `MSR`
+- Puerto Rico `PRI`
+- Saint Kitts and Nevis `KNA`
+- Saint Lucia `LCA`
+- Saint Vincent and the Grenadines `VCT`
+- Seychelles `SYC`
+- Singapore `SGP`
+- Sint Maarten `SXM`
+- Suriname `SUR`
+- São Tomé and Príncipe `STP`
+- Timor-Leste `TLS`
+- Trinidad and Tobago `TTO`
+- Turks and Caicos Islands `TCA`
+- Virgin Islands, U.S. `VIR`
 
-### Regions/Grids
+---
 
-We use [ODC Gridspec](https://odc-geo.readthedocs.io/en/latest/_api/odc.geo.gridspec.GridSpec.html) to tile the so it can be processed in spatial chunks.
+## Regions & Grids
 
-We use 2 gridspecs because the Pacific region straddles the antimeridian, which would cause a single grid in EPSG:6933 to break at that boundary.
+Tiling uses [ODC Gridspec](https://odc-geo.readthedocs.io/en/latest/_api/odc.geo.gridspec.GridSpec.html) to partition the data into spatial chunks for processing. Two gridspecs are used because the Pacific region straddles the antimeridian, which would cause a single grid in EPSG:6933 to break at that boundary.
 
-| Region            | Number of Countries/Territories  | Number of grid tiles intersecting | Link to geojson of grid tiles | Link to ouput |
-| --------- | ------- | ------- | ------- | -- | CRS |
-| Pacific  |  22  | 517 | https://github.com/auspatious/ldn-lulc/blob/clean-up/ldn/sids_pacific_tiles.geojson | https://source.coop/auspatious/geomad-sids/dep_ls_geomad | EPSG:3832 |
-| Non-Pacific  | 38  | 300  | https://github.com/auspatious/ldn-lulc/blob/clean-up/ldn/sids_non_pacific_tiles.geojson | https://source.coop/auspatious/geomad-sids/ci_ls_geomad | EPSG:6933 |
+| Region | Countries/Territories | Grid tiles | Grid GeoJSON | Output | CRS |
+| --- | --- | --- | --- | --- | --- |
+| Pacific | 22 | 517 | [sids_pacific_tiles.geojson](https://github.com/auspatious/ldn-lulc/blob/clean-up/ldn/sids_pacific_tiles.geojson) | [dep_ls_geomad](https://source.coop/auspatious/geomad-sids/dep_ls_geomad) | EPSG:3832 |
+| Non-Pacific | 38 | 300 | [sids_non_pacific_tiles.geojson](https://github.com/auspatious/ldn-lulc/blob/clean-up/ldn/sids_non_pacific_tiles.geojson) | [ci_ls_geomad](https://source.coop/auspatious/geomad-sids/ci_ls_geomad) | EPSG:6933 |
 
+---
 
 ## Products
 
-Each output has a single cloud optimised geotiff e.g. https://source.coop/auspatious/geomad-sids/ci_ls_geomad/0-2-1/118/125/2000/ci_ls_geomad_118_125_2000_bcmad.tif. These are structured using their grid index and the year (x, y, year).
+Output files are Cloud-Optimized GeoTIFFs structured by grid index and year (`x/y/year`). Example:
 
-Each annual tile's output includes:
+```
+https://source.coop/auspatious/geomad-sids/ci_ls_geomad/0-2-1/118/125/2000/ci_ls_geomad_118_125_2000_bcmad.tif
+```
+
+All outputs for a tile/year are included in a STAC item JSON e.g.
+```https://data.source.coop/auspatious/geomad-sids/ci_ls_geomad/0-2-1/118/125/2000/ci_ls_geomad_118_125_2000.stac-item.json```
 
 ### Geometric Median Mosaic
 
-A cloud-free annual surface reflectance composite generated using the geometric median of all valid observations within the compositing window.
+A cloud-free annual surface reflectance composite generated using the geometric median of all valid observations. Unlike independent per-band median compositing, the geometric median preserves spectral relationships between bands, producing more physically realistic reflectance values.
 
-The geometric median preserves spectral relationships between bands better than independent per-band median compositing and generally produces more physically realistic reflectance values.
+[Technical details →](https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#geometric-median)
 
-More technical information here: https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#geometric-median
+| Band   | Description              |
+| ------ | ------------------------ |
+| blue   | Blue                     |
+| green  | Green                    |
+| red    | Red                      |
+| nir08  | Near Infrared 0.8μm      |
+| swir16 | Short-wave Infrared 1.6μm |
+| swir22 | Short-wave Infrared 2.2μm |
 
 ### Median Absolute Deviation (MAD)
 
-A multiband raster containing the Median Absolute Deviation for each spectral band.
+A robust measure of temporal variability useful for quantifying uncertainty, identifying unstable surfaces, detecting environmental change, and supporting machine learning workflows.
 
-MAD provides a robust measure of temporal variability and can be used to:
+[Technical details →](https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#median-absolute-deviation)
 
-* Quantify uncertainty
-* Identify unstable surfaces
-* Detect environmental change
-* Support machine learning workflows
+| Band   | Description                  |
+| ------ | ---------------------------- |
+| emad   | Euclidean distance           |
+| smad   | Cosine (spectral) distance   |
+| bcmad  | Bray–Curtis dissimilarity    |
 
-More technical information here https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#median-absolute-deviation
+### Other bands
 
+A `count` band is also included, recording the number of valid observations used per pixel.
 
-## Bands
+---
 
-The geometric median product contains the standard Landsat surface reflectance bands:
+## Applications
 
-| Band  | Description           |
-| ----- | --------------------- |
-| blue  | Blue                  |
-| green | Green                 |
-| red   | Red                   |
-| nir08 | Near Infrared 08     |
-| swir16 | Short-wave Infrared 16 |
-| swir22 | Short-wave Infrared 22 |
+These products are designed for change detection and land surface analysis. Auspatious uses them to classify land use/land cover across SIDS and Pacific countries/territories, with annual outputs feeding into Land Degradation Neutrality calculations for [UN SDG Indicator 15.3.1](https://sdgs.unep.org/article/sdg-indicator-1531) (proportion of land that is degraded over total land area).
 
-
-The MAD product contains corresponding variability layers for each spectral band.
-
-| Band  | Description                |
-| ----- | -------------------------- |
-| emad  | Euclidean distance         |
-| smad  | Cosine (spectral) distance |
-| bcmad | Bray Curtis dissimilarity  |
-
-There is also a count band which has the total number of observations used to created these products, per pixel.
-
-## What can these products be used for?
-
-Use these for any change detection analysis.
-
-These products will be used by Auspatious to classfify the SIDs (and Pacific) countries/territories Land Use/Land Cover. These annual outputs will then be used to calculate Land Degredation Neutrality for United Nations' Sustainable Development Goals reporting (specifically [UN SDG Indicator 15.3.1: Proportion of land that is degraded over total land area](https://sdgs.unep.org/article/sdg-indicator-1531)).
-
+---
 
 ## Method
 
-Due to limits in the source data we have some differences in how the calculation runs.
-First we search for tier 1 data for the year we are processing, if not enough timesteps are available, we then include tier 2 data, if still not enough is found, we then inlcude data from one year on either side of the year we are creating. In a few cases there is not enough data even with this relaxation of the search parameters.
+### Input Data
 
-Cloud masking is very important to the creation of cloud-free mosaics. We aggresively mask cloud, preferring to be missing small areas of output products (where no cloud-free data is available), rather than producing cloudy outputs. In addition to masking cloud, dilated cloud, cirrus from the qa_pixel band, we also mask cloud shadow and pixels flagged as snow. Snow is very unlikely in almost all of our AOI, but it is common in the data. This is important for the aggressive cloud masking that we need. As well as using qa_pixel data to filter pixels, we also use custom whiteness and blueness indices to filter any cloud that was not flagged.
+Landsat Collection 2 Tier 1 data is preferred. Where insufficient timesteps are available, Tier 2 data is included, and if still insufficient, data from ±1 year is incorporated. A small number of tiles remain incalculable even after these relaxations.
 
-We apply morphological filters to the cloud mask. This cleans up the cloud mask and catches small pixel groups that are surrounded by cloud.
+### Cloud Masking
 
-We also mask saturated pixels using the qa_radsat band however this is much less widespread than cloud.
+Cloud masking is aggressive - missing pixels are preferred over cloudy outputs. Masked layers include cloud, dilated cloud, cirrus, cloud shadow, and snow (flagged from `qa_pixel`). Additional custom whiteness and blueness indices catch residual unmasked cloud. Morphological filters clean up the mask and remove small isolated pixel groups surrounded by cloud. Saturated pixels are masked using `qa_radsat` (although saturation is much less impactful than cloud).
 
+Snow is included as a mask because of its unlikelihood to be present in this AOI, and its common presence in the input data.
+
+---
+
+## Quality
+
+Some areas remain partially incomplete. Cloud-persistent regions such as Fiji can lack sufficient cloud-free observations in certain years even after broadening the input data window.
+
+---
 
 ## Data Access
 
-The dataset is distributed through Source Cooperative:
-
-https://source.coop/auspatious/geomad-sids
-
+Data is distributed through Source Cooperative: https://source.coop/auspatious/geomad-sids. The 2 regions are subfolders.
 
 ### STAC GeoParquet Index
 
+A combined index for both regions is available at:
+
+```
 https://data.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet
+```
 
-The GeoParquet index contains STAC metadata for all annual tiles and can be queried directly using DuckDB, GeoPandas, or Apache Arrow-compatible tools without downloading the full catalog.
+Queryable directly with DuckDB, GeoPandas, or any Apache Arrow-compatible tool - no need to download the full catalog.
 
-This includes both grids/regions.
+Within seconds you can search (spatially and temporally), load, and visualise the data using the following Python code.
 
-Within seconds you can search, load, and visualise this data using the following Python code.
-
-### Search the STAC GeoParquet Index
-
-
+### Search the Index
 
 ```python
 from rustac import search_sync
 from pystac import Item, ItemCollection
 
 url = "https://data.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet"
-
 bbox = [166.0, -22.5, 167.0, -21.5]  # New Caledonia example
 
-raw = search_sync(
-    url,
-    bbox=bbox,
-    datetime="2023",
-)
-
-items = [Item.from_dict(doc) for doc in raw]
+search_items = search_sync(url, bbox=bbox, datetime="2023")
+items = [Item.from_dict(doc) for doc in search_items]
 collection = ItemCollection(items)
 
 print(f"Found {len(collection.items)} items for New Caledonia in 2023")
 ```
 
-### Load Data with odc-stac
+### Load with odc-stac
 
 ```python
 from odc.stac import load
 
-ds = load(
-    collection,
-    chunks={}, # Lazy load
-)
-
+ds = load(collection, chunks={})  # Lazy load with chunks
 print(ds)
 ```
 
@@ -243,24 +231,18 @@ print(ds)
 import matplotlib.pyplot as plt
 
 rgb = (
-    ds[["red", "green", "blue"]] # You can alternaitvely visualise any of these bands: blue, green, red, nir08, swir16, swir22, count, smad, emad, bcmad.
-    .isel(time=0) # select first timestep
+    ds[["red", "green", "blue"]]  # Visualise any band or combination of bands: blue, green, red, nir08, swir16, swir22, count, smad, emad, bcmad
+    .isel(time=0) # Select first timestep
     .to_array()
     .transpose("y", "x", "variable")
     .squeeze()
 )
-# Percentile stretch
+# Percentile stretch for visualisation
 p2, p98 = rgb.quantile([0.02, 0.98])
-rgb_norm = (rgb - p2) / (p98 - p2)
-rgb_norm = rgb_norm.clip(0, 1)
+rgb_norm = ((rgb - p2) / (p98 - p2)).clip(0, 1)
 
 plt.figure(figsize=(10, 10))
 plt.imshow(rgb_norm)
 plt.axis("off")
 plt.show()
 ```
-
-
-## Quality
-
-This product is missing pixels in some areas. Some areas such as Fiji, for some years are commonly obscured by cloud so even with the broadened inclusion of input data it can still be impossible to create good outputs.
