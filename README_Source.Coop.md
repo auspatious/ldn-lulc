@@ -1,10 +1,8 @@
-# Geometric Median & Median Absolute Deviation Mosaics for Small Island Developing States (SIDS) and Pacific Community (SPC)'s countries/territories
+# Geometric Median & Median Absolute Deviation Mosaics for Small Island Developing States
 
 Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS) and Pacific Community (SPC)'s countries/territories for 2000-2025, generated using robust pixel compositing methods for long-term environmental monitoring, land cover mapping, coastal change detection, and machine learning applications.
 
 **Created by:** [Auspatious](https://auspatious.com/)
-
-**Repository:** https://source.coop/auspatious/geomad-sids
 
 **Code:** https://github.com/auspatious/ldn-lulc
 
