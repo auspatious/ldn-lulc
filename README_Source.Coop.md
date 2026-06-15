@@ -1,6 +1,6 @@
 # Geometric Median & Median Absolute Deviation Mosaics for Small Island Developing States (SIDS) and Pacific Community (SPC)'s countries/territories
 
-Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS) and Pacific Community (SPC)'s countries/territories for  2000-2025, generated using robust pixel compositing methods for long-term environmental monitoring, land cover mapping, coastal change detection, and machine learning applications.
+Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS) and Pacific Community (SPC)'s countries/territories for 2000-2025, generated using robust pixel compositing methods for long-term environmental monitoring, land cover mapping, coastal change detection, and machine learning applications.
 
 **Created by:** [Auspatious](https://auspatious.com/)
 
@@ -8,7 +8,7 @@ Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS)
 
 **Code:** https://github.com/auspatious/ldn-lulc
 
-**License:** [Open Data Commons Attribution License (ODC-By)](https://opendatacommons.org/licenses/by/)
+**License:** [Creative Commons BY](https://creativecommons.org/licenses/by/4.0/)
 
 **Visualisation app:** https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
 
@@ -228,7 +228,7 @@ ds = load(collection, chunks={})  # Lazy load with chunks
 print(ds)
 ```
 
-### Visualise the GeoMedian (RGB)
+### Visualise in Visual Colours (RGB)
 
 ```python
 rgb = (
