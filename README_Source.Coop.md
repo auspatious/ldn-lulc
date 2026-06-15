@@ -1,11 +1,14 @@
-# Geometric Median & Median Absolute Deviation Mosaics for Small Island Developing States (SIDS)
+# Geometric Median & Median Absolute Deviation Mosaics for Small Island Developing States (SIDS) and Secretariat of the Pacific Community (SPC)'s countries/territories
 
-Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS) and selected Pacific territories for  2000-2025, generated using robust pixel compositing methods for long-term environmental monitoring, land cover mapping, coastal change detection, and machine learning applications.
+Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS) and Secretariat of the Pacific Community (SPC)'s countries/territories for  2000-2025, generated using robust pixel compositing methods for long-term environmental monitoring, land cover mapping, coastal change detection, and machine learning applications.
 
 **Created by:** [Auspatious](https://auspatious.com/)
+
 **Repository:** https://source.coop/auspatious/geomad-sids
+
 **Code:** https://github.com/auspatious/ldn-lulc
-**License:** Open Data Commons Attribution License (ODC-By)
+
+**License:** [Open Data Commons Attribution License (ODC-By)](https://opendatacommons.org/licenses/by/)
 
 **Visualisation app:** https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
 
@@ -13,6 +16,8 @@ Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS)
 
 ## Dataset Summary
 
+| Property | Value |
+| - | - |
 | Spatial resolution  | 30 m |
 | Temporal coverage   | 2000–2025 |
 | Temporal resolution | Annual |
@@ -22,7 +27,7 @@ Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS)
 | Metadata            | Spatio-Temporal Asset Catalog (STAC) |
 | Countries/territories | 60 |
 | Regions             | 2 |
-| Total grid tiles    | 817 |
+| Grid tiles processed    | 817 |
 
 ---
 
@@ -30,10 +35,10 @@ Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS)
 
 Coverage includes:
 
-- Small Island Developing States
-- Digital Earth Pacific countries/territories
+- [Small Island Developing States](https://www.un.org/ohrlls/content/about-small-island-developing-states)
+- [Secretariat of the Pacific Community (SPC) countries/territories](https://en.wikipedia.org/wiki/Pacific_Community#Membership)
 
-There is overlap between these 2 groups.
+Many countries/territories belong to both of these groups. In that case, they are placed in the Pacific region.
 
 #### Pacific (22)
 
@@ -105,7 +110,7 @@ There is overlap between these 2 groups.
 
 ## Regions & Grids
 
-Tiling uses [ODC Gridspec](https://odc-geo.readthedocs.io/en/latest/_api/odc.geo.gridspec.GridSpec.html) to partition the data into spatial chunks for processing. Two gridspecs are used because the Pacific region straddles the antimeridian, which would cause a single grid in EPSG:6933 to break at that boundary.
+Tiling is done using [ODC Gridspec](https://odc-geo.readthedocs.io/en/latest/_api/odc.geo.gridspec.GridSpec.html) to partition the data into spatial chunks for processing. Two gridspecs are used because the Pacific region straddles the antimeridian, which would cause a single grid in EPSG:6933 to break at that boundary.
 
 | Region | Countries/Territories | Grid tiles | Grid GeoJSON | Output | CRS |
 | --- | --- | --- | --- | --- | --- |
@@ -129,7 +134,7 @@ All outputs for a tile/year are included in a STAC item JSON e.g.
 
 A cloud-free annual surface reflectance composite generated using the geometric median of all valid observations. Unlike independent per-band median compositing, the geometric median preserves spectral relationships between bands, producing more physically realistic reflectance values.
 
-[Technical details →](https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#geometric-median)
+[See more technical details here.](https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#geometric-median)
 
 | Band   | Description              |
 | ------ | ------------------------ |
@@ -144,7 +149,7 @@ A cloud-free annual surface reflectance composite generated using the geometric 
 
 A robust measure of temporal variability useful for quantifying uncertainty, identifying unstable surfaces, detecting environmental change, and supporting machine learning workflows.
 
-[Technical details →](https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#median-absolute-deviation)
+[See more technical details here.](https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#median-absolute-deviation)
 
 | Band   | Description                  |
 | ------ | ---------------------------- |
@@ -196,9 +201,7 @@ A combined index for both regions is available at:
 https://data.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet
 ```
 
-Queryable directly with DuckDB, GeoPandas, or any Apache Arrow-compatible tool - no need to download the full catalog.
-
-Within seconds you can search (spatially and temporally), load, and visualise the data using the following Python code.
+Queryable directly - no need to download the full catalog. Within seconds you can search (spatially and temporally), load, and visualise the data using the following Python code.
 
 ### Search the Index
 
@@ -207,13 +210,13 @@ from rustac import search_sync
 from pystac import Item, ItemCollection
 
 url = "https://data.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet"
-bbox = [166.0, -22.5, 167.0, -21.5]  # New Caledonia example
+bbox = [166.0, -22.5, 167.0, -21.5]  # subset of New Caledonia example
 
 search_items = search_sync(url, bbox=bbox, datetime="2023")
 items = [Item.from_dict(doc) for doc in search_items]
 collection = ItemCollection(items)
 
-print(f"Found {len(collection.items)} items for New Caledonia in 2023")
+print(f"Found {len(collection.items)} items for the AOI in New Caledonia in 2023")
 ```
 
 ### Load with odc-stac
