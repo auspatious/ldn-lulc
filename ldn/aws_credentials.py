@@ -11,10 +11,10 @@ import obstore
 from botocore.client import BaseClient
 from dep_tools.writers import write_to_s3
 
-from ldn.utils import AWS_REGION, SOURCE_COOP_PREFIX_GEOMAD, SOURCE_COOP_PREFIX_PREDICTION, SOURCE_COOP_PUBLIC_URL
-
-is_public = bool(SOURCE_COOP_PUBLIC_URL) and bool(SOURCE_COOP_PREFIX_GEOMAD) and bool(SOURCE_COOP_PREFIX_PREDICTION)
-
+from ldn.utils import (
+    AWS_REGION,
+    is_source_coop,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ def get_write_session() -> boto3.Session:
     key = os.environ.get(_WRITE_KEY)
     secret = os.environ.get(_WRITE_SECRET)
 
-    if not (is_public):
+    if not is_source_coop:
         logger.info("SOURCE_COOP_PUBLIC_URL or prefixes not set; skipping write credential setup.")
         return boto3.Session(region_name=AWS_REGION)
 

@@ -62,6 +62,36 @@ cli_training_app = typer.Typer()
 PC_CLIENT = None
 
 
+# These tiles are representative of different environments e.g. forest, atoll, volcanic, elevated, urban, beach,
+# wetland, grassland, cropland, etc, Give me more if more than 5 are needed
+PACIFIC_TRAINING_TILES = [
+    # Papua New Guinea: Dense tropical rainforest & highland montane forest.
+    ("028_030", "pacific", {"Papua New Guinea": "PNG"}),  # Capital city and coast.
+    ("024_034", "pacific", {"Papua New Guinea": "PNG"}),  # Highland.
+    ("023_031", "pacific", {"Papua New Guinea": "PNG"}),  # River delta.
+    # Kiribati: Low-lying coral atoll, almost entirely at sea level, classic open-ocean/lagoon environment.
+    ("058_043", "pacific", {"Kiribati": "KIR"}),
+    ("059_040", "pacific", {"Kiribati": "KIR"}),
+    # Vanuatu: Active volcanic islands with crater lakes, lava fields, and cloud forest.
+    ("051_023", "pacific", {"Vanuatu": "VUT"}),
+    ("053_018", "pacific", {"Vanuatu": "VUT"}),  # Mt Yasur volcano.
+    ("052_022", "pacific", {"Vanuatu": "VUT"}),  # Lava lake.
+    # Samoa: Elevated volcanic interior with waterfalls and lava tubes, fringed by reef/beach coastline.
+    # 2 tiles pretty much covers all of Samoa.
+    ("074_025", "pacific", {"Samoa": "WSM"}),
+    ("075_025", "pacific", {"Samoa": "WSM"}),
+    # Fiji: The most "mixed urban + agricultural" of the group, with sugarcane croplands,
+    # mangrove wetlands, and a developed capital (Suva)
+    ("063_020", "pacific", {"Fiji": "FJI"}),  # Elevation.
+    ("066_022", "pacific", {"Fiji": "FJI"}),  # AM-crossing.
+    ("064_020", "pacific", {"Fiji": "FJI"}),  # Suva urban area.
+    # Palau for raised limestone/rock island jungle
+    ("013_050", "pacific", {"Palau": "PLW"}),
+    # New Caledonia for maquis shrubland / lagoon
+    ("050_015", "pacific", {"New Caledonia": "NCL"}),
+]
+
+
 def _get_pc_client():
     """Return a cached Planetary Computer STAC client."""
     global PC_CLIENT

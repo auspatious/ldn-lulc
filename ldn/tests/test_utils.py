@@ -301,3 +301,25 @@ def test_get_collection_url_root(bucket, source_coop_url, expected):
 )
 def test_get_public_https_prefix(bucket, source_coop_url, expected):
     assert get_public_https_prefix(bucket, source_coop_url) == expected
+
+
+def test_parse_years_reversed_range():
+    with pytest.raises(ValueError, match="Start year must be <= end year"):
+        parse_years("2023-2020")
+
+
+def test_parse_years_same_year_range():
+    assert parse_years("2020-2020") == [2020]
+
+
+@pytest.mark.parametrize(
+    "owner,expected",
+    [
+        ("dep", "dep_ls_geomad"),
+        ("ci", "ci_ls_geomad"),
+        (None, "ls_geomad"),
+    ],
+)
+def test_dataset_prefix(owner, expected):
+    with patch(f"{MODULE}.SENSOR", "ls"):
+        assert dataset_prefix(owner, "geomad") == expected

@@ -4,11 +4,9 @@ from datetime import datetime as dt
 from pathlib import Path
 from typing import Literal
 
-import boto3
 import numpy as np
 import pandas as pd
 import requests
-import rioxarray  # noqa: F401 for the .rio accessor
 import typer
 import xarray as xr
 from dask.distributed import Client as DaskClient
@@ -44,13 +42,13 @@ from ldn.utils import (
     PREDICTION_VERSION,
     SENSOR,
     SOURCE_COOP_PREFIX_PREDICTION,
-    SOURCE_COOP_PUBLIC_URL,
     WGS84,
     LdnError,
     get_analysis_epsg,
     get_collection_url_root,
     get_full_path_prefix,
     get_geomad_stac_geoparquet_url,
+    is_source_coop,
     parse_tile_id,
 )
 
@@ -485,13 +483,11 @@ def run_classify_task(
     logger.info("Loading model")
     loaded_model = _load_joblib_model(model_path)
 
-    is_public = bool(SOURCE_COOP_PUBLIC_URL)  # Source.Coop.
-
     full_path_prefix = get_full_path_prefix(bucket)
     logger.info(f"Full path prefix: {full_path_prefix}")
 
     itempath = PrefixedS3ItemPath(
-        key_prefix=SOURCE_COOP_PREFIX_PREDICTION if is_public else None,
+        key_prefix=SOURCE_COOP_PREFIX_PREDICTION if is_source_coop else None,
         prefix=owner,
         bucket=bucket,
         sensor=SENSOR,
@@ -506,9 +502,7 @@ def run_classify_task(
     write_session = get_write_session()
     write_client = write_session.client("s3")
 
-    aws_client_to_use = write_client if is_public else boto3.client("s3")
-
-    if not overwrite and object_exists(bucket, stac_key, client=aws_client_to_use):
+    if not overwrite and object_exists(bucket, stac_key, client=write_client):
         logger.info(f"Item already exists at {stac_document}, skipping.")
         return
     logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
@@ -554,7 +548,7 @@ def run_classify_task(
 
     stac_writer = AwsStacWriter(
         itempath,
-        client=aws_client_to_use,
+        client=write_client,
     )
 
     try:
@@ -575,7 +569,7 @@ def run_classify_task(
                 stac_creator=stac_creator,
                 stac_writer=stac_writer,
             ).run()
-            typer.echo(f"Completed processing. Wrote {len(paths)} files to {stac_document}")
+            logger.info(f"Completed processing. Wrote {len(paths)} files to {stac_document}")
 
     except Exception as e:
         logger.exception(f"Failed to process with error: {e}")

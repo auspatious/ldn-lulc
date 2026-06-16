@@ -40,6 +40,7 @@ from ldn.utils import (
     get_geomad_stac_geoparquet_url,
     get_s3_mosaic_write_path,
     get_stac_geoparquet_key,
+    is_source_coop,
     owner_for_region,
     parse_tile_id,
     parse_years,
@@ -73,7 +74,7 @@ def version() -> None:
     """Echo the version of the software."""
 
     version = get_version()
-    typer.echo(version)
+    logger.info(version)
 
     return
 
@@ -132,8 +133,8 @@ def _find_existing_tasks(
     Lists all STAC items under each (bucket, owner) prefix and returns
     a set of (id, year) tuples for tasks whose output already exists.
     """
-    is_public = bool(SOURCE_COOP_PUBLIC_URL)
 
+    # TODO: same logic in utils
     def _source_coop_prefix(dataset_id: str) -> str | None:
         """Return the source.coop path prefix for a dataset, or None."""
         if dataset_id == GEOMAD_DATASET_ID:
@@ -158,10 +159,10 @@ def _find_existing_tasks(
     existing_keys: dict[str, set[str]] = {}
     for combo_bucket, combo_owner in region_combos:
         s3_prefix = f"{dataset_prefix(combo_owner, dataset_id)}/{version}/"
-        if is_public and sc_prefix:
+        if is_source_coop and sc_prefix:
             s3_prefix = f"{sc_prefix}/{s3_prefix}"
 
-        keys = _find_stac_items_s3(combo_bucket, s3_prefix, public=is_public)
+        keys = _find_stac_items_s3(combo_bucket, s3_prefix, public=is_source_coop)
         existing_keys[f"{combo_bucket}/{combo_owner}"] = set(keys)
 
     total_existing = sum(len(v) for v in existing_keys.values())
@@ -178,11 +179,11 @@ def _find_existing_tasks(
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
 
         full_path_prefix = f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
-        if is_public and sc_prefix:
+        if is_source_coop and sc_prefix:
             full_path_prefix = f"{SOURCE_COOP_PUBLIC_URL}/{sc_prefix}"
 
         itempath = PrefixedS3ItemPath(
-            key_prefix=sc_prefix if is_public else None,
+            key_prefix=sc_prefix if is_source_coop else None,
             prefix=owner,
             bucket=bucket,
             sensor=SENSOR,
@@ -324,13 +325,13 @@ def index_to_stac_geoparquet(
 
     dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_prediction)
 
-    is_public = bool(SOURCE_COOP_PUBLIC_URL)
-
     targets: list[tuple[str, str]] = []
     for r in regions:
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
         short_prefix = dataset_prefix(owner, dataset_id)
-        full_prefix = f"{source_coop_prefix}/{short_prefix}/{version}" if is_public else f"{short_prefix}/{version}"
+        full_prefix = (
+            f"{source_coop_prefix}/{short_prefix}/{version}" if is_source_coop else f"{short_prefix}/{version}"
+        )
         targets.append((full_prefix, short_prefix))
         logger.info(f"Region for indexing: '{full_prefix}'")
 

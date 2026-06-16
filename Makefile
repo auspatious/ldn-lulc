@@ -15,7 +15,7 @@ VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; prin
 VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)");
 VERSION_MODEL := $(shell python3 -c "from ldn.utils import MODEL_VERSION; print(MODEL_VERSION)");
 
-PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.utils import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))");
+PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.training_data import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))");
 
 DECIMATED ?= --no-decimated;
 
@@ -226,3 +226,43 @@ mosaic-prediction-source-coop-test:
 # export AWS_WRITE_ACCESS_KEY_ID=""
 # export AWS_WRITE_SECRET_ACCESS_KEY=""
 # export AWS_WRITE_SESSION_TOKEN=""
+
+
+
+# # Test for all 3 bucket styles
+# print tasks works for both s3 and source.coop
+# poetry run ldn print-tasks --years="2024" --region="pacific" --version-geomad="0-0-2";
+
+# works for both i think
+# poetry run ldn geomad run \
+# 			--tile-id 066_022 \
+# 			--region pacific \
+# 			--year 2025 \
+# 			--version test \
+# 			--decimated \
+# 			--overwrite;
+
+# works for both i think
+# poetry run ldn index-to-stac-geoparquet \
+# 	--dataset "geomad" \
+# 	--region "all" \
+# 	--version-geomad test \
+# 	--version-prediction test;
+
+# works for both i think
+# poetry run ldn make-mosaics \
+# 	--dataset geomad \
+# 	--version-geomad test;
+
+# works for both i think
+# poetry run ldn training generate-training-data \
+# 			--tile-id 066_022 \
+# 			--region pacific \
+#             --year 2025 \
+# 			--country-name "Fiji" \
+# 			--country-code "FJI" \
+#             --geomad-version test \
+#             --training-data-version test;
+
+
+# poetry run pytest

@@ -1,10 +1,23 @@
 import logging
+import os
 import re
 from typing import Literal
 
 from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+
+
+load_dotenv()
+
+BUCKET = os.environ.get("BUCKET")
+SOURCE_COOP_PUBLIC_URL = os.environ.get("SOURCE_COOP_PUBLIC_URL") or None
+SOURCE_COOP_PREFIX_GEOMAD = os.environ.get("SOURCE_COOP_PREFIX_GEOMAD") or None
+SOURCE_COOP_PREFIX_PREDICTION = os.environ.get("SOURCE_COOP_PREFIX_PREDICTION") or None
+is_source_coop = (
+    bool(SOURCE_COOP_PUBLIC_URL) and bool(SOURCE_COOP_PREFIX_GEOMAD) and bool(SOURCE_COOP_PREFIX_PREDICTION)
+)
 
 SIDS_COUNTRIES_AND_CODES = {
     # Caribbean
@@ -75,56 +88,10 @@ ALL_COUNTRIES = {**SIDS_COUNTRIES_AND_CODES, **DEP_COUNTRIES_AND_CODES}
 # Get SIDS countries that are not in DEP for CI Grid use.
 NON_DEP_COUNTRIES = {k: v for k, v in SIDS_COUNTRIES_AND_CODES.items() if k not in DEP_COUNTRIES_AND_CODES}
 
-# These tiles are representative of different environments e.g. forest, atoll, volcanic, elevated, urban, beach,
-# wetland, grassland, cropland, etc, Give me more if more than 5 are needed
-PACIFIC_TRAINING_TILES = [
-    # Papua New Guinea: Dense tropical rainforest & highland montane forest.
-    ("028_030", "pacific", {"Papua New Guinea": "PNG"}),  # Capital city and coast.
-    ("024_034", "pacific", {"Papua New Guinea": "PNG"}),  # Highland.
-    ("023_031", "pacific", {"Papua New Guinea": "PNG"}),  # River delta.
-    # Kiribati: Low-lying coral atoll, almost entirely at sea level, classic open-ocean/lagoon environment.
-    ("058_043", "pacific", {"Kiribati": "KIR"}),
-    ("059_040", "pacific", {"Kiribati": "KIR"}),
-    # Vanuatu: Active volcanic islands with crater lakes, lava fields, and cloud forest.
-    ("051_023", "pacific", {"Vanuatu": "VUT"}),
-    ("053_018", "pacific", {"Vanuatu": "VUT"}),  # Mt Yasur volcano.
-    ("052_022", "pacific", {"Vanuatu": "VUT"}),  # Lava lake.
-    # Samoa: Elevated volcanic interior with waterfalls and lava tubes, fringed by reef/beach coastline.
-    # 2 tiles pretty much covers all of Samoa.
-    ("074_025", "pacific", {"Samoa": "WSM"}),
-    ("075_025", "pacific", {"Samoa": "WSM"}),
-    # Fiji: The most "mixed urban + agricultural" of the group, with sugarcane croplands,
-    # mangrove wetlands, and a developed capital (Suva)
-    ("063_020", "pacific", {"Fiji": "FJI"}),  # Elevation.
-    ("066_022", "pacific", {"Fiji": "FJI"}),  # AM-crossing.
-    ("064_020", "pacific", {"Fiji": "FJI"}),  # Suva urban area.
-    # Palau for raised limestone/rock island jungle
-    ("013_050", "pacific", {"Palau": "PLW"}),
-    # New Caledonia for maquis shrubland / lagoon
-    ("050_015", "pacific", {"New Caledonia": "NCL"}),
-]
-
-
 GEOMAD_VERSION = "0-2-1"
 PREDICTION_VERSION = "0-0-4"
 MODEL_VERSION = "0-0-4"
 TRAINING_DATA_VERSION = "0-0-4"
-
-# TODO: Should these be env vars instead e.g. SOURCE_COOP_PUBLIC_URL?
-
-# Source.Coop setup:
-# SOURCE_COOP_PUBLIC_URL = "https://data.source.coop"  # For source.coop.
-# SOURCE_COOP_PREFIX_GEOMAD = "auspatious/geomad-sids"  # For source.coop.
-# SOURCE_COOP_PREFIX_PREDICTION = "auspatious/lulc-sids"  # For source.coop.
-# BUCKET = "us-west-2.opendata.source.coop"  # For source.coop.
-
-# Non-Source.Coop setup:
-SOURCE_COOP_PUBLIC_URL = None  # For non-source.coop.
-SOURCE_COOP_PREFIX_GEOMAD = None  # For non-source.coop.
-SOURCE_COOP_PREFIX_PREDICTION = None  # For non-source.coop.
-BUCKET = "data.ldn.auspatious.com"  # Auspatious custom domain bucket
-# BUCKET = "dep-public-staging" # DEP Staging (typical bucket)
-# BUCKET = "dep-public-data" # DEP Prod (typical bucket)
 
 PACIFIC_OWNER = "dep"
 NON_PACIFIC_OWNER = "ci"
@@ -217,10 +184,10 @@ def get_geomad_stac_geoparquet_url(bucket: str, version: str) -> str:
 def get_analysis_epsg(
     region: Literal["pacific", "non-pacific"],
 ) -> Literal["EPSG:3832", "EPSG:6933"]:
+    """Return the appropriate EPSG code for analysis based on the region."""
     if region == "pacific":
         return "EPSG:3832"
-    else:
-        return "EPSG:6933"
+    return "EPSG:6933"
 
 
 # Our custom exception class for the project. Good for filtering errors in processing.
@@ -232,11 +199,14 @@ def parse_years(years: str) -> list[int]:
     """Parse a years string into a list of integers.
 
     Accepts a comma-separated list (e.g. '2020,2021') or a range (e.g. '2010-2023').
+    Ranges must be ascending (e.g. '2020-2023').
     """
     if "," in years:
         return [int(y.strip()) for y in years.split(",")]
     elif "-" in years:
         start_year, end_year = map(int, years.split("-"))
+        if start_year > end_year:
+            raise ValueError(f"Invalid year range: '{years}'. Start year must be <= end year.")
         return list(range(start_year, end_year + 1))
     else:
         return [int(years)]

@@ -23,7 +23,7 @@ def _band_dataset(**bands: np.ndarray) -> xr.Dataset:
 
 
 def _spectral_dataset(nir=0.8, red=0.2, green=0.4, blue=0.1, swir16=0.5, swir22=0.3) -> xr.Dataset:
-    """1×1 float Dataset with all bands required by calculate_indices."""
+    """1x1 float Dataset with all bands required by calculate_indices."""
     return xr.Dataset(
         {
             "nir08": xr.DataArray([[nir]]),
@@ -49,7 +49,7 @@ def _flat_dem(size=5, elevation=100.0, pixel_size=30.0) -> xr.DataArray:
 
 
 def _x_ramp_dem(pixel_size=30.0) -> xr.DataArray:
-    """3×3 DEM rising by exactly 1 m per pixel eastward, flat north–south."""
+    """3x3 DEM rising by exactly 1 m per pixel eastward, flat north-south."""
     return xr.DataArray(
         np.array([[100, 101, 102], [100, 101, 102], [100, 101, 102]], dtype=np.float32),
         dims=("y", "x"),
@@ -345,7 +345,7 @@ class TestLoadDemTerrainGuards:
 
     @pytest.mark.parametrize("n", [1, 4, 9])
     def test_valid_item_counts_proceed_past_guard(self, mock_stac_client, n):
-        """1–9 items must not trigger either guard clause."""
+        """1-9 items must not trigger either guard clause."""
         geobox = MagicMock()
         geobox.crs = "EPSG:6933"
         geobox.extent.geom = MagicMock()

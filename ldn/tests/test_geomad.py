@@ -107,9 +107,12 @@ def test_set_stac_properties_datetime_three_year_span() -> None:
 
 # # If we don't want to overwrite, and the destination file already exists, skip it
 # # Use the write client to check if the item already exists at the destination, since it may have different creds.
-# if not overwrite and object_exists(bucket, stac_key, client=aws_client_to_use):
-#     typer.echo(f"Item already exists at {stac_document}, skipping.")
+# if not overwrite and object_exists(bucket, stac_key, client=write_client):
+#     logger.info(f"Item already exists at {stac_document}, skipping.")
 #     return
 # else:
 #     if not overwrite:
-#         typer.echo(f"Item does not exist at {stac_document}, processing tile.")
+#         logger.info(f"Item does not exist at {stac_document}, processing tile.")
+
+
+# TODO: test count_scenes

@@ -2,7 +2,6 @@ import logging
 import sys
 from typing import Literal
 
-import boto3
 import typer
 from dask.distributed import Client as DaskClient
 from dask.distributed import KilledWorker
@@ -37,9 +36,9 @@ from ldn.utils import (
     PACIFIC_OWNER,
     SENSOR,
     SOURCE_COOP_PREFIX_GEOMAD,
-    SOURCE_COOP_PUBLIC_URL,
     get_collection_url_root,
     get_full_path_prefix,
+    is_source_coop,
     owner_for_region,
     parse_tile_id,
 )
@@ -51,8 +50,8 @@ EXIT_OOM = 42  # KilledWorker — retry with more resources
 EXIT_SKIP = 43  # too few scenes / no items — expected, don't retry
 
 
-def count_scenes(
-    tile_id: str = typer.Option(..., help="Tile ID to count scenes for."),
+def _count_scenes(
+    tile_id_tuple: tuple[int, int] = typer.Option(..., help="Tile ID tuple to count scenes for."),
     region: Literal["pacific", "non-pacific"] = typer.Option(..., help="Region tile is in."),
     year: str = typer.Option(..., help="Year to count scenes for."),
     include_t2: bool = typer.Option(
@@ -61,8 +60,6 @@ def count_scenes(
     ),
 ) -> int:
     """Count (tier 1 or all) scenes per tile and year."""
-
-    tile_id_tuple = parse_tile_id(tile_id)
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_id_tuple)
 
@@ -120,7 +117,7 @@ def run(
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
 ) -> None:
-    f"""Run GeoMAD processing on a single tile for a year.
+    """Run GeoMAD processing on a single tile for a year.
 
     Searches USGS STAC for Landsat scenes covering the given tile and year,
     applies cloud masking, computes the geometric median and median absolute
@@ -139,13 +136,15 @@ def run(
     if version != GEOMAD_VERSION:
         logger.info(f"Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version}).")
 
+    tile_id_tuple = parse_tile_id(tile_id)
+
     year_int = int(year)
     search_year = year
     search_kwargs = {"query": {"landsat:collection_category": {"in": ["T1"]}}}
 
     min_scenes_threshold = 20
 
-    scene_count_without_t2 = count_scenes(tile_id=tile_id, year=year, region=region, include_t2=False)
+    scene_count_without_t2 = _count_scenes(tile_id_tuple=tile_id_tuple, year=year, region=region, include_t2=False)
     logger.info(f"Scene count (tier 1) for tile/year: {scene_count_without_t2}")
 
     if scene_count_without_t2 >= min_scenes_threshold:
@@ -154,7 +153,7 @@ def run(
 
     else:
         logger.info(f"Scene count ({scene_count_without_t2}) is below {min_scenes_threshold}, trying with T2 too.")
-        scene_count_with_t2 = count_scenes(tile_id=tile_id, year=year, region=region, include_t2=True)
+        scene_count_with_t2 = _count_scenes(tile_id_tuple=tile_id_tuple, year=year, region=region, include_t2=True)
 
         if scene_count_with_t2 >= min_scenes_threshold:
             logger.info(f"Scene count with T2 ({scene_count_with_t2}) is sufficient, using T1 and T2.")
@@ -171,19 +170,15 @@ def run(
                 year_start = year_int - ls7_buffer_years
                 year_end = year_int + ls7_buffer_years
                 search_year = f"{year_start}/{year_end}"
-                typer.echo(f"Using {ls7_buffer_years}-year buffered temporal search for LS7 era: {search_year}")
+                logger.info(f"Using {ls7_buffer_years}-year buffered temporal search for LS7 era: {search_year}")
             else:
                 logger.info("Not in LS7 era so not using buffered temporal search.")
-
-    tile_id_tuple = parse_tile_id(tile_id)
 
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_id_tuple)
 
     # Resolve prefix based on tile region and owner override
     owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
-
-    is_public = bool(SOURCE_COOP_PUBLIC_URL)  # Source.Coop.
 
     full_path_prefix = get_full_path_prefix(bucket)
     logger.info(f"Full path prefix: {full_path_prefix}")
@@ -197,7 +192,7 @@ def run(
     _ = configure_s3_access(requester_pays=True)
 
     itempath = PrefixedS3ItemPath(
-        key_prefix=SOURCE_COOP_PREFIX_GEOMAD if is_public else None,
+        key_prefix=SOURCE_COOP_PREFIX_GEOMAD if is_source_coop else None,
         prefix=owner,
         bucket=bucket,
         sensor=SENSOR,
@@ -212,12 +207,9 @@ def run(
     write_session = get_write_session()
     write_client = write_session.client("s3")
 
-    # Configure for checking item existence
-    aws_client_to_use = write_client if is_public else boto3.client("s3")
-
     # If we don't want to overwrite, and the destination file already exists, skip it
-    if not overwrite and object_exists(bucket, stac_key, client=aws_client_to_use):
-        typer.echo(f"Item already exists at {stac_document}, skipping.")
+    if not overwrite and object_exists(bucket, stac_key, client=write_client):
+        logger.info(f"Item already exists at {stac_document}, skipping.")
         return
     logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
 
@@ -230,7 +222,6 @@ def run(
     )
 
     # Loader loads the data from STAC Items.
-    load_kwargs = {}  # TODO: Is load_kwargs needed?
     loader = OdcLoader(
         bands=LANDSAT_BANDS
         if all_bands
@@ -248,7 +239,6 @@ def run(
             "qa_pixel": "ldn.geomad.fuse_qa_pixel",
         },
         fail_on_error=False,  # We don't control the Landsat data so it may have issues. We load what we can.
-        **load_kwargs,
     )
 
     # TODO: Make count band use 255 as nodata, rather than 0.
@@ -285,7 +275,7 @@ def run(
 
     stac_writer = AwsStacWriter(
         itempath,
-        client=aws_client_to_use,
+        client=write_client,
     )
 
     try:
@@ -306,20 +296,20 @@ def run(
                 stac_creator=stac_creator,
                 stac_writer=stac_writer,
             ).run()
-            typer.echo(f"Completed processing. Wrote {len(paths)} files to {stac_document}")
+            logger.info(f"Completed processing. Wrote {len(paths)} files to {stac_document}")
 
     except EmptyCollectionError:
-        typer.echo("No items found for this tile")
+        logger.info("No items found for this tile")
         sys.exit(EXIT_SKIP)
 
     except InsufficientScenesError as e:
-        typer.echo(f"Failed to process with error: {e}")
+        logger.info(f"Failed to process with error: {e}")
         sys.exit(EXIT_SKIP)
 
     except KilledWorker as e:
-        typer.echo(f"Failed to process with error: {e}")
+        logger.info(f"Failed to process with error: {e}")
         sys.exit(EXIT_OOM)
 
     except Exception as e:
-        typer.echo(f"Failed to process with error: {e}")
+        logger.info(f"Failed to process with error: {e}")
         raise  # let it exit 1 naturally with full traceback

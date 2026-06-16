@@ -17,7 +17,7 @@ Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS)
 | Property | Value |
 | - | - |
 | Spatial resolution  | 30 m |
-| Temporal coverage   | 2000–2025 |
+| Temporal coverage   | 2000-2025 |
 | Temporal resolution | Annual |
 | Sensors             | Landsat 5, 7, 8, 9 |
 | Products            | Geometric Median, Median Absolute Deviation (MAD) |
@@ -153,7 +153,7 @@ A robust measure of temporal variability useful for quantifying uncertainty, ide
 | ------ | ---------------------------- |
 | emad   | Euclidean distance           |
 | smad   | Cosine (spectral) distance   |
-| bcmad  | Bray–Curtis dissimilarity    |
+| bcmad  | Bray-Curtis dissimilarity    |
 
 ### Other bands
 
