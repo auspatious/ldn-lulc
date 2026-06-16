@@ -69,6 +69,8 @@ poetry add "datacube-compute@git+https://github.com/auspatious/datacube-compute.
 
 Simply run: `poetry run pytest` or for a specific file: `poetry run pytest ldn/tests/test_mosaic.py`
 
+**Integration tests:** set source.coop env vars and then `pytest -m integration`
+
 
 ### Pre-commit hooks
 

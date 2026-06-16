@@ -1,12 +1,14 @@
+# Seperate folder for integration tests so they can be easily excluded from regular test runs.
 import importlib
 import os
+from datetime import UTC, datetime, timedelta
 
 import boto3
 import pytest
-from click.testing import CliRunner
+from typer.testing import CliRunner
 
 import ldn.utils
-from ldn.cli_geomad import run
+from ldn.cli_geomad import geomad_app
 from ldn.raster import PrefixedS3ItemPath
 from ldn.utils import GEOMAD_DATASET_ID, SENSOR, get_full_path_prefix, parse_tile_id
 
@@ -63,10 +65,33 @@ def runner():
     return CliRunner()
 
 
-def test_geomad_run_decimated(bucket_env, runner):
-    """Full pipeline run on a small decimated tile - checks exit 0 and writes STAC item."""
+@pytest.fixture
+def stac_key(bucket_env):
+    bucket = bucket_env["BUCKET"]
+    source_coop_prefix = bucket_env.get("SOURCE_COOP_PREFIX_GEOMAD") or None
+    tile_id_tuple = parse_tile_id(TILE_ID)
+
+    itempath = PrefixedS3ItemPath(
+        key_prefix=source_coop_prefix,
+        prefix="dep",
+        bucket=bucket,
+        sensor=SENSOR,
+        dataset_id=GEOMAD_DATASET_ID,
+        version=VERSION,
+        time=YEAR,
+        full_path_prefix=get_full_path_prefix(bucket),
+    )
+    return itempath.stac_path(tile_id_tuple, absolute=False)
+
+
+def test_geomad_run_and_skip(bucket_env, runner, stac_key):
+    """Write with overwrite, check item was recently written, then check skip doesn't overwrite."""
+    bucket = bucket_env["BUCKET"]
+    s3 = boto3.client("s3")
+
+    # 1. Write with overwrite
     result = runner.invoke(
-        run,
+        geomad_app,
         [
             "--tile-id",
             TILE_ID,
@@ -82,62 +107,31 @@ def test_geomad_run_decimated(bucket_env, runner):
     )
     assert result.exit_code == 0, result.output
 
-
-def test_geomad_skips_existing(bucket_env, runner):
-    """Second run without overwrite should skip cleanly."""
-    # First run to ensure item exists
-    runner.invoke(
-        run,
-        [
-            "--tile-id",
-            TILE_ID,
-            "--year",
-            YEAR,
-            "--version",
-            VERSION,
-            "--region",
-            "pacific",
-            "--decimated",
-            "--overwrite",
-        ],
-    )
-
-    # Second run should skip
-    result = runner.invoke(
-        run,
-        [
-            "--tile-id",
-            TILE_ID,
-            "--year",
-            YEAR,
-            "--version",
-            VERSION,
-            "--region",
-            "pacific",
-            "--decimated",
-        ],
-    )
-    assert result.exit_code == 0
-    assert "skipping" in result.output.lower()
-
-
-def test_geomad_stac_item_exists_in_bucket(bucket_env):
-    """After a run, the STAC item should be readable from S3."""
-    bucket = bucket_env["BUCKET"]
-    source_coop_prefix = bucket_env.get("SOURCE_COOP_PREFIX_GEOMAD") or None
-    tile_id_tuple = parse_tile_id(TILE_ID)
-
-    itempath = PrefixedS3ItemPath(
-        key_prefix=source_coop_prefix,
-        prefix="dep",
-        bucket=bucket,
-        sensor=SENSOR,
-        dataset_id=GEOMAD_DATASET_ID,
-        version=VERSION,
-        time=YEAR,
-        full_path_prefix=get_full_path_prefix(bucket),
-    )
-    stac_key = itempath.stac_path(tile_id_tuple, absolute=False)
-    s3 = boto3.client("s3")
+    # 2. Check item exists and was written in the last 15 minutes
     response = s3.head_object(Bucket=bucket, Key=stac_key)
-    assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
+    last_modified = response["LastModified"]
+    assert datetime.now(UTC) - last_modified < timedelta(minutes=15), (
+        f"STAC item was not recently written: {last_modified}"
+    )
+
+    # 3. Call without overwrite and check item wasn't rewritten
+    result = runner.invoke(
+        geomad_app,
+        [
+            "--tile-id",
+            TILE_ID,
+            "--year",
+            YEAR,
+            "--version",
+            VERSION,
+            "--region",
+            "pacific",
+            "--decimated",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    after = s3.head_object(Bucket=bucket, Key=stac_key)["LastModified"]
+    assert last_modified == after, (
+        f"Item was rewritten when it should have been skipped. Before: {last_modified}, After: {after}"
+    )

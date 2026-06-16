@@ -94,7 +94,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run tests
-        run: docker run --rm ldn-lulc:test pytest ldn/tests/ -v
+        run: docker run --rm ldn-lulc:test pytest ldn/tests/ -v # Excludes integration tests intentionally.
 
       - name: Tag and push
         if: github.ref == 'refs/heads/main'

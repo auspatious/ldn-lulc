@@ -101,18 +101,4 @@ def test_set_stac_properties_datetime_three_year_span() -> None:
     assert props["ldn:observation_end"] == "2001-12-31T23:59:59Z"
 
 
-# TODO: Add a test that an existing task without overwrite flag skips.
-# TODO: Test that an existing task with overwrite flag overwrites.
-# TODO: Test that a not-existing task without overwrite flag processes.
-
-# # If we don't want to overwrite, and the destination file already exists, skip it
-# # Use the write client to check if the item already exists at the destination, since it may have different creds.
-# if not overwrite and object_exists(bucket, stac_key, client=write_client):
-#     logger.info(f"Item already exists at {stac_document}, skipping.")
-#     return
-# else:
-#     if not overwrite:
-#         logger.info(f"Item does not exist at {stac_document}, processing tile.")
-
-
 # TODO: test count_scenes

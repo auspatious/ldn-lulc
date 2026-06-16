@@ -332,7 +332,7 @@ def build_pipeline_components(
 
     logger.info(f"Checking if item exists at {stac_document} with overwrite={overwrite}")
     if not overwrite and object_exists(bucket, stac_key, client=write_client):
-        logger.info(f"Item already exists at {stac_document}, skipping.")
+        logger.info(f"Skipping because item already exists at {stac_document};")
         return None
     logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
 

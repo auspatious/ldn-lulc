@@ -444,7 +444,8 @@ def run_classify_task(
 
     if decimated:
         logger.warning("Warning, using decimated (low resolution) for testing purposes.")
-        geobox = geobox.zoom_out(10)
+        # geobox = geobox.zoom_out(10)
+        geobox = geobox.zoom_out(500)  # TODO: Add a hyper-decimated option for fast integration testing. 1000 errors.
 
     logger.info("Configuring S3 access")
     configure_s3_access(cloud_defaults=True)

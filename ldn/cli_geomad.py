@@ -184,8 +184,8 @@ def run(
 
     if decimated:
         logger.warning("Warning, using decimated (low resolution) for testing purposes.")
-        geobox = geobox.zoom_out(10)
-        # geobox = geobox.zoom_out(100)
+        # geobox = geobox.zoom_out(10)
+        geobox = geobox.zoom_out(500)  # TODO: Add a hyper-decimated option for fast integration testing. 1000 errors.
 
     # Configure for dask and reading data
     _ = configure_s3_access(requester_pays=True)
