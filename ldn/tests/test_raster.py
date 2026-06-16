@@ -8,6 +8,7 @@ from ldn.raster import (
     PrefixedS3ItemPath,
     _compute_terrain,
     _load_dem_am,
+    build_pipeline_components,
     calculate_indices,
     load_dem_terrain,
     scale_offset_landsat,
@@ -434,7 +435,6 @@ class TestLoadDemTerrainBranching:
 
 
 # PrefixedS3ItemPath
-#
 
 
 def _make_pather(key_prefix=None, full_path_prefix=None, base_path="some/base/item-abc.tif"):
@@ -524,3 +524,112 @@ class TestPrefixedS3ItemPath:
         with patch("dep_tools.namers.S3ItemPath.path", return_value="my-prefix/base/item-abc.tif"):
             result = pather_absolute.path("item-abc", absolute=True)
         assert "//" not in result.replace("s3://", "")
+
+
+# build_pipeline_components
+_RASTER_MOD = "ldn.raster"
+_UTILS_MOD = "ldn.utils"
+
+TILE = (66, 22)
+YEAR = "2025"
+VERSION = "test"
+OWNER = "dep"
+
+
+@pytest.fixture(autouse=False)
+def mock_aws():
+    """Mock all AWS I/O so no credentials are needed."""
+    with (
+        patch(f"{_RASTER_MOD}.get_write_session") as mock_session,
+        patch(f"{_RASTER_MOD}.object_exists", return_value=False),
+        patch(f"{_RASTER_MOD}.make_write_function"),
+    ):
+        mock_session.return_value.client.return_value = MagicMock()
+        yield mock_session
+
+
+@pytest.mark.parametrize(
+    "bucket,source_coop_prefix,source_coop_url,expected_prefix_start",
+    [
+        (
+            "us-west-2.opendata.source.coop",
+            "auspatious/geomad-sids",
+            "https://data.source.coop",
+            "https://data.source.coop",
+        ),
+        (
+            "data.ldn.auspatious.com",
+            None,
+            None,
+            "s3://data.ldn.auspatious.com",
+        ),
+        (
+            "dep-public-staging",
+            None,
+            None,
+            "s3://dep-public-staging",
+        ),
+    ],
+)
+def test_build_pipeline_components_itempath_prefix(
+    mock_aws, bucket, source_coop_prefix, source_coop_url, expected_prefix_start
+):
+    """itempath.full_path_prefix should reflect the correct scheme for each bucket style."""
+    with patch(f"{_UTILS_MOD}.SOURCE_COOP_PUBLIC_URL", source_coop_url):
+        result = build_pipeline_components(
+            TILE, YEAR, VERSION, bucket, OWNER, "geomad", source_coop_prefix, overwrite=True
+        )
+    assert result is not None
+    itempath, *_ = result
+    assert itempath.full_path_prefix.startswith(expected_prefix_start)
+
+
+@pytest.mark.parametrize(
+    "bucket,source_coop_prefix,expected_key_prefix",
+    [
+        ("us-west-2.opendata.source.coop", "auspatious/geomad-sids", "auspatious/geomad-sids"),
+        ("data.ldn.auspatious.com", None, None),
+        ("dep-public-staging", None, None),
+    ],
+)
+def test_build_pipeline_components_itempath_key_prefix(mock_aws, bucket, source_coop_prefix, expected_key_prefix):
+    """key_prefix on itempath should only be set for Source.Coop."""
+    result = build_pipeline_components(TILE, YEAR, VERSION, bucket, OWNER, "geomad", source_coop_prefix, overwrite=True)
+    assert result is not None
+    itempath, *_ = result
+    assert itempath.key_prefix == expected_key_prefix
+
+
+def test_build_pipeline_components_returns_none_when_exists(mock_aws):
+    """Should return None and skip processing when item exists and overwrite=False."""
+    with patch(f"{_RASTER_MOD}.object_exists", return_value=True):
+        result = build_pipeline_components(
+            TILE, YEAR, VERSION, "dep-public-staging", OWNER, "geomad", None, overwrite=False
+        )
+    assert result is None
+
+
+def test_build_pipeline_components_proceeds_when_exists_and_overwrite(mock_aws):
+    """overwrite=True should proceed even when item exists."""
+    with patch(f"{_RASTER_MOD}.object_exists", return_value=True):
+        result = build_pipeline_components(
+            TILE, YEAR, VERSION, "dep-public-staging", OWNER, "geomad", None, overwrite=True
+        )
+    assert result is not None
+
+
+def test_build_pipeline_components_returns_five_components(mock_aws):
+    result = build_pipeline_components(TILE, YEAR, VERSION, "dep-public-staging", OWNER, "geomad", None, overwrite=True)
+    assert result is not None
+    assert len(result) == 5
+
+
+def test_build_pipeline_components_collection_url_root_correct(mock_aws):
+    """collection_url_root on stac_creator should use public HTTPS, not s3://."""
+    with patch(f"{_UTILS_MOD}.SOURCE_COOP_PUBLIC_URL", None):
+        result = build_pipeline_components(
+            TILE, YEAR, VERSION, "data.ldn.auspatious.com", OWNER, "geomad", None, overwrite=True
+        )
+    _, _, stac_creator, _, _ = result
+    assert stac_creator._collection_url_root.startswith("https://")
+    assert not stac_creator._collection_url_root.startswith("s3://")

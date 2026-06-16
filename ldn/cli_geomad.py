@@ -20,7 +20,9 @@ from ldn.geomad import (
     GeoMADProcessor,
     InsufficientScenesError,
 )
-from ldn.geomad import AwsStacTask as Task
+from ldn.geomad import (
+    AwsStacTask as Task,
+)
 from ldn.grids import get_gridspec
 from ldn.raster import build_pipeline_components
 from ldn.utils import (

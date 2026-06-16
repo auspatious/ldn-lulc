@@ -72,8 +72,8 @@ def get_gadm(countries: dict = ALL_COUNTRIES, overwrite: bool = False) -> gpd.Ge
     return combined_gdf[combined_gdf["GID_0"].isin(requested_countries)]
 
 
-# This is for the non-pacific countries. All pacific countries are covered by the DEP grid (EPSG:3832).
-# Pacific data is seperate because of the antimeridian crossing, and consistency with existing DEP work.
+# get_gridspec is for both regions. All pacific countries are covered by the DEP grid (EPSG:3832).
+# Pacific data is separate because of the antimeridian crossing, and consistency with existing DEP work.
 def get_gridspec(
     region: Literal["pacific", "non-pacific"],
     resolution: int = 30,

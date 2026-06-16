@@ -18,10 +18,11 @@ from ldn.aws_credentials import (
     get_write_session,
     make_obstore_s3,
 )
-from ldn.cli_geomad import PrefixedS3ItemPath, geomad_app
+from ldn.cli_geomad import geomad_app
 from ldn.cli_grid import cli_grid_app
 from ldn.cli_lulc import classify_app
 from ldn.grids import get_grid_tiles
+from ldn.raster import PrefixedS3ItemPath
 from ldn.training_data import cli_training_app
 from ldn.utils import (
     AWS_REGION,

@@ -75,8 +75,8 @@ class TestPrintTasksRegionConfig:
 
     @patch("ldn.cli.get_grid_tiles")
     @patch("ldn.cli._find_stac_items_s3")
-    def test_filter_tasks_prediction_dataset(self, mock_find_stac, mock_get_tiles):
-        """--dataset prediction should use lulc prefix."""
+    def test_filter_tasks_lulc_dataset(self, mock_find_stac, mock_get_tiles):
+        """--dataset lulc should use lulc prefix."""
         mock_get_tiles.return_value = [((66, 22), "pacific")]
         mock_find_stac.return_value = []
 
