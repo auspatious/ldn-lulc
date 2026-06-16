@@ -30,7 +30,7 @@ from rustac import search_sync
 from sklearn.ensemble import RandomForestClassifier
 from typing_extensions import Annotated
 
-from ldn.aws_credentials import get_write_client, get_write_session, make_write_function
+from ldn.aws_credentials import get_write_session, make_write_function
 from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
 from ldn.raster import GEOMAD_BANDS, PrefixedS3ItemPath, calculate_indices, load_dem_terrain, scale_offset_landsat
@@ -476,8 +476,7 @@ def run_classify_task(
 
     if decimated:
         logger.warning("Decimating geobox by 10x")
-        geobox = geobox.zoom_out(10)  # TODO: Reenable.
-        # geobox = geobox.zoom_out(100)  # Hyper decimated for faster testing
+        geobox = geobox.zoom_out(10)
 
     logger.info("Configuring S3 access")
     configure_s3_access(cloud_defaults=True)
@@ -487,6 +486,7 @@ def run_classify_task(
     logger.info("Loading model")
     loaded_model = _load_joblib_model(model_path)
 
+    # TODO: Make this a function since it is also done in cli_geomad.py
     if SOURCE_COOP_PUBLIC_URL:
         # Source.Coop.
         full_path_prefix = SOURCE_COOP_PUBLIC_URL
@@ -494,6 +494,7 @@ def run_classify_task(
         # Non-Source.Coop.
         full_path_prefix = f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/"
 
+    # TODO: update this to work for both Source.Coop and non-Source.Coop buckets (like cli_geomad.py).
     itempath = PrefixedS3ItemPath(
         key_prefix=SOURCE_COOP_PREFIX_PREDICTION if SOURCE_COOP_PUBLIC_URL else None,
         prefix=owner,
@@ -508,7 +509,7 @@ def run_classify_task(
     stac_key = itempath.stac_path(tile_id_tuple, absolute=False)
 
     write_session = get_write_session()
-    write_client = get_write_client(write_session)
+    write_client = write_session.client("s3")
 
     aws_client_to_use = write_client if SOURCE_COOP_PREFIX_PREDICTION else s3_client
 

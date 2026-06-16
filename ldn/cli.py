@@ -139,8 +139,6 @@ def _find_existing_tasks(
 
     sc_prefix = _source_coop_prefix(dataset_id)
 
-    sc_prefix = _source_coop_prefix(dataset_id)
-
     # Collect unique (bucket, owner) combos
     region_combos: set[tuple[str, str]] = set()
     for task in tasks:

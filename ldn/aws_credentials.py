@@ -4,16 +4,19 @@
 
 import logging
 import os
+from functools import partial
 
 import boto3
 import obstore
 from botocore.client import BaseClient
 from dep_tools.writers import write_to_s3
 
-from ldn.utils import AWS_REGION
+from ldn.utils import AWS_REGION, SOURCE_COOP_PREFIX_GEOMAD, SOURCE_COOP_PREFIX_PREDICTION, SOURCE_COOP_PUBLIC_URL
+
+is_public = bool(SOURCE_COOP_PUBLIC_URL) and bool(SOURCE_COOP_PREFIX_GEOMAD) and bool(SOURCE_COOP_PREFIX_PREDICTION)
+
 
 logger = logging.getLogger(__name__)
-
 
 _WRITE_KEY = "AWS_WRITE_ACCESS_KEY_ID"
 _WRITE_SECRET = "AWS_WRITE_SECRET_ACCESS_KEY"
@@ -30,6 +33,10 @@ def get_write_session() -> boto3.Session:
     key = os.environ.get(_WRITE_KEY)
     secret = os.environ.get(_WRITE_SECRET)
 
+    if not (is_public):
+        logger.info("SOURCE_COOP_PUBLIC_URL or prefixes not set; skipping write credential setup.")
+        return boto3.Session()
+
     if not (key and secret):
         logger.info("AWS_WRITE_* env vars not set; falling back to default credential chain for writes.")
         return boto3.Session()
@@ -39,38 +46,36 @@ def get_write_session() -> boto3.Session:
         aws_access_key_id=key,
         aws_secret_access_key=secret,
         aws_session_token=os.environ.get(_WRITE_TOKEN),
-        region_name=AWS_REGION,  # Same for Source.Coop and all other buckets.
+        region_name=AWS_REGION,
     )
 
 
-def make_write_function(
-    session: boto3.Session,
-):
+def make_write_function(session: boto3.Session):
+    """Create a write function bound to the credentials of the given session.
+
+    Args:
+        session: A boto3 session with the credentials to use for writing.
+
+    Returns:
+        A partial of :func:`write_to_s3` with the session's S3 client bound.
+    """
     client: BaseClient = session.client("s3")
-
-    def write_with_credentials(data, path, bucket, **kwargs):
-        return write_to_s3(data, path, bucket, client=client, **kwargs)
-
-    return write_with_credentials
+    return partial(write_to_s3, client=client)
 
 
-def get_write_client(session: boto3.Session) -> BaseClient:
-    return session.client("s3")
-
-
-def _session_credentials(session: boto3.Session) -> dict:
-    """Extract resolved credentials from a boto3 session as a plain dict."""
-    creds = session.get_credentials().get_frozen_credentials()
-    return {
-        "access_key_id": creds.access_key,
-        "secret_access_key": creds.secret_key,
-        "token": creds.token,  # None for long-lived creds
-        "region": session.region_name,
-    }
-
-
+# Used for indexing
 def make_obstore_s3(bucket: str, session: boto3.Session) -> "obstore.store.S3Store":
     """Create an obstore S3Store using credentials from the given boto3 session."""
+
+    def _session_credentials(session: boto3.Session) -> dict:
+        """Extract resolved credentials from a boto3 session as a plain dict."""
+        creds = session.get_credentials().get_frozen_credentials()
+        return {
+            "access_key_id": creds.access_key,
+            "secret_access_key": creds.secret_key,
+            "token": creds.token,  # None for long-lived creds
+            "region": session.region_name,
+        }
 
     creds = _session_credentials(session)
     kwargs = {
