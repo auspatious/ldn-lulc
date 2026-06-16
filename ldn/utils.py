@@ -14,10 +14,17 @@ load_dotenv()
 BUCKET = os.environ.get("BUCKET")
 SOURCE_COOP_PUBLIC_URL = os.environ.get("SOURCE_COOP_PUBLIC_URL") or None
 SOURCE_COOP_PREFIX_GEOMAD = os.environ.get("SOURCE_COOP_PREFIX_GEOMAD") or None
-SOURCE_COOP_PREFIX_PREDICTION = os.environ.get("SOURCE_COOP_PREFIX_PREDICTION") or None
-is_source_coop = (
-    bool(SOURCE_COOP_PUBLIC_URL) and bool(SOURCE_COOP_PREFIX_GEOMAD) and bool(SOURCE_COOP_PREFIX_PREDICTION)
-)
+SOURCE_COOP_PREFIX_LULC = os.environ.get("SOURCE_COOP_PREFIX_LULC") or None
+is_source_coop = bool(SOURCE_COOP_PUBLIC_URL) and bool(SOURCE_COOP_PREFIX_GEOMAD) and bool(SOURCE_COOP_PREFIX_LULC)
+
+
+# Our custom exception class for the project. Good for filtering errors in processing.
+class LdnError(Exception):
+    """Base exception for the ldn-lulc project."""
+
+
+if not BUCKET:
+    raise LdnError("BUCKET environment variable must be set.")
 
 SIDS_COUNTRIES_AND_CODES = {
     # Caribbean
@@ -89,7 +96,7 @@ ALL_COUNTRIES = {**SIDS_COUNTRIES_AND_CODES, **DEP_COUNTRIES_AND_CODES}
 NON_DEP_COUNTRIES = {k: v for k, v in SIDS_COUNTRIES_AND_CODES.items() if k not in DEP_COUNTRIES_AND_CODES}
 
 GEOMAD_VERSION = "0-2-1"
-PREDICTION_VERSION = "0-0-4"
+LULC_VERSION = "0-0-4"
 MODEL_VERSION = "0-0-4"
 TRAINING_DATA_VERSION = "0-0-4"
 
@@ -98,7 +105,7 @@ NON_PACIFIC_OWNER = "ci"
 
 SENSOR = "ls"
 GEOMAD_DATASET_ID = "geomad"
-PREDICTION_DATASET_ID = "lulc_prediction"
+LULC_DATASET_ID = "lulc"
 AWS_REGION = "us-west-2"
 
 LS7_YEAR_THRESHOLD: int = 2012
@@ -127,10 +134,10 @@ def dataset_prefix(owner: str | None, dataset_id: str) -> str:
 
     Args:
         owner: Short owner prefix (e.g. "dep" or "ci").
-        dataset_id: Dataset identifier (e.g. "geomad" or "lulc_prediction").
+        dataset_id: Dataset identifier (e.g. "geomad" or "lulc").
 
     Returns:
-        Full prefix like "dep_ls_geomad" or "ci_ls_lulc_prediction" or "ls_geomad" if owner is None.
+        Full prefix like "dep_ls_geomad" or "ci_ls_lulc" or "ls_geomad" if owner is None.
     """
     if owner:
         return f"{owner}_{SENSOR}_{dataset_id}"
@@ -190,11 +197,6 @@ def get_analysis_epsg(
     return "EPSG:6933"
 
 
-# Our custom exception class for the project. Good for filtering errors in processing.
-class LdnError(Exception):
-    """Base exception for the ldn-lulc project."""
-
-
 def parse_years(years: str) -> list[int]:
     """Parse a years string into a list of integers.
 
@@ -214,14 +216,14 @@ def parse_years(years: str) -> list[int]:
 
 # TODO: _source_coop_prefix() returns source_coop_prefix
 def resolve_dataset(
-    dataset: Literal["geomad", "prediction"],
+    dataset: Literal["geomad", "lulc"],
     version_geomad: str,
-    version_prediction: str,
+    version_lulc: str,
 ) -> tuple[str, str, str | None]:
     """Return (dataset_id, version, source_coop_prefix) for the given dataset name."""
     if dataset == "geomad":
         return GEOMAD_DATASET_ID, version_geomad, SOURCE_COOP_PREFIX_GEOMAD
-    return PREDICTION_DATASET_ID, version_prediction, SOURCE_COOP_PREFIX_PREDICTION
+    return LULC_DATASET_ID, version_lulc, SOURCE_COOP_PREFIX_LULC
 
 
 def parse_tile_id(tile_id: str) -> tuple[int, int]:

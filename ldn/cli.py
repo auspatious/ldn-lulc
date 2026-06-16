@@ -18,9 +18,9 @@ from ldn.aws_credentials import (
     get_write_session,
     make_obstore_s3,
 )
-from ldn.cli_classify import classify_app
 from ldn.cli_geomad import PrefixedS3ItemPath, geomad_app
 from ldn.cli_grid import cli_grid_app
+from ldn.cli_lulc import classify_app
 from ldn.grids import get_grid_tiles
 from ldn.training_data import cli_training_app
 from ldn.utils import (
@@ -28,12 +28,12 @@ from ldn.utils import (
     BUCKET,
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
+    LULC_VERSION,
     NON_PACIFIC_OWNER,
     PACIFIC_OWNER,
-    PREDICTION_VERSION,
     SENSOR,
     SOURCE_COOP_PREFIX_GEOMAD,
-    SOURCE_COOP_PREFIX_PREDICTION,
+    SOURCE_COOP_PREFIX_LULC,
     SOURCE_COOP_PUBLIC_URL,
     LdnError,
     dataset_prefix,
@@ -63,7 +63,7 @@ logging.getLogger("ldn").setLevel(logging.INFO)  # Our logging level.
 
 # Add the subcommands
 app.add_typer(cli_grid_app, name="grid", help="Commands for working with the ODC Geo Grid.")
-app.add_typer(classify_app, name="classify", help="Commands for classifying/predicting LULC.")
+app.add_typer(classify_app, name="lulc", help="Commands for LULC classification.")
 app.add_typer(cli_training_app, name="training", help="Commands for generating training data.")
 app.add_typer(geomad_app, name="geomad", help="Commands for working with GeoMAD.")
 
@@ -140,7 +140,7 @@ def _find_existing_tasks(
         if dataset_id == GEOMAD_DATASET_ID:
             return SOURCE_COOP_PREFIX_GEOMAD
         else:
-            return SOURCE_COOP_PREFIX_PREDICTION
+            return SOURCE_COOP_PREFIX_LULC
 
     sc_prefix = _source_coop_prefix(dataset_id)
 
@@ -205,11 +205,9 @@ def _find_existing_tasks(
 def print_tasks(
     years: Annotated[str, typer.Option()],
     region: Annotated[Literal["all", "pacific", "non-pacific"], typer.Option()] = "all",
-    dataset: Annotated[Literal["geomad", "prediction"], typer.Option(help="Dataset name.")] = "geomad",
+    dataset: Annotated[Literal["geomad", "lulc"], typer.Option(help="Dataset name.")] = "geomad",
     version_geomad: Annotated[str, typer.Option(help="Version string for GeoMAD dataset.")] = GEOMAD_VERSION,
-    version_prediction: Annotated[
-        str, typer.Option(help="Version string for prediction dataset.")
-    ] = PREDICTION_VERSION,
+    version_lulc: Annotated[str, typer.Option(help="Version string for LULC dataset.")] = LULC_VERSION,
     bucket: Annotated[str, typer.Option(help="S3 bucket for data.")] = BUCKET,
     owner_pacific: Annotated[
         str,
@@ -244,7 +242,7 @@ def print_tasks(
 
     # Filter out tasks whose output already exists in S3
     if not overwrite:
-        dataset_id, version, _source_coop_prefix = resolve_dataset(dataset, version_geomad, version_prediction)
+        dataset_id, version, _source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
 
         existing = _find_existing_tasks(
             tasks,
@@ -304,14 +302,12 @@ def _load_stac_docs(bucket: str, keys: list[str]) -> list[dict]:
 
 @app.command()
 def index_to_stac_geoparquet(
-    dataset: Literal["geomad", "prediction"] = typer.Option(
-        ..., help="Dataset type to index: 'geomad', or 'prediction'."
-    ),
+    dataset: Literal["geomad", "lulc"] = typer.Option(..., help="Dataset type to index: 'geomad', or 'lulc'."),
     region: Literal["all", "pacific", "non-pacific"] = typer.Option(
         "all", help="Region to index: 'all', 'pacific', or 'non-pacific'."
     ),
     version_geomad: str = typer.Option(GEOMAD_VERSION, help="Version string for GeoMAD dataset."),
-    version_prediction: str = typer.Option(PREDICTION_VERSION, help="Version string for prediction dataset."),
+    version_lulc: str = typer.Option(LULC_VERSION, help="Version string for LULC dataset."),
     bucket: str = typer.Option(BUCKET, help="S3 bucket data."),
     owner_pacific: str = typer.Option(PACIFIC_OWNER, help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."),
     owner_non_pacific: str = typer.Option(
@@ -323,7 +319,7 @@ def index_to_stac_geoparquet(
     """Build STAC-Geoparquet indexes from STAC items for given dataset and region(s)."""
     regions: list[Literal["pacific", "non-pacific"]] = ["pacific", "non-pacific"] if region == "all" else [region]
 
-    dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_prediction)
+    dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
 
     targets: list[tuple[str, str]] = []
     for r in regions:
@@ -477,8 +473,8 @@ def _write_mosaic(mosaic: MosaicJSON, out_path: str, session: boto3.Session) -> 
 @app.command()
 def make_mosaics(
     dataset: Annotated[
-        Literal["geomad", "prediction"],
-        typer.Option(help="Which dataset to build mosaics for: 'geomad' or 'prediction'."),
+        Literal["geomad", "lulc"],
+        typer.Option(help="Which dataset to build mosaics for: 'geomad' or 'lulc'."),
     ],
     years: Annotated[
         str | None,
@@ -490,10 +486,10 @@ def make_mosaics(
         str,
         typer.Option(help="Version string for GeoMAD dataset."),
     ] = GEOMAD_VERSION,
-    version_prediction: Annotated[
+    version_lulc: Annotated[
         str,
-        typer.Option(help="Version string for prediction dataset."),
-    ] = PREDICTION_VERSION,
+        typer.Option(help="Version string for LULC dataset."),
+    ] = LULC_VERSION,
     bucket: str = typer.Option(BUCKET, help="S3 bucket for data."),
 ) -> None:
     """Make mosaic.jsons per year from the combined STAC-Geoparquet index."""
@@ -501,7 +497,7 @@ def make_mosaics(
 
     requested_years: list[int] | None = parse_years(years) if years is not None else None
 
-    dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_prediction)
+    dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
 
     parquet_url = get_geomad_stac_geoparquet_url(bucket, version)
 

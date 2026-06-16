@@ -5,16 +5,12 @@ from typing import Literal
 import typer
 from dask.distributed import Client as DaskClient
 from dask.distributed import KilledWorker
-from dep_tools.aws import object_exists
 from dep_tools.exceptions import EmptyCollectionError
 from dep_tools.loaders import OdcLoader
 from dep_tools.searchers import PystacSearcher
-from dep_tools.stac_utils import StacCreator
-from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from odc.stac import configure_s3_access
 from typing_extensions import Annotated
 
-from ldn.aws_credentials import get_write_session, make_write_function
 from ldn.geomad import (
     LANDSAT_BANDS,
     LANDSAT_OFFSET,
@@ -26,7 +22,7 @@ from ldn.geomad import (
 )
 from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
-from ldn.raster import PrefixedS3ItemPath
+from ldn.raster import build_pipeline_components
 from ldn.utils import (
     BUCKET,
     GEOMAD_DATASET_ID,
@@ -34,9 +30,7 @@ from ldn.utils import (
     LS7_YEAR_THRESHOLD,
     NON_PACIFIC_OWNER,
     PACIFIC_OWNER,
-    SENSOR,
     SOURCE_COOP_PREFIX_GEOMAD,
-    get_collection_url_root,
     get_full_path_prefix,
     is_source_coop,
     owner_for_region,
@@ -129,8 +123,11 @@ def run(
     """
     logger.info(
         f"tile={tile_id} year={year} version={version} region={region} overwrite={overwrite} decimated={decimated} "
-        f"all_bands={all_bands} mask_shadow={mask_shadow} memory={memory_limit} workers={n_workers} "
-        f"threads={threads_per_worker} chunk={xy_chunk_size} geomad_threads={geomad_threads}",
+        f"all_bands={all_bands} mask_shadow={mask_shadow} geomad_threads={geomad_threads}",
+    )
+    logger.info(
+        f"Dask config: n_workers={n_workers}, threads_per_worker={threads_per_worker}, "
+        f"memory_limit={memory_limit}, xy_chunk_size={xy_chunk_size}"
     )
 
     if version != GEOMAD_VERSION:
@@ -191,27 +188,19 @@ def run(
     # Configure for dask and reading data
     _ = configure_s3_access(requester_pays=True)
 
-    itempath = PrefixedS3ItemPath(
-        key_prefix=SOURCE_COOP_PREFIX_GEOMAD if is_source_coop else None,
-        prefix=owner,
-        bucket=bucket,
-        sensor=SENSOR,
-        dataset_id=GEOMAD_DATASET_ID,
-        version=version,
-        time=year,
-        full_path_prefix=full_path_prefix,
+    components = build_pipeline_components(
+        tile_id_tuple,
+        year,
+        version,
+        bucket,
+        owner,
+        GEOMAD_DATASET_ID,
+        SOURCE_COOP_PREFIX_GEOMAD if is_source_coop else None,
+        overwrite,
     )
-    stac_document = itempath.stac_path(tile_id_tuple, absolute=True)
-    stac_key = itempath.stac_path(tile_id_tuple, absolute=False)
-
-    write_session = get_write_session()
-    write_client = write_session.client("s3")
-
-    # If we don't want to overwrite, and the destination file already exists, skip it
-    if not overwrite and object_exists(bucket, stac_key, client=write_client):
-        logger.info(f"Item already exists at {stac_document}, skipping.")
-        return
-    logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
+    if components is None:
+        return  # Task exists and overwrite is False, so skipping processing.
+    itempath, write_client, stac_creator, writer, stac_writer = components
 
     # Searcher finds STAC Items
     searcher = PystacSearcher(
@@ -261,23 +250,6 @@ def run(
         },
     )
 
-    stac_creator = StacCreator(
-        collection_url_root=get_collection_url_root(bucket, owner, SENSOR, GEOMAD_DATASET_ID),
-        itempath=itempath,
-        with_raster=True,
-    )
-
-    writer = AwsDsCogWriter(
-        itempath,
-        write_multithreaded=True,
-        write_function=make_write_function(write_session),
-    )
-
-    stac_writer = AwsStacWriter(
-        itempath,
-        client=write_client,
-    )
-
     try:
         with DaskClient(
             n_workers=n_workers,
@@ -296,7 +268,7 @@ def run(
                 stac_creator=stac_creator,
                 stac_writer=stac_writer,
             ).run()
-            logger.info(f"Completed processing. Wrote {len(paths)} files to {stac_document}")
+            logger.info(f"Completed processing. Wrote {len(paths)} files. e.g. {paths[0]}")
 
     except EmptyCollectionError:
         logger.info("No items found for this tile")

@@ -380,7 +380,7 @@ class GeoMADProcessor(Processor):
         return _set_stac_properties(data, geomad)
 
 
-# This is a generic function used be geomad and classify tasks.
+# This is a generic function used be geomad creation and lulc classification tasks.
 class AwsStacTask(AreaTask):
     """Area task with search + STAC creation/writing for AWS workflows."""
 

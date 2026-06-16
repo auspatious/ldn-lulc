@@ -1,9 +1,13 @@
 import logging
+from typing import Literal
 
 import numpy as np
 import xarray as xr
+from dep_tools.aws import BaseClient, object_exists
 from dep_tools.namers import S3ItemPath
+from dep_tools.stac_utils import StacCreator
 from dep_tools.utils import bbox_across_180, join_path_or_url, search_across_180
+from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from geopandas import GeoDataFrame
 from odc.geo.geobox import GeoBox
 from odc.stac import load as stac_load
@@ -14,7 +18,14 @@ from rasterio.enums import Resampling
 from scipy.ndimage import sobel
 from shapely.geometry import box
 
-from ldn.utils import WGS84, LdnError
+from ldn.aws_credentials import get_write_session, make_write_function
+from ldn.utils import (
+    SENSOR,
+    WGS84,
+    LdnError,
+    get_collection_url_root,
+    get_full_path_prefix,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +127,7 @@ def _compute_terrain(dem_da: xr.DataArray) -> xr.Dataset:
     return xr.Dataset({"elevation": dem_da, "slope": slope, "aspect": aspect})
 
 
-# GeoMAD output bands that the prediction pipeline needs (excludes "count").
+# GeoMAD output bands that the LULC classification pipeline needs (excludes "count").
 GEOMAD_BANDS = [
     "nir08",
     "red",
@@ -284,3 +295,57 @@ class PrefixedS3ItemPath(S3ItemPath):
             if absolute and self.full_path_prefix is not None
             else relative_path
         )
+
+
+# A shared function to create tasks for Geomad and Classification.
+def build_pipeline_components(
+    tile_id_tuple: tuple[int, int],
+    year: str,
+    version: str,
+    bucket: str,
+    owner: str,
+    dataset_id: Literal["geomad", "lulc"],
+    source_coop_prefix: str | None,
+    overwrite: bool,
+) -> tuple[PrefixedS3ItemPath, BaseClient, StacCreator, AwsDsCogWriter, AwsStacWriter] | None:
+    """Build shared pipeline components for GeoMAD and classify tasks.
+
+    Returns None if the item already exists and overwrite is False.
+    """
+    full_path_prefix = get_full_path_prefix(bucket)
+
+    itempath = PrefixedS3ItemPath(
+        key_prefix=source_coop_prefix,
+        prefix=owner,
+        bucket=bucket,
+        sensor=SENSOR,
+        dataset_id=dataset_id,
+        version=version,
+        time=year,
+        full_path_prefix=full_path_prefix,
+    )
+    stac_document = itempath.stac_path(tile_id_tuple, absolute=True)
+    stac_key = itempath.stac_path(tile_id_tuple, absolute=False)
+
+    write_session = get_write_session()
+    write_client = write_session.client("s3")
+
+    logger.info(f"Checking if item exists at {stac_document} with overwrite={overwrite}")
+    if not overwrite and object_exists(bucket, stac_key, client=write_client):
+        logger.info(f"Item already exists at {stac_document}, skipping.")
+        return None
+    logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
+
+    stac_creator = StacCreator(
+        collection_url_root=get_collection_url_root(bucket, owner, SENSOR, dataset_id),
+        itempath=itempath,
+        with_raster=True,
+    )
+    writer = AwsDsCogWriter(
+        itempath,
+        write_multithreaded=True,
+        write_function=make_write_function(write_session),
+    )
+    stac_writer = AwsStacWriter(itempath, client=write_client)
+
+    return itempath, write_client, stac_creator, writer, stac_writer

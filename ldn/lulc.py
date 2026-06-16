@@ -10,13 +10,10 @@ import requests
 import typer
 import xarray as xr
 from dask.distributed import Client as DaskClient
-from dep_tools.aws import object_exists
 from dep_tools.loaders import OdcLoader
 from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
-from dep_tools.stac_utils import StacCreator
 from dep_tools.utils import _fix_geometry
-from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from geopandas import GeoDataFrame
 from joblib import load as joblib_load
 from odc.geo.geobox import GeoBox
@@ -26,26 +23,23 @@ from rustac import search_sync
 from sklearn.ensemble import RandomForestClassifier
 from typing_extensions import Annotated
 
-from ldn.aws_credentials import get_write_session, make_write_function
 from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
 from ldn.raster import (
     GEOMAD_BANDS,
-    PrefixedS3ItemPath,
+    build_pipeline_components,
     calculate_indices,
     load_dem_terrain,
     scale_offset_landsat,
 )
 from ldn.utils import (
     GEOMAD_VERSION,
-    PREDICTION_DATASET_ID,
-    PREDICTION_VERSION,
-    SENSOR,
-    SOURCE_COOP_PREFIX_PREDICTION,
+    LULC_DATASET_ID,
+    LULC_VERSION,
+    SOURCE_COOP_PREFIX_LULC,
     WGS84,
     LdnError,
     get_analysis_epsg,
-    get_collection_url_root,
     get_full_path_prefix,
     get_geomad_stac_geoparquet_url,
     is_source_coop,
@@ -90,13 +84,16 @@ class StacGeoparquetSearcher(Searcher):
         else:
             bbox = list(area.total_bounds)
 
+        # TODO: Can't this just search on ID?
         raw = search_sync(self._url, bbox=bbox, datetime=self._datetime)
         items = [Item.from_dict(doc) for doc in raw]
 
         if len(items) == 0:
             raise LdnError("No GeoMAD items found")
 
+        logger.info(f"Found {len(items)} items intersecting the area.")
         # TODO: Should len(items) == 1??
+        # Or are there cases where the edges of other tiles could overlap (even by 1 pixel)?
 
         logger.info(f"Found {len(items)} GeoMAD items")
         return ItemCollection(items)
@@ -168,6 +165,7 @@ def reshape_array_to_2d(
         stacked_array: Flattened prediction or probability values.
         template_ds: Dataset whose y/x coordinates define the output shape.
         original_mask: Boolean mask (True = nodata) applied to the output.
+        nodata_value: Integer nodata value for output pixels.
 
     Returns:
         A 2D uint8 DataArray with the specified nodata_value for nodata pixels.
@@ -177,38 +175,6 @@ def reshape_array_to_2d(
     # nodata_value as NoData. Ensure any remaining NaNs are also set to nodata_value before casting.
     da = da.where(~original_mask, nodata_value).fillna(nodata_value)
     return da.astype("uint8")
-
-
-def probability_binary(
-    probability_da: xr.DataArray,
-    threshold: int | float,
-    nodata_value: int,
-) -> xr.DataArray:
-    """
-    Converts a probability raster into a binary classification raster based on a threshold.
-
-    - Pixels with probability >= threshold are set to 1.
-    - Pixels with probability < threshold (but are valid data) are set to 0.
-    - Pixels that were originally NoData (NaN) remain NoData (converted to `nodata_value`).
-
-    Parameters:
-    - probability_da (xr.DataArray): Input DataArray with probability values (e.g., 0-100).
-                                    Expected to have spatial dimensions (e.g., 'x', 'y').
-    - threshold (float): The threshold value to apply. Pixels with probability >= threshold
-                         will be classified as 1.
-    - nodata_value (int): The value to use for NoData.
-
-    Returns:
-    - xr.DataArray: A new DataArray with binary classification (1 for above threshold,
-                    0 for below threshold, and `nodata_value` for NoData areas).
-    """
-    mask = probability_da == nodata_value
-    above_threshold = probability_da >= threshold
-
-    final_output = xr.where(above_threshold, 1, 0)
-    final_output = xr.where(mask, nodata_value, final_output).astype("uint8")
-
-    return final_output
 
 
 def do_prediction(
@@ -283,7 +249,7 @@ def do_prediction(
 
 
 class LulcProcessor(Processor):
-    """Processor that scales GeoMAD, computes indices, loads terrain, and predicts."""
+    """Processor that scales GeoMAD, computes indices, loads terrain, and predicts classes."""
 
     def __init__(
         self,
@@ -294,7 +260,7 @@ class LulcProcessor(Processor):
         year: str,
         **kwargs,
     ):
-        """Create a LULC prediction processor.
+        """Create a LULC prediction/classification processor.
 
         Args:
             model: Fitted scikit-learn RandomForestClassifier.
@@ -310,7 +276,7 @@ class LulcProcessor(Processor):
         self._year = year
 
     def process(self, input_data: xr.Dataset) -> xr.Dataset:
-        """Scale GeoMAD, compute indices, load DEM terrain, and predict LULC.
+        """Scale GeoMAD, compute indices, load DEM terrain, and predict/classify LULC.
 
         Args:
             input_data: GeoMAD dataset loaded by GeopolygonOdcLoader.
@@ -341,7 +307,7 @@ class LulcProcessor(Processor):
         self._logger.info("Computing merged dataset")
         merged = merged.compute()
 
-        self._logger.info("Running prediction")
+        self._logger.info("Running LULC prediction")
         classification, probabilities = do_prediction(
             merged, self._model, self._probability_threshold, self._nodata_value
         )
@@ -368,7 +334,7 @@ def _load_joblib_model(model_path: str):
         model_path: Local path or HTTPS URL to a .joblib model file.
 
     Returns:
-        The path to the local model file (verified loadable).
+        The loaded local model file.
 
     Raises:
         ValueError: If model_path is not a .joblib file or HTTPS URL.
@@ -394,8 +360,7 @@ def _load_joblib_model(model_path: str):
         raise LdnError(f"Model path must be a '.joblib' file or a URL to a '.joblib' file, not {model_path}")
 
     try:
-        joblib_load(model)
-        return model
+        return joblib_load(model)
     except Exception as e:
         raise LdnError(f"Failed to load model from {model}") from e
 
@@ -453,14 +418,18 @@ def run_classify_task(
         threads_per_worker: Number of threads per Dask worker.
     """
     logger.info(f"Starting processing. Tile ID: {tile_id}, Year: {year}, Region: {region}, Version: {version}.")
+    logger.info(
+        f"Dask config: n_workers={n_workers}, threads_per_worker={threads_per_worker}, "
+        f"memory_limit={memory_limit}, xy_chunk_size={xy_chunk_size}"
+    )
 
     if version_geomad != GEOMAD_VERSION:
         logger.info(
             f"Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
         )
-    if version != PREDICTION_VERSION:
+    if version != LULC_VERSION:
         logger.info(
-            f"Overriding the latest prediction version ({PREDICTION_VERSION}) with the specified version ({version})."
+            f"Overriding the latest LULC prediction version ({LULC_VERSION}) with the specified version ({version})."
         )
 
     geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(bucket=bucket, version=version_geomad)
@@ -486,31 +455,19 @@ def run_classify_task(
     full_path_prefix = get_full_path_prefix(bucket)
     logger.info(f"Full path prefix: {full_path_prefix}")
 
-    itempath = PrefixedS3ItemPath(
-        key_prefix=SOURCE_COOP_PREFIX_PREDICTION if is_source_coop else None,
-        prefix=owner,
-        bucket=bucket,
-        sensor=SENSOR,
-        dataset_id=PREDICTION_DATASET_ID,
-        version=version,
-        time=year,
-        full_path_prefix=full_path_prefix,
+    components = build_pipeline_components(
+        tile_id_tuple,
+        year,
+        version,
+        bucket,
+        owner,
+        LULC_DATASET_ID,
+        SOURCE_COOP_PREFIX_LULC if is_source_coop else None,
+        overwrite,
     )
-    stac_document = itempath.stac_path(tile_id_tuple, absolute=True)
-    stac_key = itempath.stac_path(tile_id_tuple, absolute=False)
-
-    write_session = get_write_session()
-    write_client = write_session.client("s3")
-
-    if not overwrite and object_exists(bucket, stac_key, client=write_client):
-        logger.info(f"Item already exists at {stac_document}, skipping.")
-        return
-    logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
-
-    logger.info(
-        f"Dask config: n_workers={n_workers}, threads_per_worker={threads_per_worker}, "
-        f"memory_limit={memory_limit}, xy_chunk_size={xy_chunk_size}"
-    )
+    if components is None:
+        return  # Task exists and overwrite is False, so skipping processing.
+    itempath, write_client, stac_creator, writer, stac_writer = components
 
     searcher = StacGeoparquetSearcher(
         stac_geoparquet_url=geomad_stac_geoparquet_url,
@@ -527,28 +484,11 @@ def run_classify_task(
     )
 
     processor = LulcProcessor(
-        model=joblib_load(loaded_model),
+        model=loaded_model,
         nodata_value=nodata_value,
         logger=logger,
         probability_threshold=probability_threshold,
         year=year,
-    )
-
-    stac_creator = StacCreator(
-        collection_url_root=get_collection_url_root(bucket, owner, SENSOR, PREDICTION_DATASET_ID),
-        itempath=itempath,
-        with_raster=True,
-    )
-
-    writer = AwsDsCogWriter(
-        itempath,
-        write_multithreaded=True,
-        write_function=make_write_function(write_session),
-    )
-
-    stac_writer = AwsStacWriter(
-        itempath,
-        client=write_client,
     )
 
     try:
@@ -569,7 +509,7 @@ def run_classify_task(
                 stac_creator=stac_creator,
                 stac_writer=stac_writer,
             ).run()
-            logger.info(f"Completed processing. Wrote {len(paths)} files to {stac_document}")
+            logger.info(f"Completed processing. Wrote {len(paths)} files. e.g. {paths[0]}")
 
     except Exception as e:
         logger.exception(f"Failed to process with error: {e}")

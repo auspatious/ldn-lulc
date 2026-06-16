@@ -33,9 +33,9 @@ spec:
       - name: image-tag
         value: "latest"
       - name: dataset
-        # "geomad", or "prediction"
+        # "geomad", or "lulc"
         value: "geomad"
-        # value: "prediction"
+        # value: "lulc"
       - name: region
         # "all", "pacific", or "non-pacific"
         value: "all"

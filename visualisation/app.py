@@ -28,7 +28,7 @@ from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
 
 GEOMAD_VERSION = "0-2-1"
-PREDICTION_VERSION = "0-0-4-test"  # TODO: Update.
+LULC_VERSION = "0-0-4-test"  # TODO: Update.
 
 SOURCE_COOP_ENDPOINT = "https://data.source.coop"
 SOURCE_COOP_ACCOUNT = "auspatious"
@@ -97,22 +97,22 @@ MOSAIC_PATHS_GEOMAD = _discover_mosaics_source_coop(
     repo="geomad-sids",
     prefix=f"ls_geomad/{GEOMAD_VERSION}/mosaics",
 )
-MOSAIC_PATHS_PREDICTION = _discover_mosaics_source_coop(
+MOSAIC_PATHS_LULC = _discover_mosaics_source_coop(
     repo="lulc-sids",
-    prefix=f"ls_lulc_prediction/{PREDICTION_VERSION}/mosaics",
+    prefix=f"ls_lulc/{LULC_VERSION}/mosaics",
 )
 
-if not MOSAIC_PATHS_GEOMAD and not MOSAIC_PATHS_PREDICTION:
+if not MOSAIC_PATHS_GEOMAD and not MOSAIC_PATHS_LULC:
     raise RuntimeError(
         "Cannot start: no mosaics discovered. Check network connectivity and that version strings are correct."
     )
 
 logger.info(f"GeoMAD mosaics: {sorted(MOSAIC_PATHS_GEOMAD.keys())}")
-logger.info(f"Prediction mosaics: {sorted(MOSAIC_PATHS_PREDICTION.keys())}")
+logger.info(f"LULC mosaics: {sorted(MOSAIC_PATHS_LULC.keys())}")
 
 DATASETS: dict[str, dict[str, str]] = {
     "geomad": MOSAIC_PATHS_GEOMAD,
-    "prediction": MOSAIC_PATHS_PREDICTION,
+    "lulc": MOSAIC_PATHS_LULC,
 }
 
 
@@ -125,7 +125,7 @@ def mosaic_path_params(
         Query(description="Year (e.g. '2020')", pattern=r"^\d{4}$"),
     ],
     dataset: Annotated[
-        Literal["geomad", "prediction"],
+        Literal["geomad", "lulc"],
         Query(description="Dataset name"),
     ],
 ) -> str:
@@ -149,8 +149,8 @@ def mosaic_path_params(
 app = FastAPI(
     title="LDN LULC Mosaic Viewer",
     description=(
-        "Mosaic viewer for Landsat GeoMedian/GeoMAD and LULC Prediction data. "
-        "Pass `dataset` (e.g. `dataset=geomad` or `dataset=prediction`), `year` (e.g. `year=2020`), and band assets as "
+        "Mosaic viewer for Landsat GeoMedian/GeoMAD and LULC classification data. "
+        "Pass `dataset` (e.g. `dataset=geomad` or `dataset=lulc`), `year` (e.g. `year=2020`), and band assets as "
         "`assets=red&assets=green&assets=blue` or `assets=classification`."
     ),
     version="1.0.0",
@@ -199,16 +199,16 @@ def health():
 def config():
     """Return dynamic configuration for the frontend."""
     years_geomad = sorted(MOSAIC_PATHS_GEOMAD.keys())
-    years_prediction = sorted(MOSAIC_PATHS_PREDICTION.keys())
-    all_years = sorted(set(years_geomad + years_prediction))
+    years_lulc = sorted(MOSAIC_PATHS_LULC.keys())
+    all_years = sorted(set(years_geomad + years_lulc))
     default_year = all_years[-1] if all_years else "2020"
     return {
         "years_geomad": years_geomad,
-        "years_prediction": years_prediction,
+        "years_lulc": years_lulc,
         "all_years": all_years,
         "default_year": default_year,
         "geomad_version": GEOMAD_VERSION,
-        "prediction_version": PREDICTION_VERSION,
+        "lulc_version": LULC_VERSION,
     }
 
 

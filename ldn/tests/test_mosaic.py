@@ -4,7 +4,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ldn.cli import app
-from ldn.utils import GEOMAD_VERSION, PREDICTION_VERSION
+from ldn.utils import GEOMAD_VERSION, LULC_VERSION
 
 runner = CliRunner()
 
@@ -76,8 +76,8 @@ def test_make_mosaics_geomad_single_year(
             "geomad",
             "--version-geomad",
             GEOMAD_VERSION,
-            "--version-prediction",
-            PREDICTION_VERSION,
+            "--version-lulc",
+            LULC_VERSION,
         ],
     )
 
@@ -106,18 +106,18 @@ def test_make_mosaics_prediction_single_year(
         [
             "make-mosaics",
             "--dataset",
-            "prediction",
+            "lulc",
             "--version-geomad",
             GEOMAD_VERSION,
-            "--version-prediction",
-            PREDICTION_VERSION,
+            "--version-lulc",
+            LULC_VERSION,
         ],
     )
 
     assert result.exit_code == 0, result.output
     mock_write.assert_called_once()
     out_path = mock_write.call_args[0][1]
-    assert "prediction_2020_mosaic.json" in out_path
+    assert "lulc_2020_mosaic.json" in out_path
 
 
 @patch("ldn.cli._write_mosaic")
@@ -142,8 +142,8 @@ def test_make_mosaics_multiple_years(mock_session, mock_load, mock_years, mock_b
             "geomad",
             "--version-geomad",
             GEOMAD_VERSION,
-            "--version-prediction",
-            PREDICTION_VERSION,
+            "--version-lulc",
+            LULC_VERSION,
         ],
     )
 
@@ -177,8 +177,8 @@ def test_make_mosaics_passes_session_to_write(
             "geomad",
             "--version-geomad",
             GEOMAD_VERSION,
-            "--version-prediction",
-            PREDICTION_VERSION,
+            "--version-lulc",
+            LULC_VERSION,
         ],
     )
 

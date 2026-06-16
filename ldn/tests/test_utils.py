@@ -46,8 +46,8 @@ class TestDatasetPrefix:
     def test_geomad(self):
         assert dataset_prefix("dep", "geomad") == "dep_ls_geomad"
 
-    def test_prediction(self):
-        assert dataset_prefix("ci", "lulc_prediction") == "ci_ls_lulc_prediction"
+    def test_lulc(self):
+        assert dataset_prefix("ci", "lulc") == "ci_ls_lulc"
 
 
 MODULE = "ldn.utils"
@@ -189,9 +189,9 @@ MODULE = "ldn.utils"
 def mock_constants():
     with (
         patch(f"{MODULE}.GEOMAD_DATASET_ID", "geomad-sids"),
-        patch(f"{MODULE}.PREDICTION_DATASET_ID", "lulc-sids"),
+        patch(f"{MODULE}.LULC_DATASET_ID", "lulc-sids"),
         patch(f"{MODULE}.SOURCE_COOP_PREFIX_GEOMAD", "auspatious/geomad-sids"),
-        patch(f"{MODULE}.SOURCE_COOP_PREFIX_PREDICTION", "auspatious/lulc-sids"),
+        patch(f"{MODULE}.SOURCE_COOP_PREFIX_LULC", "auspatious/lulc-sids"),
     ):
         yield
 
@@ -203,32 +203,32 @@ def test_resolve_dataset_geomad():
     assert prefix == "auspatious/geomad-sids"
 
 
-def test_resolve_dataset_prediction():
-    dataset_id, version, prefix = resolve_dataset("prediction", "0.0.1", "0.0.2")
+def test_resolve_dataset_lulc():
+    dataset_id, version, prefix = resolve_dataset("lulc", "0.0.1", "0.0.2")
     assert dataset_id == "lulc-sids"
     assert version == "0.0.2"
     assert prefix == "auspatious/lulc-sids"
 
 
-def test_resolve_dataset_geomad_ignores_prediction_version():
+def test_resolve_dataset_geomad_ignores_lulc_version():
     _, version, _ = resolve_dataset("geomad", "1.0.0", "9.9.9")
     assert version == "1.0.0"
 
 
-def test_resolve_dataset_prediction_ignores_geomad_version():
-    _, version, _ = resolve_dataset("prediction", "9.9.9", "1.0.0")
+def test_resolve_dataset_lulc_ignores_geomad_version():
+    _, version, _ = resolve_dataset("lulc", "9.9.9", "1.0.0")
     assert version == "1.0.0"
 
 
 def test_resolve_dataset_prefix_none_when_source_coop_not_configured():
     with (
         patch(f"{MODULE}.SOURCE_COOP_PREFIX_GEOMAD", None),
-        patch(f"{MODULE}.SOURCE_COOP_PREFIX_PREDICTION", None),
+        patch(f"{MODULE}.SOURCE_COOP_PREFIX_LULC", None),
     ):
         _, _, geomad_prefix = resolve_dataset("geomad", "0.0.1", "0.0.2")
-        _, _, prediction_prefix = resolve_dataset("prediction", "0.0.1", "0.0.2")
+        _, _, lulc_prefix = resolve_dataset("lulc", "0.0.1", "0.0.2")
     assert geomad_prefix is None
-    assert prediction_prefix is None
+    assert lulc_prefix is None
 
 
 @pytest.mark.parametrize(

@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 
-from ldn.classify import calculate_indices, scale_offset_landsat
+from ldn.lulc import calculate_indices, scale_offset_landsat
 
 
 def _make_dataset(values: dict[str, list[list[float]]]) -> xr.Dataset:
@@ -72,9 +72,7 @@ class TestScaleOffsetLandsat:
         result = scale_offset_landsat(ds)
         expected = 10000 * 0.0000275 - 0.2
         for band in ["red", "green", "blue"]:
-            np.testing.assert_almost_equal(
-                result[band].values[0, 0], expected, decimal=5
-            )
+            np.testing.assert_almost_equal(result[band].values[0, 0], expected, decimal=5)
 
     def test_skips_excluded_bands(self):
         """Bands like 'count', 'emad', 'smad', 'bcmad' should not be scaled."""
@@ -163,9 +161,7 @@ class TestCalculateIndices:
         ds = _make_geomad_dataset(0.3, 0.1, green, 0.15, swir1, 0.2)
         result = calculate_indices(ds)
         expected = (green - swir1) / (green + swir1)
-        np.testing.assert_almost_equal(
-            result["mndwi"].values[0, 0], expected, decimal=5
-        )
+        np.testing.assert_almost_equal(result["mndwi"].values[0, 0], expected, decimal=5)
 
     def test_bui_equals_ndbi_minus_ndvi(self):
         """BUI = NDBI - NDVI, where NDBI = (swir1 - nir) / (swir1 + nir)."""
