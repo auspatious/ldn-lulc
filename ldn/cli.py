@@ -37,6 +37,9 @@ from ldn.utils import (
     SOURCE_COOP_PUBLIC_URL,
     LdnError,
     dataset_prefix,
+    get_geomad_stac_geoparquet_url,
+    get_s3_mosaic_write_path,
+    get_stac_geoparquet_key,
     owner_for_region,
     parse_tile_id,
     parse_years,
@@ -331,10 +334,7 @@ def index_to_stac_geoparquet(
         targets.append((full_prefix, short_prefix))
         logger.info(f"Region for indexing: '{full_prefix}'")
 
-    combined_short = f"{SENSOR}_{dataset_id}"
-    parquet_key = f"/{combined_short}/{version}/{combined_short}.parquet"
-    if is_public:
-        parquet_key = f"{source_coop_prefix}/{parquet_key}"
+    parquet_key = get_stac_geoparquet_key(dataset_id, version, source_coop_prefix)
 
     _run_index(bucket, targets, parquet_key)
 
@@ -365,12 +365,12 @@ def _run_index(
         logger.warning("No STAC items found across any targets, skipping write.")
         return
 
-    logger.info(f"Writing combined STAC-Geoparquet ({len(all_docs)} items) to s3://{bucket}/{parquet_key}")
+    logger.info(f"Writing combined STAC-Geoparquet ({len(all_docs)} items) to bucket:{bucket} key:{parquet_key}")
     write_session = get_write_session()
     store = make_obstore_s3(bucket, write_session)
     write_sync(parquet_key, all_docs, store=store)
 
-    logger.info(f"Done. Wrote {len(all_docs)} items to s3://{bucket}/{parquet_key}")
+    logger.info(f"Done. Wrote {len(all_docs)} items to bucket:{bucket} key:{parquet_key}")
 
 
 def _stac_self_link(feature: dict) -> str:
@@ -502,16 +502,7 @@ def make_mosaics(
 
     dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_prediction)
 
-    combined_short = f"{SENSOR}_{dataset_id}"
-
-    if SOURCE_COOP_PUBLIC_URL:
-        read_url = f"{SOURCE_COOP_PUBLIC_URL}/{source_coop_prefix}"
-        output_path = f"s3://{bucket}/{source_coop_prefix}/{combined_short}/{version}/mosaics/"
-    else:
-        read_url = f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
-        output_path = f"s3://{bucket}/{combined_short}/{version}/mosaics/"
-
-    parquet_url = f"{read_url}/{combined_short}/{version}/{combined_short}.parquet"
+    parquet_url = get_geomad_stac_geoparquet_url(bucket, version)
 
     logger.info(f"Loading combined index from {parquet_url}")
     features = _load_all_features(parquet_url)
@@ -535,10 +526,11 @@ def make_mosaics(
         years_list = available_years
 
     write_session = get_write_session()
-
+    output_path = get_s3_mosaic_write_path(bucket, dataset_id, version, source_coop_prefix)
+    combined_short = dataset_prefix(None, dataset_id)
     for _year in years_list:
         mosaic = _build_mosaic_for_year(_year, features)
-        out_path = f"{output_path}{combined_short}_{_year}_mosaic.json"
+        out_path = f"{output_path}/{combined_short}_{_year}_mosaic.json"
         logger.info(f"  {_year} built successfully, writing to {out_path}")
 
         _write_mosaic(mosaic, out_path, write_session)

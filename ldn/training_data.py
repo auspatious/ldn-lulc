@@ -605,9 +605,9 @@ def get_tile_year_geomad_dem_indices(
     region: Literal["pacific", "non-pacific"],
     country_wgs84_buffered: gpd.GeoDataFrame,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
-    product_owner: str | None,
+    product_owner: str,
     bucket: str,
-    version_geomad: str | None = None,
+    geomad_version: str,
 ) -> xr.Dataset:
     """Load GeoMAD + DEM features for a tile, clipped to buffered country.
 
@@ -622,7 +622,7 @@ def get_tile_year_geomad_dem_indices(
         country_wgs84_buffered: Buffered country geometry in WGS84.
         analysis_crs: Projected CRS string (e.g. "EPSG:3832").
         product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
-        version_geomad: Optional GeoMAD version override.
+        geomad_version: Optional GeoMAD version override.
 
     Returns:
         Dataset with GeoMAD bands, spectral indices, elevation, slope,
@@ -635,7 +635,7 @@ def get_tile_year_geomad_dem_indices(
         analysis_crs=analysis_crs,
         geopolygon=country_wgs84_buffered,
         product_owner=product_owner,
-        version_geomad=version_geomad,
+        geomad_version=geomad_version,
         bucket=bucket,
     )
 
@@ -659,8 +659,10 @@ def make_training_data(
     year: str,
     region: Literal["pacific", "non-pacific"],
     training_data_version: str,
+    geomad_version: str,
     bucket: str,
     country_of_interest: dict[str, str],
+    product_owner: str,
     n: int = 2100,
     min_sample_per_class_n: int = 300,
 ) -> gpd.GeoDataFrame:
@@ -675,11 +677,13 @@ def make_training_data(
         year: Year string (e.g. "2020").
         region: Either "pacific" or "non-pacific".
         training_data_version: Version string (e.g. "0-0-4").
+        geomad_version: GeoMAD version string (e.g. "0-2-1").
         bucket: S3 bucket name for upload.
         country_of_interest: Dict mapping country name to ISO3 code.
             If None, uses all countries in the tile.
         n: Total number of sample points.
         min_sample_per_class_n: Minimum samples per class.
+        product_owner: Optional override for the product owner.
 
     Returns:
         GeoDataFrame of final training samples.
@@ -719,14 +723,16 @@ def make_training_data(
 
     # 2. Load GeoMAD with DEM and indices
     logger.info("Loading GeoMAD")
+    owner = owner_for_region(region, product_owner=product_owner)
     geomad_dem_indices = get_tile_year_geomad_dem_indices(
         tile_id,
         year,
         region=region,
         country_wgs84_buffered=country_wgs84_buffered,
         analysis_crs=analysis_crs,
-        product_owner=None,
+        product_owner=owner,
         bucket=BUCKET,
+        geomad_version=geomad_version,
     )
     geobox = geomad_dem_indices.odc.geobox
 
@@ -767,6 +773,7 @@ def make_training_data(
     logger.info(f"Saved training data to {out_fname_local}")
 
     # 10. Upload to S3
+    # TODO: add owner to path and source.coop stuff?
     s3_uri = _upload_dataframe_csv_to_s3(samples, bucket, f"{out_fname}.csv")
     logger.info(f"Uploaded training data to {s3_uri}")
 
@@ -781,6 +788,7 @@ def generate_training_data(
     training_data_version: str = typer.Option(
         TRAINING_DATA_VERSION, help=f"Version (default: {TRAINING_DATA_VERSION})"
     ),
+    geomad_version: str = typer.Option(GEOMAD_VERSION, help=f"Geomad version (default: {GEOMAD_VERSION})"),
     bucket: str = typer.Option(
         BUCKET,
         help=f"S3 bucket name for upload (default: {BUCKET})",
@@ -791,6 +799,7 @@ def generate_training_data(
     n: int = typer.Option(2100, help="Total number of sample points"),
     min_sample_per_class_n: int = typer.Option(300, help="Minimum samples per class"),
     overwrite: bool = typer.Option(False, help="Whether to overwrite existing data in S3"),
+    product_owner: str | None = typer.Option(None, help="Override the default product owner"),
 ):
     """Generate training data for LULC classification."""
     if not tile_id:
@@ -829,18 +838,19 @@ def generate_training_data(
         year=year,
         region=region,
         training_data_version=training_data_version,
+        geomad_version=geomad_version,
         bucket=bucket,
         country_of_interest=country_of_interest,
         n=n,
         min_sample_per_class_n=min_sample_per_class_n,
+        product_owner=product_owner,
     )
 
 
-def get_geomad_item_id(
-    region: Literal["pacific", "non-pacific"],
+def make_geomad_item_id(
     tile_id: str,
     year: str,
-    product_owner: str | None = None,
+    product_owner: str,
 ) -> str:
     """Build the STAC item ID for a GeoMAD tile.
 
@@ -848,13 +858,12 @@ def get_geomad_item_id(
         region: Either "pacific" or "non-pacific".
         tile_id: Grid tile identifier (e.g. "058_043").
         year: Year string (e.g. "2020").
-        product_owner: Optional override for the region-derived owner prefix.
+        product_owner: Owner (e.g. "dep" or "ci", or override) for the region.
 
     Returns:
         The full STAC item ID string.
     """
-    owner = owner_for_region(region, product_owner=product_owner)
-    prefix = dataset_prefix(owner, GEOMAD_DATASET_ID)
+    prefix = dataset_prefix(product_owner, GEOMAD_DATASET_ID)
     return f"{prefix}_{tile_id}_{year}"
 
 
@@ -864,9 +873,9 @@ def search_and_load_geomad_indices_dem(
     region: Literal["pacific", "non-pacific"],
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     geopolygon: gpd.GeoDataFrame,
-    product_owner: str | None,
+    product_owner: str,
     bucket: str,
-    version_geomad: str | None = None,
+    geomad_version: str,
 ) -> xr.Dataset:
     """Search, load, scale, and merge GeoMAD bands, spectral indices, and DEM terrain for a tile.
         Supports antimeridian-crossing tiles.
@@ -877,20 +886,24 @@ def search_and_load_geomad_indices_dem(
         region: Grid region, either "pacific" or "non-pacific".
         analysis_crs: The expected CRS of the GeoMAD data (either "EPSG:3832" or "EPSG:6933").
         geopolygon: GeoDataFrame used to constrain the stac_load extent (the country geom).
-        product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
+        product_owner: Owner (e.g. "dep" or "ci", or override).
         bucket: S3 bucket name where the GeoMAD data is stored.
-        version_geomad: Optional GeoMAD version override.
+        geomad_version: GeoMAD version string (e.g. "0-2-1").
 
     Returns:
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
-    geomad_url = get_geomad_stac_geoparquet_url(
-        region, product_owner=product_owner, version=version_geomad, bucket=bucket
-    )
-    item_id = get_geomad_item_id(region, tile_id, year, product_owner=product_owner)
+    # owner = owner_for_region(region, product_owner=product_owner)
+    geomad_url = get_geomad_stac_geoparquet_url(bucket=bucket, version=geomad_version)
+    item_id = make_geomad_item_id(tile_id, year, product_owner=product_owner)
 
-    logging.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}, using latest version {GEOMAD_VERSION}")
+    logging.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}.")
+    if GEOMAD_VERSION != geomad_version:
+        logging.info(f"Using overridden GeoMAD version {geomad_version} instead of default {GEOMAD_VERSION}")
+    else:
+        logging.info(f"Using latest GeoMAD version {GEOMAD_VERSION}")
+
     geomad_items = search_sync(
         geomad_url,
         ids=item_id,
@@ -903,6 +916,8 @@ def search_and_load_geomad_indices_dem(
         raise LdnError(f"Must find exactly 1 GeoMAD item for this tile and year, found {geomad_items_n} instead.")
 
     proj_bbox = geomad_items[0].properties.get("proj:bbox")
+    if proj_bbox is None:
+        raise LdnError("GeoMAD item is missing 'proj:bbox' property.")
     logger.info(f"proj:bbox = {proj_bbox}")
 
     bands = [b for b in geomad_items[0].assets.keys() if b != "count"]

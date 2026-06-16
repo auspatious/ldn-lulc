@@ -9,7 +9,6 @@ from ldn.raster import (
     _compute_terrain,
     _load_dem_am,
     calculate_indices,
-    get_full_path_prefix,
     load_dem_terrain,
     scale_offset_landsat,
 )
@@ -525,28 +524,3 @@ class TestPrefixedS3ItemPath:
         with patch("dep_tools.namers.S3ItemPath.path", return_value="my-prefix/base/item-abc.tif"):
             result = pather_absolute.path("item-abc", absolute=True)
         assert "//" not in result.replace("s3://", "")
-
-
-# Test writing geomad to Source.Coop and normal bucket.
-@pytest.mark.parametrize(
-    "bucket,source_coop_url,expected",
-    [
-        (
-            "us-west-2.opendata.source.coop",
-            "https://data.source.coop",
-            "https://data.source.coop",
-        ),
-        (
-            "data.ldn.auspatious.com",
-            None,
-            "s3://data.ldn.auspatious.com",
-        ),
-        (
-            "dep-public-staging",
-            None,
-            "s3://dep-public-staging",
-        ),
-    ],
-)
-def test_get_rasterio_path_prefix(bucket, source_coop_url, expected):
-    assert get_full_path_prefix(bucket, source_coop_url) == expected

@@ -3,11 +3,15 @@ from unittest.mock import patch
 import pytest
 
 from ldn.utils import (
+    AWS_REGION,
     NON_PACIFIC_OWNER,
     PACIFIC_OWNER,
     LdnError,
     dataset_prefix,
+    get_collection_url_root,
+    get_full_path_prefix,
     get_geomad_stac_geoparquet_url,
+    get_public_https_prefix,
     owner_for_region,
     parse_tile_id,
     parse_years,
@@ -225,3 +229,75 @@ def test_resolve_dataset_prefix_none_when_source_coop_not_configured():
         _, _, prediction_prefix = resolve_dataset("prediction", "0.0.1", "0.0.2")
     assert geomad_prefix is None
     assert prediction_prefix is None
+
+
+@pytest.mark.parametrize(
+    "bucket,source_coop_url,expected",
+    [
+        (
+            "us-west-2.opendata.source.coop",
+            "https://data.source.coop",
+            "https://data.source.coop",
+        ),
+        (
+            "data.ldn.auspatious.com",
+            None,
+            "s3://data.ldn.auspatious.com",
+        ),
+        (
+            "dep-public-staging",
+            None,
+            "s3://dep-public-staging",
+        ),
+    ],
+)
+def test_get_full_path_prefix(bucket, source_coop_url, expected):
+    assert get_full_path_prefix(bucket, source_coop_url) == expected
+
+
+@pytest.mark.parametrize(
+    "bucket,source_coop_url,expected",
+    [
+        (
+            "us-west-2.opendata.source.coop",
+            "https://data.source.coop",
+            "https://data.source.coop/#dep_ls_geomad/",
+        ),
+        (
+            "data.ldn.auspatious.com",
+            None,
+            "https://data.ldn.auspatious.com/#dep_ls_geomad/",
+        ),
+        (
+            "dep-public-staging",
+            None,
+            f"https://s3.{AWS_REGION}.amazonaws.com/dep-public-staging/#dep_ls_geomad/",
+        ),
+    ],
+)
+def test_get_collection_url_root(bucket, source_coop_url, expected):
+    assert get_collection_url_root(bucket, "dep", "ls", "geomad", source_coop_url) == expected
+
+
+@pytest.mark.parametrize(
+    "bucket,source_coop_url,expected",
+    [
+        (
+            "us-west-2.opendata.source.coop",
+            "https://data.source.coop",
+            "https://data.source.coop",
+        ),
+        (
+            "data.ldn.auspatious.com",
+            None,
+            "https://data.ldn.auspatious.com",
+        ),
+        (
+            "dep-public-staging",
+            None,
+            f"https://s3.{AWS_REGION}.amazonaws.com/dep-public-staging",
+        ),
+    ],
+)
+def test_get_public_https_prefix(bucket, source_coop_url, expected):
+    assert get_public_https_prefix(bucket, source_coop_url) == expected

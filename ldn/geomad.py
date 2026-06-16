@@ -387,7 +387,7 @@ class AwsStacTask(AreaTask):
     def __init__(
         self,
         itempath: PrefixedS3ItemPath,
-        id: str,
+        id: tuple[int, int],
         area: GeoBox,
         searcher: Searcher,
         loader: StacLoader,

@@ -13,7 +13,6 @@ import typer
 import xarray as xr
 from dask.distributed import Client as DaskClient
 from dep_tools.aws import object_exists
-from dep_tools.exceptions import EmptyCollectionError
 from dep_tools.loaders import OdcLoader
 from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
@@ -36,7 +35,6 @@ from ldn.raster import (
     GEOMAD_BANDS,
     PrefixedS3ItemPath,
     calculate_indices,
-    get_full_path_prefix,
     load_dem_terrain,
     scale_offset_landsat,
 )
@@ -50,6 +48,8 @@ from ldn.utils import (
     WGS84,
     LdnError,
     get_analysis_epsg,
+    get_collection_url_root,
+    get_full_path_prefix,
     get_geomad_stac_geoparquet_url,
     parse_tile_id,
 )
@@ -243,7 +243,7 @@ def do_prediction(
     nodata_mask = stacked.isnull().any(dim="variable")
 
     # Build observation table: fill NaN with nodata_value (masked pixels are excluded below).
-    obs = stacked.squeeze().fillna(nodata_value).transpose().to_pandas()
+    obs = stacked.squeeze().fillna(nodata_value).transpose().to_dataframe()
 
     # Validate that all model features are present before reindexing.
     missing = set(model.feature_names_in_) - set(obs.columns)
@@ -362,6 +362,7 @@ class LulcProcessor(Processor):
         return _set_stac_properties(output, year=self._year)
 
 
+# TODO: Handle different bucket styles in _load_joblib_model
 def _load_joblib_model(model_path: str):
     """Load a joblib model from a local file or URL.
 
@@ -398,7 +399,6 @@ def _load_joblib_model(model_path: str):
         joblib_load(model)
         return model
     except Exception as e:
-        logger.exception(f"Failed to load model from {model}: {e}")
         raise LdnError(f"Failed to load model from {model}") from e
 
 
@@ -465,8 +465,7 @@ def run_classify_task(
             f"Overriding the latest prediction version ({PREDICTION_VERSION}) with the specified version ({version})."
         )
 
-    # TODO: Pass owner override (if present) to get_geomad_stac_geoparquet_url
-    geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(region, version=version_geomad, bucket=bucket)
+    geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(bucket=bucket, version=version_geomad)
 
     tile_id_tuple = parse_tile_id(tile_id)
 
@@ -477,21 +476,22 @@ def run_classify_task(
     geobox = grid.tile_geobox(tile_id_tuple)
 
     if decimated:
-        logger.warning("Decimating geobox by 10x")
+        logger.warning("Warning, using decimated (low resolution) for testing purposes.")
         geobox = geobox.zoom_out(10)
 
     logger.info("Configuring S3 access")
     configure_s3_access(cloud_defaults=True)
 
-    s3_client = boto3.client("s3")
-
     logger.info("Loading model")
     loaded_model = _load_joblib_model(model_path)
 
-    full_path_prefix = get_full_path_prefix(bucket, SOURCE_COOP_PUBLIC_URL)
+    is_public = bool(SOURCE_COOP_PUBLIC_URL)  # Source.Coop.
+
+    full_path_prefix = get_full_path_prefix(bucket)
+    logger.info(f"Full path prefix: {full_path_prefix}")
 
     itempath = PrefixedS3ItemPath(
-        key_prefix=SOURCE_COOP_PREFIX_PREDICTION if SOURCE_COOP_PUBLIC_URL else None,
+        key_prefix=SOURCE_COOP_PREFIX_PREDICTION if is_public else None,
         prefix=owner,
         bucket=bucket,
         sensor=SENSOR,
@@ -506,12 +506,11 @@ def run_classify_task(
     write_session = get_write_session()
     write_client = write_session.client("s3")
 
-    aws_client_to_use = write_client if SOURCE_COOP_PREFIX_PREDICTION else s3_client
+    aws_client_to_use = write_client if is_public else boto3.client("s3")
 
     if not overwrite and object_exists(bucket, stac_key, client=aws_client_to_use):
         logger.info(f"Item already exists at {stac_document}, skipping.")
         return
-
     logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
 
     logger.info(
@@ -542,7 +541,7 @@ def run_classify_task(
     )
 
     stac_creator = StacCreator(
-        collection_url_root=f"{full_path_prefix}/#{owner}_{SENSOR}_{PREDICTION_DATASET_ID}/",
+        collection_url_root=get_collection_url_root(bucket, owner, SENSOR, PREDICTION_DATASET_ID),
         itempath=itempath,
         with_raster=True,
     )
@@ -558,33 +557,26 @@ def run_classify_task(
         client=aws_client_to_use,
     )
 
-    dask_client = DaskClient(
-        n_workers=n_workers,
-        threads_per_worker=threads_per_worker,
-        memory_limit=memory_limit,
-    )
-    logger.info("Started dask client")
-
     try:
-        paths = Task(
-            itempath=itempath,
-            id=tile_id_tuple,
-            area=geobox,
-            searcher=searcher,
-            loader=loader,
-            processor=processor,
-            logger=logger,
-            writer=writer,
-            stac_creator=stac_creator,
-            stac_writer=stac_writer,
-        ).run()
-    except EmptyCollectionError:
-        logger.exception("No items found for this tile")
-        raise LdnError("No items found for this tile")
+        with DaskClient(
+            n_workers=n_workers,
+            threads_per_worker=threads_per_worker,
+            memory_limit=memory_limit,
+        ):
+            paths = Task(
+                itempath=itempath,
+                id=tile_id_tuple,
+                area=geobox,
+                searcher=searcher,
+                loader=loader,
+                processor=processor,
+                logger=logger,
+                writer=writer,
+                stac_creator=stac_creator,
+                stac_writer=stac_writer,
+            ).run()
+            typer.echo(f"Completed processing. Wrote {len(paths)} files to {stac_document}")
+
     except Exception as e:
         logger.exception(f"Failed to process with error: {e}")
-        raise LdnError(f"Failed to process tile {tile_id}") from e
-    finally:
-        dask_client.close()
-
-    logger.info(f"Completed processing. Wrote {len(paths)} items to {itempath.stac_path(tile_id_tuple, absolute=True)}")
+        raise  # let it exit 1 naturally with full traceback

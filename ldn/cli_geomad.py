@@ -27,7 +27,7 @@ from ldn.geomad import (
 )
 from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
-from ldn.raster import PrefixedS3ItemPath, get_full_path_prefix
+from ldn.raster import PrefixedS3ItemPath
 from ldn.utils import (
     BUCKET,
     GEOMAD_DATASET_ID,
@@ -38,6 +38,8 @@ from ldn.utils import (
     SENSOR,
     SOURCE_COOP_PREFIX_GEOMAD,
     SOURCE_COOP_PUBLIC_URL,
+    get_collection_url_root,
+    get_full_path_prefix,
     owner_for_region,
     parse_tile_id,
 )
@@ -183,12 +185,11 @@ def run(
 
     is_public = bool(SOURCE_COOP_PUBLIC_URL)  # Source.Coop.
 
-    full_path_prefix = get_full_path_prefix(bucket, SOURCE_COOP_PUBLIC_URL)
-
-    logger.info(f"Public path prefix: {full_path_prefix}")
+    full_path_prefix = get_full_path_prefix(bucket)
+    logger.info(f"Full path prefix: {full_path_prefix}")
 
     if decimated:
-        typer.echo("Warning, using decimated (low resolution) for testing purposes.")
+        logger.warning("Warning, using decimated (low resolution) for testing purposes.")
         geobox = geobox.zoom_out(10)
         # geobox = geobox.zoom_out(100)
 
@@ -218,11 +219,7 @@ def run(
     if not overwrite and object_exists(bucket, stac_key, client=aws_client_to_use):
         typer.echo(f"Item already exists at {stac_document}, skipping.")
         return
-    else:
-        if not overwrite:
-            typer.echo(f"Item does not exist at {stac_document}, processing tile.")
-
-    load_kwargs = {}
+    logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
 
     # Searcher finds STAC Items
     searcher = PystacSearcher(
@@ -233,6 +230,7 @@ def run(
     )
 
     # Loader loads the data from STAC Items.
+    load_kwargs = {}  # TODO: Is load_kwargs needed?
     loader = OdcLoader(
         bands=LANDSAT_BANDS
         if all_bands
@@ -253,24 +251,7 @@ def run(
         **load_kwargs,
     )
 
-    writer = AwsDsCogWriter(
-        itempath,
-        write_multithreaded=True,
-        write_function=make_write_function(write_session),
-    )
-
-    stac_writer = AwsStacWriter(
-        itempath,
-        client=aws_client_to_use,
-    )
-
-    # Metadata creator
-    stac_creator = StacCreator(
-        collection_url_root=f"{full_path_prefix}/#{owner}_{SENSOR}_{GEOMAD_DATASET_ID}/",
-        itempath=itempath,
-        with_raster=True,
-    )
-
+    # TODO: Make count band use 255 as nodata, rather than 0.
     processor = GeoMADProcessor(
         geomad_options=dict(
             work_chunks=(100, 100),
@@ -290,6 +271,23 @@ def run(
         },
     )
 
+    stac_creator = StacCreator(
+        collection_url_root=get_collection_url_root(bucket, owner, SENSOR, GEOMAD_DATASET_ID),
+        itempath=itempath,
+        with_raster=True,
+    )
+
+    writer = AwsDsCogWriter(
+        itempath,
+        write_multithreaded=True,
+        write_function=make_write_function(write_session),
+    )
+
+    stac_writer = AwsStacWriter(
+        itempath,
+        client=aws_client_to_use,
+    )
+
     try:
         with DaskClient(
             n_workers=n_workers,
@@ -303,11 +301,12 @@ def run(
                 searcher=searcher,
                 loader=loader,
                 processor=processor,
+                logger=logger,
                 writer=writer,
                 stac_creator=stac_creator,
                 stac_writer=stac_writer,
             ).run()
-            typer.echo(f"Wrote {len(paths)} files...")
+            typer.echo(f"Completed processing. Wrote {len(paths)} files to {stac_document}")
 
     except EmptyCollectionError:
         typer.echo("No items found for this tile")
@@ -324,7 +323,3 @@ def run(
     except Exception as e:
         typer.echo(f"Failed to process with error: {e}")
         raise  # let it exit 1 naturally with full traceback
-
-    typer.echo(f"Finished writing to {stac_document}")
-
-    return
