@@ -122,9 +122,9 @@ TRAINING_DATA_VERSION = "0-0-4"
 SOURCE_COOP_PUBLIC_URL = None  # For non-source.coop.
 SOURCE_COOP_PREFIX_GEOMAD = None  # For non-source.coop.
 SOURCE_COOP_PREFIX_PREDICTION = None  # For non-source.coop.
-BUCKET = "data.ldn.auspatious.com"  # Auspatious
-# BUCKET = "dep-public-staging" # DEP Staging
-# BUCKET = "dep-public-data" # DEP Prod
+BUCKET = "data.ldn.auspatious.com"  # Auspatious custom domain bucket
+# BUCKET = "dep-public-staging" # DEP Staging (typical bucket)
+# BUCKET = "dep-public-data" # DEP Prod (typical bucket)
 
 PACIFIC_OWNER = "dep"
 NON_PACIFIC_OWNER = "ci"

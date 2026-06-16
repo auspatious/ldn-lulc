@@ -35,11 +35,11 @@ def get_write_session() -> boto3.Session:
 
     if not (is_public):
         logger.info("SOURCE_COOP_PUBLIC_URL or prefixes not set; skipping write credential setup.")
-        return boto3.Session()
+        return boto3.Session(region_name=AWS_REGION)
 
     if not (key and secret):
         logger.info("AWS_WRITE_* env vars not set; falling back to default credential chain for writes.")
-        return boto3.Session()
+        return boto3.Session(region_name=AWS_REGION)
 
     logger.info("Using explicit write credentials from environment.")
     return boto3.Session(

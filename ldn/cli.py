@@ -321,18 +321,20 @@ def index_to_stac_geoparquet(
 
     dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_prediction)
 
+    is_public = bool(SOURCE_COOP_PUBLIC_URL)
+
     targets: list[tuple[str, str]] = []
     for r in regions:
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
         short_prefix = dataset_prefix(owner, dataset_id)
-        full_prefix = (
-            f"{source_coop_prefix}/{short_prefix}/{version}" if SOURCE_COOP_PUBLIC_URL else f"{short_prefix}/{version}"
-        )
+        full_prefix = f"{source_coop_prefix}/{short_prefix}/{version}" if is_public else f"{short_prefix}/{version}"
         targets.append((full_prefix, short_prefix))
         logger.info(f"Region for indexing: '{full_prefix}'")
 
     combined_short = f"{SENSOR}_{dataset_id}"
-    parquet_key = f"{source_coop_prefix}/{combined_short}/{version}/{combined_short}.parquet"
+    parquet_key = f"/{combined_short}/{version}/{combined_short}.parquet"
+    if is_public:
+        parquet_key = f"{source_coop_prefix}/{parquet_key}"
 
     _run_index(bucket, targets, parquet_key)
 
