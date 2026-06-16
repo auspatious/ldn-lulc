@@ -38,6 +38,7 @@ from ldn.utils import (
     LdnError,
     dataset_prefix,
     owner_for_region,
+    parse_tile_id,
     parse_years,
     resolve_dataset,
 )
@@ -169,7 +170,7 @@ def _find_existing_tasks(
     # Check each task against the set
     existing_tasks: set[tuple[str, str]] = set()
     for task in tasks:
-        tile_index = tuple(map(int, task["id"].split("_")))
+        tile_id_tuple = parse_tile_id(task["id"])
         r = task["region"]
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
 
@@ -187,7 +188,7 @@ def _find_existing_tasks(
             time=task["year"],
             full_path_prefix=full_path_prefix,
         )
-        stac_key = itempath.stac_path(tile_index, absolute=False)
+        stac_key = itempath.stac_path(tile_id_tuple, absolute=False)
 
         lookup_key = f"{bucket}/{owner}"
         if stac_key in existing_keys.get(lookup_key, set()):

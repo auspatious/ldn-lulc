@@ -1,5 +1,4 @@
 import logging
-import re
 from datetime import UTC
 from datetime import datetime as dt
 from pathlib import Path
@@ -33,9 +32,15 @@ from typing_extensions import Annotated
 from ldn.aws_credentials import get_write_session, make_write_function
 from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
-from ldn.raster import GEOMAD_BANDS, PrefixedS3ItemPath, calculate_indices, load_dem_terrain, scale_offset_landsat
+from ldn.raster import (
+    GEOMAD_BANDS,
+    PrefixedS3ItemPath,
+    calculate_indices,
+    get_full_path_prefix,
+    load_dem_terrain,
+    scale_offset_landsat,
+)
 from ldn.utils import (
-    AWS_REGION,
     GEOMAD_VERSION,
     PREDICTION_DATASET_ID,
     PREDICTION_VERSION,
@@ -46,6 +51,7 @@ from ldn.utils import (
     LdnError,
     get_analysis_epsg,
     get_geomad_stac_geoparquet_url,
+    parse_tile_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -462,11 +468,7 @@ def run_classify_task(
     # TODO: Pass owner override (if present) to get_geomad_stac_geoparquet_url
     geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(region, version=version_geomad, bucket=bucket)
 
-    # Split by any of [",", "-", "_"] to be robust.
-    tile_id_parts = [int(i) for i in re.split(r"[,\-_]", tile_id)]
-    if len(tile_id_parts) != 2:
-        raise LdnError(f"Tile ID must split into 2 integers, got {tile_id_parts} from tile_id '{tile_id}'")
-    tile_id_tuple: tuple[int, int] = (tile_id_parts[0], tile_id_parts[1])
+    tile_id_tuple = parse_tile_id(tile_id)
 
     analysis_crs = get_analysis_epsg(region)
 
@@ -486,15 +488,8 @@ def run_classify_task(
     logger.info("Loading model")
     loaded_model = _load_joblib_model(model_path)
 
-    # TODO: Make this a function since it is also done in cli_geomad.py
-    if SOURCE_COOP_PUBLIC_URL:
-        # Source.Coop.
-        full_path_prefix = SOURCE_COOP_PUBLIC_URL
-    else:
-        # Non-Source.Coop.
-        full_path_prefix = f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/"
+    full_path_prefix = get_full_path_prefix(bucket, SOURCE_COOP_PUBLIC_URL)
 
-    # TODO: update this to work for both Source.Coop and non-Source.Coop buckets (like cli_geomad.py).
     itempath = PrefixedS3ItemPath(
         key_prefix=SOURCE_COOP_PREFIX_PREDICTION if SOURCE_COOP_PUBLIC_URL else None,
         prefix=owner,

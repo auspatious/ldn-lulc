@@ -27,9 +27,8 @@ from ldn.geomad import (
 )
 from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
-from ldn.raster import PrefixedS3ItemPath
+from ldn.raster import PrefixedS3ItemPath, get_full_path_prefix
 from ldn.utils import (
-    AWS_REGION,
     BUCKET,
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
@@ -40,6 +39,7 @@ from ldn.utils import (
     SOURCE_COOP_PREFIX_GEOMAD,
     SOURCE_COOP_PUBLIC_URL,
     owner_for_region,
+    parse_tile_id,
 )
 
 geomad_app = typer.Typer()
@@ -60,7 +60,7 @@ def count_scenes(
 ) -> int:
     """Count (tier 1 or all) scenes per tile and year."""
 
-    tile_id_tuple = tuple(map(int, tile_id.split("_")))
+    tile_id_tuple = parse_tile_id(tile_id)
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_id_tuple)
 
@@ -173,8 +173,7 @@ def run(
             else:
                 logger.info("Not in LS7 era so not using buffered temporal search.")
 
-    # Set up variables and check
-    tile_id_tuple = tuple(map(int, tile_id.split("_")))
+    tile_id_tuple = parse_tile_id(tile_id)
 
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_id_tuple)
@@ -184,41 +183,18 @@ def run(
 
     is_public = bool(SOURCE_COOP_PUBLIC_URL)  # Source.Coop.
 
-    # TODO: Make this a function since it is also done in classify.py
-    # "data.ldn.auspatious.com" to "https://data.ldn.auspatious.com"
-    # "dep-public-staging" to "https://dep-public-staging.s3.us-west-2.amazonaws.com"
-    # "https://data.source.coop" to "https://data.source.coop"
-    # Public HTTPS URL used in STAC hrefs
-    if is_public:
-        public_path_prefix = SOURCE_COOP_PUBLIC_URL
-    elif bucket.startswith("https://"):
-        public_path_prefix = bucket
-    elif "." in bucket:
-        public_path_prefix = f"https://{bucket}"
-    else:
-        public_path_prefix = f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
+    full_path_prefix = get_full_path_prefix(bucket, SOURCE_COOP_PUBLIC_URL)
 
-    # S3 path used by rasterio to read back written files (for with_raster stats)
-    if is_public:
-        rasterio_path_prefix = f"s3://{BUCKET}"  # e.g. s3://us-west-2.opendata.source.coop
-    else:
-        rasterio_path_prefix = f"s3://{bucket}"  # e.g. s3://data.ldn.auspatious.com
-
-    logger.info(f"Public path prefix: {public_path_prefix}")
-    logger.info(f"Rasterio path prefix: {rasterio_path_prefix}")
-
-    # import pdb; pdb.set_trace()
+    logger.info(f"Public path prefix: {full_path_prefix}")
 
     if decimated:
         typer.echo("Warning, using decimated (low resolution) for testing purposes.")
         geobox = geobox.zoom_out(10)
+        # geobox = geobox.zoom_out(100)
 
     # Configure for dask and reading data
     _ = configure_s3_access(requester_pays=True)
-    # Configure for checking item existence
-    s3_client = boto3.client("s3")  # Only needed for non-Source.Coop.
 
-    # itempath for writing + STAC hrefs (HTTPS)
     itempath = PrefixedS3ItemPath(
         key_prefix=SOURCE_COOP_PREFIX_GEOMAD if is_public else None,
         prefix=owner,
@@ -227,18 +203,7 @@ def run(
         dataset_id=GEOMAD_DATASET_ID,
         version=version,
         time=year,
-        full_path_prefix=public_path_prefix,
-    )
-    # separate itempath for rasterio reads (s3://) — same config, different prefix
-    itempath_for_rasterio = PrefixedS3ItemPath(
-        key_prefix=SOURCE_COOP_PREFIX_GEOMAD if is_public else None,
-        prefix=owner,
-        bucket=bucket,
-        sensor=SENSOR,
-        dataset_id=GEOMAD_DATASET_ID,
-        version=version,
-        time=year,
-        full_path_prefix=f"s3://{bucket}",
+        full_path_prefix=full_path_prefix,
     )
     stac_document = itempath.stac_path(tile_id_tuple, absolute=True)
     stac_key = itempath.stac_path(tile_id_tuple, absolute=False)
@@ -246,11 +211,10 @@ def run(
     write_session = get_write_session()
     write_client = write_session.client("s3")
 
-    aws_client_to_use = write_client if is_public else s3_client
+    # Configure for checking item existence
+    aws_client_to_use = write_client if is_public else boto3.client("s3")
 
-    # Check if we've done this tile before
     # If we don't want to overwrite, and the destination file already exists, skip it
-    # Use the write client to check if the item already exists at the destination, since it may have different creds.
     if not overwrite and object_exists(bucket, stac_key, client=aws_client_to_use):
         typer.echo(f"Item already exists at {stac_document}, skipping.")
         return
@@ -300,10 +264,10 @@ def run(
         client=aws_client_to_use,
     )
 
-    # Metadata creator — uses s3:// so rasterio can auth and read back the file
+    # Metadata creator
     stac_creator = StacCreator(
-        collection_url_root=f"{public_path_prefix}/#{owner}_{SENSOR}_{GEOMAD_DATASET_ID}/",
-        itempath=itempath_for_rasterio,  # rasterio reads via s3://
+        collection_url_root=f"{full_path_prefix}/#{owner}_{SENSOR}_{GEOMAD_DATASET_ID}/",
+        itempath=itempath,
         with_raster=True,
     )
 

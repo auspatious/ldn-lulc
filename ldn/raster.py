@@ -284,3 +284,22 @@ class PrefixedS3ItemPath(S3ItemPath):
             if absolute and self.full_path_prefix is not None
             else relative_path
         )
+
+
+def get_full_path_prefix(bucket: str, source_coop_public_url: str | None) -> str:
+    """Return the path prefix rasterio should use to read back written files.
+
+    For Source.Coop buckets, files are publicly readable over HTTPS so no
+    auth is needed. For private S3 buckets, use s3:// so rasterio uses
+    boto3 credentials.
+
+    Args:
+        bucket: The S3 bucket name or custom domain.
+        source_coop_public_url: The Source.Coop public URL if applicable, else None.
+
+    Returns:
+        A URL prefix string suitable for rasterio to open files.
+    """
+    if source_coop_public_url:
+        return source_coop_public_url
+    return f"s3://{bucket}"

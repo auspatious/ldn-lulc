@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Literal
 
 from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
@@ -228,3 +229,24 @@ def resolve_dataset(
     if dataset == "geomad":
         return GEOMAD_DATASET_ID, version_geomad, SOURCE_COOP_PREFIX_GEOMAD
     return PREDICTION_DATASET_ID, version_prediction, SOURCE_COOP_PREFIX_PREDICTION
+
+
+def parse_tile_id(tile_id: str) -> tuple[int, int]:
+    """Parse a tile ID string into a tuple of two integers.
+
+    Accepts any of '_', ',', or '-' as separators, e.g. '028_030',
+    '28,30', or '28-30'.
+
+    Args:
+        tile_id: A string containing two integers separated by '_', ',', or '-'.
+
+    Returns:
+        A tuple of two integers (x, y).
+
+    Raises:
+        LdnError: If the tile ID does not split into exactly two integers.
+    """
+    parts = [int(i) for i in re.split(r"[,\-_]", tile_id)]
+    if len(parts) != 2:
+        raise LdnError(f"Tile ID must split into 2 integers, got {parts} from '{tile_id}'")
+    return parts[0], parts[1]

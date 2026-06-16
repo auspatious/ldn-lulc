@@ -51,6 +51,7 @@ from ldn.utils import (
     get_analysis_epsg,
     get_geomad_stac_geoparquet_url,
     owner_for_region,
+    parse_tile_id,
 )
 from notebooks.src.Compare_LULC_func import standardise_class
 
@@ -696,9 +697,9 @@ def make_training_data(
     # causes Dask to materialise a massive array, leading to OOM kills.
     # Skip for AM-crossing tiles: their WGS84 footprint straddles ±180° and
     # intersects incorrectly with standard WGS84 country geometries.
-    tile_index = tuple(int(i) for i in tile_id.split("_"))
+    tile_id_tuple = parse_tile_id(tile_id)
     grid = get_gridspec(region=region)
-    tile_geobox = grid.tile_geobox(tile_index)
+    tile_geobox = grid.tile_geobox(tile_id_tuple)
     tile_footprint_wgs84 = gpd.GeoDataFrame(geometry=[tile_geobox.extent.geom], crs=tile_geobox.crs).to_crs(WGS84)
     tile_crosses_am = isinstance(bbox_across_180(tile_footprint_wgs84), tuple)
 
@@ -756,7 +757,7 @@ def make_training_data(
     samples = filter_outliers(samples)
 
     # 9. Write outputs (local)
-    tile_x_index, tile_y_index = tile_id.split("_")
+    tile_x_index, tile_y_index = parse_tile_id(tile_id)
     out_fname = f"training_data/{training_data_version}/{region}/{tile_x_index}/{tile_y_index}/{year}/samples"
     out_fname_local = f"ldn/{out_fname}"
     Path(out_fname_local).parent.mkdir(parents=True, exist_ok=True)
@@ -805,11 +806,11 @@ def generate_training_data(
 
     logger.info(f"Processing tile {tile_id}, year {year}, region {region}")
 
-    tile_id_parts = tile_id.split("_")
+    tile_id_x, tile_id_y = parse_tile_id(tile_id)
 
     s3_client = boto3.client("s3")
 
-    prefix = f"training_data/{training_data_version}/{region}/{tile_id_parts[0]}/{tile_id_parts[1]}/{year}/samples.csv"
+    prefix = f"training_data/{training_data_version}/{region}/{tile_id_x}/{tile_id_y}/{year}/samples.csv"
     logger.info(f"Checking if object exists at s3://{bucket}/{prefix}")
 
     if not overwrite:
