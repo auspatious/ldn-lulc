@@ -13,6 +13,7 @@ from ldn.training_data import (
     extract_geomad_dem_indices_values,
     filter_outliers,
     find_agreement,
+    make_geomad_item_id,
     remove_nan_samples,
 )
 
@@ -302,3 +303,17 @@ class TestExtractGeomadDemIndicesValues:
         assert result.iloc[0]["red"] == 0.0
         # Point (50, 20) -> y_idx=2, x_idx=5 -> red[2,5] = 25
         assert result.iloc[1]["red"] == 25.0
+
+
+class TestGetGeomadItemId:
+    def test_pacific(self):
+        item_id = make_geomad_item_id("058_043", "2020", "dep")
+        assert item_id == "dep_ls_geomad_058_043_2020"
+
+    def test_non_pacific(self):
+        item_id = make_geomad_item_id("119_126", "2023", "ci")
+        assert item_id == "ci_ls_geomad_119_126_2023"
+
+    def test_product_owner_override(self):
+        item_id = make_geomad_item_id("058_043", "2020", "ci")
+        assert item_id == "ci_ls_geomad_058_043_2020"

@@ -42,8 +42,7 @@ print-tasks-2000-2025-pacific:
 
 TEST_TILES_2_REGIONS := 076_024:pacific 144_127:non-pacific
 
-# TODO: Run these non-decimated. Just testing bucket stuff here.
-# TODO: Get write access for Will to dep-public-staging.
+# TODO: Run these non-decimated. Just testing region path stuff here.
 geomad-2-regions-decimated:
 	for site in $(TEST_TILES_2_REGIONS); do \
 		tile_id=$${site%%:*}; \

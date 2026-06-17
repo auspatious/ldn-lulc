@@ -65,6 +65,7 @@ def bucket_env(request, monkeypatch):
 
 
 # TODO: Add an AM-Crossing integration test. 066_022.
+# TODO: Test a non-pacific tile as well. One that doesn't intersect countries.
 TILE_ID = "010_020"  # This tile (in Australia) doesn't intersect with the SIDS/SPC Countries intentionally.
 YEAR = "2025"
 VERSION = "integration-test"
