@@ -150,19 +150,19 @@ spec:
           - "{{ workflow.parameters.overwrite }}"
           - "{{ workflow.parameters.decimated }}"
         env:
-          - name: AWS_WRITE_ACCESS_KEY_ID
+          - name: SOURCE_COOP_AWS_ACCESS_KEY_ID
             value: ""
             # valueFrom:
             #   secretKeyRef:
             #     name: source-coop-creds
             #     key: aws_access_key_id
-          - name: AWS_WRITE_SECRET_ACCESS_KEY
+          - name: SOURCE_COOP_AWS_SECRET_ACCESS_KEY
             value: ""
             # valueFrom:
             #   secretKeyRef:
             #     name: source-coop-creds
             #     key: aws_secret_access_key
-          - name: AWS_WRITE_SESSION_TOKEN
+          - name: SOURCE_COOP_AWS_SESSION_TOKEN
             value: ""
             # valueFrom:
             #   secretKeyRef:

@@ -69,7 +69,30 @@ poetry add "datacube-compute@git+https://github.com/auspatious/datacube-compute.
 
 Simply run: `poetry run pytest` or for a specific file: `poetry run pytest ldn/tests/test_mosaic.py`
 
-**Integration tests:** set source.coop env vars and then `pytest -m integration`
+#### Integration tests:
+
+Set env vars and then run:
+
+```bash
+# Set Source.Coop env vars
+SOURCE_COOP_PUBLIC_URL=https://data.source.coop
+SOURCE_COOP_PREFIX_GEOMAD=auspatious/geomad-sids
+SOURCE_COOP_PREFIX_LULC=auspatious/lulc-sids
+SOURCE_COOP_AWS_ACCESS_KEY_ID=XXX
+SOURCE_COOP_AWS_SECRET_ACCESS_KEY=XXX
+SOURCE_COOP_AWS_SESSION_TOKEN=XXX
+
+# Set Auspatious env vars
+AUSPATIOUS_AWS_ACCESS_KEY_ID=XXX
+AUSPATIOUS_AWS_SECRET_ACCESS_KEY=XXX
+
+# Set DEP env vars
+DEP_AWS_ACCESS_KEY_ID=XXX
+DEP_AWS_SECRET_ACCESS_KEY=XXX
+
+# Run integration tests
+pytest -m integration
+```
 
 
 ### Pre-commit hooks
@@ -166,7 +189,7 @@ Info here: https://github.com/auspatious/ldn-lulc/Source.Coop_README.md
 
 Writing to this requires these env vars set. These env vars come from the credentials given by Source.Coop for this data repo.
 ```bash
-export AWS_WRITE_ACCESS_KEY_ID="..."
-export AWS_WRITE_SECRET_ACCESS_KEY="..."
-export AWS_WRITE_SESSION_TOKEN="..."
+export SOURCE_COOP_AWS_ACCESS_KEY_ID="..."
+export SOURCE_COOP_AWS_SECRET_ACCESS_KEY="..."
+export SOURCE_COOP_AWS_SESSION_TOKEN="..."
 ```

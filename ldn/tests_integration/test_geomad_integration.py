@@ -53,8 +53,8 @@ def bucket_env(request, monkeypatch):
 
     # Source.Coop uses write credentials, other buckets use standard AWS credentials
     if config["id"] == "source-coop":
-        if not os.environ.get("AWS_WRITE_ACCESS_KEY_ID"):
-            pytest.skip("Source.Coop write credentials (AWS_WRITE_ACCESS_KEY_ID) not set")
+        if not os.environ.get("SOURCE_COOP_AWS_ACCESS_KEY_ID"):
+            pytest.skip("Source.Coop write credentials (SOURCE_COOP_AWS_ACCESS_KEY_ID) not set")
     elif not config.get("AWS_ACCESS_KEY_ID"):
         pytest.skip(f"AWS credentials for {config['id']} not set")
 

@@ -15,9 +15,9 @@ from ldn.utils import AWS_REGION, is_source_coop
 
 logger = logging.getLogger(__name__)
 
-_WRITE_KEY = "AWS_WRITE_ACCESS_KEY_ID"
-_WRITE_SECRET = "AWS_WRITE_SECRET_ACCESS_KEY"
-_WRITE_TOKEN = "AWS_WRITE_SESSION_TOKEN"
+_WRITE_KEY = "SOURCE_COOP_AWS_ACCESS_KEY_ID"
+_WRITE_SECRET = "SOURCE_COOP_AWS_SECRET_ACCESS_KEY"
+_WRITE_TOKEN = "SOURCE_COOP_AWS_SESSION_TOKEN"
 
 
 def get_write_session() -> boto3.Session:

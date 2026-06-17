@@ -223,9 +223,9 @@ mosaic-lulc-source-coop-test:
 	--version-geomad $(SOURCE_TEST_VERSION) \
 	--version-lulc $(SOURCE_TEST_VERSION_P);
 
-# export AWS_WRITE_ACCESS_KEY_ID=""
-# export AWS_WRITE_SECRET_ACCESS_KEY=""
-# export AWS_WRITE_SESSION_TOKEN=""
+# export SOURCE_COOP_AWS_ACCESS_KEY_ID=""
+# export SOURCE_COOP_AWS_SECRET_ACCESS_KEY=""
+# export SOURCE_COOP_AWS_SESSION_TOKEN=""
 
 
 
@@ -265,4 +265,10 @@ mosaic-lulc-source-coop-test:
 #             --training-data-version test;
 
 
-# poetry run pytest
+# Integration Test: Geomad test.
+# poetry run ldn geomad run --tile-id 010_020 \
+#   --year 2025 \
+#   --version integration-test \
+#   --region pacific \
+#   --integration-test \
+#   --overwrite;
