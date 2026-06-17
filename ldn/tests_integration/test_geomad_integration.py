@@ -1,4 +1,5 @@
 # Seperate folder for integration tests so they can be easily excluded from regular test runs.
+import logging
 import os
 from datetime import UTC, datetime, timedelta
 
@@ -13,6 +14,7 @@ from ldn.utils import GEOMAD_DATASET_ID, SENSOR, get_source_coop_config, parse_t
 
 pytestmark = pytest.mark.integration
 
+logger = logging.getLogger(__name__)
 
 INTEGRATION_CONFIGS = [
     {
@@ -153,4 +155,37 @@ def test_geomad_run_and_skip(bucket_env, runner, stac_key):
     )
 
 
-# TODO: Add a delete step to clean up. Don't want to leave artifacts in Source.Coop or DEP prod.
+# Delete/clean-up step. Don't want to leave files in Source.Coop or DEP prod.
+# This runs after every test automatically via autouse=True
+@pytest.fixture(autouse=True)
+def cleanup_stac_item(bucket_env, stac_key):
+    """Delete the test STAC item after each test."""
+    yield
+    source_coop_url, _, _ = get_source_coop_config()
+    bucket = bucket_env["BUCKET"]
+
+    s3 = get_write_session().client("s3") if source_coop_url else boto3.client("s3")
+
+    folder = stac_key.rsplit("/", 1)[0] + "/"
+    logger.info(f"Cleaning up test folder: {folder}")
+
+    # List objects with the folder prefix and delete them
+    response = s3.list_objects_v2(Bucket=bucket, Prefix=folder)
+
+    # Safeguard to not delete too many files
+    contents = response.get("Contents", [])
+    len_contents = len(contents)
+    count_expected = 11  # 1 STAC item + 10 assets
+    assert len_contents == count_expected, (
+        f"There should be {count_expected} files to clean up (1 STAC item + 10 assets), found {len_contents}."
+    )
+    count_deleted = 0
+    for obj in contents:
+        key = obj["Key"]
+        try:
+            s3.delete_object(Bucket=bucket, Key=key)
+            count_deleted += 1
+            logger.info(f"Deleted test item: {key}")
+        except Exception as e:
+            logger.warning(f"Failed to delete test item {key}: {e}")
+    assert count_deleted == count_expected, f"Expected to delete {count_expected} files, but deleted {count_deleted}."
