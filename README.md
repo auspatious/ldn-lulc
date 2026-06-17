@@ -21,7 +21,6 @@ rustup-init
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-TODO: Migrate from Poetry to UV.
 ```bash
 poetry lock --no-update
 poetry export -f requirements.txt --output requirements.txt --with dev --with visualisation --without-hashes
@@ -69,6 +68,33 @@ poetry add "datacube-compute@git+https://github.com/auspatious/datacube-compute.
 ### To run tests
 
 Simply run: `poetry run pytest` or for a specific file: `poetry run pytest ldn/tests/test_mosaic.py`
+
+#### Integration tests:
+
+Set env vars and then run:
+
+```bash
+# Set Source.Coop env vars
+export SOURCE_COOP_PUBLIC_URL=https://data.source.coop
+export SOURCE_COOP_PREFIX_GEOMAD=auspatious/geomad-sids
+export SOURCE_COOP_PREFIX_LULC=auspatious/lulc-sids
+export SOURCE_COOP_AWS_ACCESS_KEY_ID=XXX
+export SOURCE_COOP_AWS_SECRET_ACCESS_KEY=XXX
+export SOURCE_COOP_AWS_SESSION_TOKEN=XXX
+
+# Set Auspatious env vars
+export AUSPATIOUS_AWS_ACCESS_KEY_ID=XXX
+export AUSPATIOUS_AWS_SECRET_ACCESS_KEY=XXX
+export AUSPATIOUS_AWS_SESSION_TOKEN=XXX
+
+# Set DEP env vars
+export DEP_AWS_ACCESS_KEY_ID=XXX
+export DEP_AWS_SECRET_ACCESS_KEY=XXX
+export DEP_AWS_SESSION_TOKEN=XXX
+
+# Run integration tests
+pytest -m integration
+```
 
 
 ### Pre-commit hooks
@@ -131,6 +157,13 @@ A tile server for viewing GeoMedian/GeoMAD and predicted LULC mosaics, built wit
 - [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
 - Docker
 
+### Run locally
+
+```bash
+poetry install --with visualisation
+poetry run uvicorn visualisation.app:app --host 0.0.0.0 --port 8081 --reload
+```
+
 ### Deploy
 
 From the project root:
@@ -145,13 +178,6 @@ This will:
 3. Build and push the Docker image
 4. Deploy the Lambda + API Gateway via Terraform
 
-### Run locally
-
-```bash
-poetry install --with visualisation
-poetry run uvicorn visualisation.app:app --host 0.0.0.0 --port 8081 --reload
-```
-
 ### Current deployment
 
 https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
@@ -163,9 +189,4 @@ Data product: https://source.coop/auspatious/geomad-sids
 
 Info here: https://github.com/auspatious/ldn-lulc/Source.Coop_README.md
 
-Writing to this requires these env vars set:
-```bash
-export AWS_WRITE_ACCESS_KEY_ID="..."
-export AWS_WRITE_SECRET_ACCESS_KEY="..."
-export AWS_WRITE_SESSION_TOKEN="..."
-```
+Writing to this requires env vars set (see integration testing section above). These env vars come from the credentials given by Source.Coop for this data repo.

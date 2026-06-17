@@ -5,7 +5,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
-from ldn.utils import LdnError, wgs84
+from ldn.utils import CLASS_ATTR, WGS84, LdnError
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ def random_sampling(
     sampling="stratified_random",
     manual_class_ratios=None,
     out_fname=None,
-    class_attr="class",
+    class_attr=CLASS_ATTR,
     drop_value=0,
 ):
     """
@@ -230,7 +230,7 @@ def random_sampling(
     gdf = gdf.drop(["latitude", "longitude"], axis=1)
 
     if crs is not None and gdf.crs is not None and gdf.crs.to_epsg() != 4326:
-        gdf = gdf.to_crs(wgs84)
+        gdf = gdf.to_crs(WGS84)
 
     if out_fname is not None:
         gdf.to_file(out_fname)

@@ -26,12 +26,12 @@ line-length = 120
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
-antimeridian = "<0.4.5"
+antimeridian = ">=0.4.7,<1.0.0"
 datacube-compute = { git = "https://github.com/auspatious/datacube-compute.git" }
 dep-tools = { git = "https://github.com/digitalearthpacific/dep-tools.git" }
 gdal = ">=3.12.2"
 geopandas = ">=1.1.2,<2.0.0"
-obstore = ">=0.9.0,<0.10.0"
+obstore = ">=0.10.1,<1.0.0"
 odc-geo = ">=0.5.0,<0.6.0"
 odc-stac = ">=0.5.2,<0.6.0"
 pandas = ">=2.3.3,<3.0.0"
@@ -46,7 +46,6 @@ dask = {extras = ["distributed"], version = "^2026.3.0"}
 prometheus-client = "^0.24.1"
 joblib = "^1.5.3"
 requests = "^2.33.1"
-pytest = "^9.0.2"
 
 [tool.poetry.group.visualisation.dependencies]
 boto3 = ">=1.42.31,<2.0.0"
@@ -61,7 +60,6 @@ rio-tiler = "^9.0.4"
 
 [tool.poetry.group.dev.dependencies]
 contextily = ">=1.7.0,<2.0.0"
-datacube = ">=1.9.14"
 duckdb = ">=1.4.4,<2.0.0"
 folium = ">=0.20.0,<0.21.0"
 ipykernel = ">=7.1.0,<8.0.0"
