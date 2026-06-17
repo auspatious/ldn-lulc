@@ -25,18 +25,18 @@ INTEGRATION_CONFIGS = [
         "SOURCE_COOP_PREFIX_LULC": "",
         "AWS_ACCESS_KEY_ID": os.environ.get("AUSPATIOUS_AWS_ACCESS_KEY_ID", ""),
         "AWS_SECRET_ACCESS_KEY": os.environ.get("AUSPATIOUS_AWS_SECRET_ACCESS_KEY", ""),
+        "AWS_SESSION_TOKEN": os.environ.get("AUSPATIOUS_AWS_SESSION_TOKEN", ""),
     },
-    # TODO: Get DEP staging credentials
-    # {
-    #     "id": "dep-staging",
-    #     "BUCKET": "dep-public-staging",
-    #     "SOURCE_COOP_PUBLIC_URL": "",
-    #     "SOURCE_COOP_PREFIX_GEOMAD": "",
-    #     "SOURCE_COOP_PREFIX_LULC": "",
-    #     "AWS_ACCESS_KEY_ID": os.environ.get("DEP_AWS_ACCESS_KEY_ID", ""),
-    #     "AWS_SECRET_ACCESS_KEY": os.environ.get("DEP_AWS_SECRET_ACCESS_KEY", ""),
-    # },
-    # Source.Coop requires AWS_WRITE_* env vars — skip if not set
+    {
+        "id": "dep-staging",
+        "BUCKET": "dep-public-staging",
+        "SOURCE_COOP_PUBLIC_URL": "",
+        "SOURCE_COOP_PREFIX_GEOMAD": "",
+        "SOURCE_COOP_PREFIX_LULC": "",
+        "AWS_ACCESS_KEY_ID": os.environ.get("DEP_AWS_ACCESS_KEY_ID", ""),
+        "AWS_SECRET_ACCESS_KEY": os.environ.get("DEP_AWS_SECRET_ACCESS_KEY", ""),
+        "AWS_SESSION_TOKEN": os.environ.get("DEP_AWS_SESSION_TOKEN", ""),
+    },
     {
         "id": "source-coop",
         "BUCKET": "us-west-2.opendata.source.coop",
@@ -65,7 +65,7 @@ def bucket_env(request, monkeypatch):
 
 
 # TODO: Add an AM-Crossing integration test. 066_022.
-TILE_ID = "010_020"  # This tile doesn't intersect with the SIDS/SPC Countries intentionally.
+TILE_ID = "010_020"  # This tile (in Australia) doesn't intersect with the SIDS/SPC Countries intentionally.
 YEAR = "2025"
 VERSION = "integration-test"
 
@@ -159,26 +159,34 @@ def test_geomad_run_and_skip(bucket_env, runner, stac_key):
 # This runs after every test automatically via autouse=True
 @pytest.fixture(autouse=True)
 def cleanup_stac_item(bucket_env, stac_key):
-    """Delete the test STAC item after each test."""
+    """Delete the test STAC item and assets after each test."""
     yield
     source_coop_url, _, _ = get_source_coop_config()
     bucket = bucket_env["BUCKET"]
 
-    s3 = get_write_session().client("s3") if source_coop_url else boto3.client("s3")
+    # Use the same credentials that were used to write
+    if source_coop_url:
+        s3 = get_write_session().client("s3")
+    else:
+        s3 = boto3.Session(
+            aws_access_key_id=bucket_env.get("AWS_ACCESS_KEY_ID") or None,
+            aws_secret_access_key=bucket_env.get("AWS_SECRET_ACCESS_KEY") or None,
+            aws_session_token=bucket_env.get("AWS_SESSION_TOKEN") or None,
+            region_name="us-west-2",
+        ).client("s3")
 
     folder = stac_key.rsplit("/", 1)[0] + "/"
     logger.info(f"Cleaning up test folder: {folder}")
 
-    # List objects with the folder prefix and delete them
     response = s3.list_objects_v2(Bucket=bucket, Prefix=folder)
-
-    # Safeguard to not delete too many files
     contents = response.get("Contents", [])
     len_contents = len(contents)
-    count_expected = 11  # 1 STAC item + 10 assets
+    count_expected = 11
+    # Safeguard to not delete too many files
     assert len_contents == count_expected, (
         f"There should be {count_expected} files to clean up (1 STAC item + 10 assets), found {len_contents}."
     )
+
     count_deleted = 0
     for obj in contents:
         key = obj["Key"]
@@ -188,4 +196,5 @@ def cleanup_stac_item(bucket_env, stac_key):
             logger.info(f"Deleted test item: {key}")
         except Exception as e:
             logger.warning(f"Failed to delete test item {key}: {e}")
+
     assert count_deleted == count_expected, f"Expected to delete {count_expected} files, but deleted {count_deleted}."

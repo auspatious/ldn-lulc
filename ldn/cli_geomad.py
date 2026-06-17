@@ -292,17 +292,17 @@ def run(
             )
 
     except EmptyCollectionError:
-        logger.info("No items found for this tile")
+        logger.exception("No items found for this tile")
         sys.exit(EXIT_SKIP)
 
     except InsufficientScenesError as e:
-        logger.info(f"Failed to process with error: {e}")
+        logger.exception(f"Failed to process with error: {e}")
         sys.exit(EXIT_SKIP)
 
     except KilledWorker as e:
-        logger.info(f"Failed to process with error: {e}")
+        logger.exception(f"Failed to process with error: {e}")
         sys.exit(EXIT_OOM)
 
-    except Exception as e:
-        logger.info(f"Failed to process with error: {e}")
+    except Exception:
+        logger.exception("Failed to process with error")
         raise  # let it exit 1 naturally with full traceback

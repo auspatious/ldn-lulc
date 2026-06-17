@@ -523,6 +523,6 @@ def run_classify_task(
                 f"Completed processing. Wrote {len(paths)} files to {itempath.stac_path(tile_id_tuple, absolute=True)}"
             )
 
-    except Exception as e:
-        logger.exception(f"Failed to process with error: {e}")
+    except Exception:
+        logger.exception("Failed to process with error")
         raise  # let it exit 1 naturally with full traceback
