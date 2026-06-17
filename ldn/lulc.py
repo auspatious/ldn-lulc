@@ -477,7 +477,7 @@ def run_classify_task(
     )
     if components is None:
         return  # Task exists and overwrite is False, so skipping processing.
-    itempath, write_client, stac_creator, writer, stac_writer = components
+    itempath, stac_creator, writer, stac_writer = components
 
     searcher = StacGeoparquetSearcher(
         stac_geoparquet_url=geomad_stac_geoparquet_url,

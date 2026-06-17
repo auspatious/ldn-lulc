@@ -219,7 +219,7 @@ def run(
     )
     if components is None:
         return  # Task exists and overwrite is False, so skipping processing.
-    itempath, write_client, stac_creator, writer, stac_writer = components
+    itempath, stac_creator, writer, stac_writer = components
 
     # Searcher finds STAC Items
     searcher = PystacSearcher(

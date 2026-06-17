@@ -623,10 +623,10 @@ def test_build_pipeline_components_proceeds_when_exists_and_overwrite(mock_aws):
     assert result is not None
 
 
-def test_build_pipeline_components_returns_five_components(mock_aws):
+def test_build_pipeline_components_returns_four_components(mock_aws):
     result = build_pipeline_components(TILE, YEAR, VERSION, "dep-public-staging", OWNER, "geomad", None, overwrite=True)
     assert result is not None
-    assert len(result) == 5
+    assert len(result) == 4
 
 
 def test_build_pipeline_components_collection_url_root_correct(mock_aws):
@@ -635,6 +635,6 @@ def test_build_pipeline_components_collection_url_root_correct(mock_aws):
         result = build_pipeline_components(
             TILE, YEAR, VERSION, "data.ldn.auspatious.com", OWNER, "geomad", None, overwrite=True
         )
-    _, _, stac_creator, _, _ = result
+    _, stac_creator, _, _ = result
     assert stac_creator._collection_url_root.startswith("https://")
     assert not stac_creator._collection_url_root.startswith("s3://")

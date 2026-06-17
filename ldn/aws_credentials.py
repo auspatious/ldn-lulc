@@ -1,4 +1,4 @@
-# This file handles writing geomad to Source.Coop.
+# This file handles writing geomad to Source.Coop and normal buckets.
 # Writing there needs its own AWS credentials, that are different to our standard credentials.
 # This is all optional because writing to other buckets doesn't need this.
 
@@ -61,8 +61,6 @@ def make_write_function(session: boto3.Session):
         A partial of :func:`write_to_s3` with the session's S3 client bound.
     """
     client: BaseClient = session.client("s3")
-    creds = session.get_credentials().get_frozen_credentials()  # TODO: Remove
-    logger.info(f"Write function using key: {creds.access_key[:8]}...")  # TODO: Remove
     return partial(write_to_s3, client=client)
 
 

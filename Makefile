@@ -42,7 +42,6 @@ print-tasks-2000-2025-pacific:
 
 TEST_TILES_2_REGIONS := 076_024:pacific 144_127:non-pacific
 
-# TODO: Run these non-decimated. Just testing region path stuff here.
 geomad-2-regions-decimated:
 	for site in $(TEST_TILES_2_REGIONS); do \
 		tile_id=$${site%%:*}; \
@@ -109,7 +108,6 @@ print-tasks-lulc-2020:
 
 
 # 2. Classify
-# TODO: Run for all years in future
 predict-lulc-test-tiles-2020:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
@@ -124,7 +122,6 @@ predict-lulc-test-tiles-2020:
 			--overwrite; \
 	done;
 
-# TODO: Get write access for Will to dep-public-staging.
 lulc-2-regions-decimated:
 	for site in $(TEST_TILES_2_REGIONS); do \
 		tile_id=$${site%%:*}; \
