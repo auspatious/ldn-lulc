@@ -575,15 +575,12 @@ def test_build_pipeline_components_itempath_prefix(
     mock_aws, bucket, source_coop_prefix, source_coop_url, expected_prefix_start
 ):
     """itempath.full_path_prefix should reflect the correct scheme for each bucket style."""
-    with patch.dict(
-        "os.environ",
-        {
-            "SOURCE_COOP_PUBLIC_URL": source_coop_url or "",
-            "SOURCE_COOP_PREFIX_GEOMAD": source_coop_prefix or "",
-            "SOURCE_COOP_PREFIX_LULC": "auspatious/lulc-sids" if source_coop_url else "",
-        },
-        clear=False,
-    ):
+    source_coop_config = (
+        source_coop_url,
+        source_coop_prefix if source_coop_url else None,
+        "auspatious/lulc-sids" if source_coop_url else None,
+    )
+    with patch(f"{_UTILS_MOD}.get_source_coop_config", return_value=source_coop_config):
         result = build_pipeline_components(
             TILE, YEAR, VERSION, bucket, OWNER, "geomad", source_coop_prefix, overwrite=True
         )
@@ -634,15 +631,7 @@ def test_build_pipeline_components_returns_five_components(mock_aws):
 
 def test_build_pipeline_components_collection_url_root_correct(mock_aws):
     """collection_url_root on stac_creator should use public HTTPS, not s3://."""
-    with patch.dict(
-        "os.environ",
-        {
-            "SOURCE_COOP_PUBLIC_URL": "",
-            "SOURCE_COOP_PREFIX_GEOMAD": "",
-            "SOURCE_COOP_PREFIX_LULC": "",
-        },
-        clear=False,
-    ):
+    with patch(f"{_UTILS_MOD}.get_source_coop_config", return_value=(None, None, None)):
         result = build_pipeline_components(
             TILE, YEAR, VERSION, "data.ldn.auspatious.com", OWNER, "geomad", None, overwrite=True
         )
