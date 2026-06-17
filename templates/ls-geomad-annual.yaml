@@ -5,7 +5,9 @@ metadata:
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
-  serviceAccountName: public-bucket-writer
+  serviceAccountName: public-bucket-writer # Staging
+  # serviceAccountName: open-data-bucket-writer # Prod
+  activeDeadlineSeconds: 3600  # 1 hour. Limit due to temporary AWS Source.Coop credentials.
   ttlStrategy:
     secondsAfterCompletion: 300
   podGC:
@@ -38,12 +40,7 @@ spec:
         # Just run Pacific in DEP Argo instance.
         value: "all" # "all", "pacific", or "non-pacific"
       - name: years
-      # TODO: Remove workaround of year subset blocks once the JSON issue is resolved.
-        # value: "2000-2008"
-        # value: "2009-2016"
-        # value: "2017-2025"
-        # value: "2000-2025"
-        value: "2000,2025"
+        value: "2000-2025"
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated
@@ -66,9 +63,9 @@ spec:
                   value: "{{item.year}}"
                 - name: region
                   value: "{{item.region}}"
-            # withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
+            withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
             # Test tiles (2 regions and 2 years)
-            withParam: '[{"id":"115_14","year":"2000","region":"pacific"}, {"id":"115_14","year":"2025","region":"pacific"},{"id":"252_87","year":"2000","region":"non-pacific"},{"id":"252_87","year":"2025","region":"non-pacific"}]'
+            # withParam: '[{"id":"115_14","year":"2000","region":"pacific"}, {"id":"115_14","year":"2025","region":"pacific"},{"id":"252_87","year":"2000","region":"non-pacific"},{"id":"252_87","year":"2025","region":"non-pacific"}]'
 
 
     - name: print-tasks
@@ -76,8 +73,8 @@ spec:
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         # TODO: Reenable IfNotPresent once image is stable
-        imagePullPolicy: Always
-        # imagePullPolicy: IfNotPresent
+        # imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         resources:
           requests:
             # Requesting a lot of resources for this simple task
@@ -128,8 +125,8 @@ spec:
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         # TODO: Reenable IfNotPresent once image is stable
-        imagePullPolicy: Always
-        # imagePullPolicy: IfNotPresent
+        # imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         command: [ldn]
         args:
           - geomad
@@ -153,19 +150,19 @@ spec:
           - "{{ workflow.parameters.overwrite }}"
           - "{{ workflow.parameters.decimated }}"
         env:
-          - name: AWS_WRITE_ACCESS_KEY_ID
+          - name: SOURCE_COOP_AWS_ACCESS_KEY_ID
             value: ""
             # valueFrom:
             #   secretKeyRef:
             #     name: source-coop-creds
             #     key: aws_access_key_id
-          - name: AWS_WRITE_SECRET_ACCESS_KEY
+          - name: SOURCE_COOP_AWS_SECRET_ACCESS_KEY
             value: ""
             # valueFrom:
             #   secretKeyRef:
             #     name: source-coop-creds
             #     key: aws_secret_access_key
-          - name: AWS_WRITE_SESSION_TOKEN
+          - name: SOURCE_COOP_AWS_SESSION_TOKEN
             value: ""
             # valueFrom:
             #   secretKeyRef:
