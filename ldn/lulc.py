@@ -36,12 +36,12 @@ from ldn.utils import (
     GEOMAD_VERSION,
     LULC_DATASET_ID,
     LULC_VERSION,
-    SOURCE_COOP_PREFIX_LULC,
     WGS84,
     LdnError,
     get_analysis_epsg,
     get_full_path_prefix,
     get_geomad_stac_geoparquet_url,
+    get_source_coop_config,
     is_source_coop,
     parse_tile_id,
 )
@@ -387,6 +387,7 @@ def run_classify_task(
     model_path: str,
     xy_chunk_size: int,
     decimated: bool,
+    integration_test: bool,
     overwrite: Annotated[bool, typer.Option()],
     probability_threshold: float,
     nodata_value: int,
@@ -410,6 +411,7 @@ def run_classify_task(
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
         decimated: If True, use 10x lower resolution (for testing).
+        integration_test: If True, use subset of data for faster processing in integration tests.
         overwrite: If True, overwrite existing output.
         probability_threshold: Confidence threshold (0-100) for the binary mask.
         nodata_value: Integer nodata value for output bands.
@@ -444,8 +446,14 @@ def run_classify_task(
 
     if decimated:
         logger.warning("Warning, using decimated (low resolution) for testing purposes.")
-        # geobox = geobox.zoom_out(10)
-        geobox = geobox.zoom_out(500)  # TODO: Add a hyper-decimated option for fast integration testing. 1000 errors.
+        geobox = geobox.zoom_out(10)
+
+    if integration_test:
+        logger.warning("Integration test mode: using 5x5 pixel geobox for very fast processing.")
+        geobox = geobox[0:5, 0:5]
+        n_workers = 1
+        threads_per_worker = 1
+        memory_limit = "1GB"
 
     logger.info("Configuring S3 access")
     configure_s3_access(cloud_defaults=True)
@@ -455,6 +463,7 @@ def run_classify_task(
 
     full_path_prefix = get_full_path_prefix(bucket)
     logger.info(f"Full path prefix: {full_path_prefix}")
+    _, _, prefix_lulc = get_source_coop_config()
 
     components = build_pipeline_components(
         tile_id_tuple,
@@ -463,7 +472,7 @@ def run_classify_task(
         bucket,
         owner,
         LULC_DATASET_ID,
-        SOURCE_COOP_PREFIX_LULC if is_source_coop else None,
+        prefix_lulc if is_source_coop() else None,
         overwrite,
     )
     if components is None:
@@ -510,7 +519,9 @@ def run_classify_task(
                 stac_creator=stac_creator,
                 stac_writer=stac_writer,
             ).run()
-            logger.info(f"Completed processing. Wrote {len(paths)} files. e.g. {paths[0]}")
+            logger.info(
+                f"Completed processing. Wrote {len(paths)} files to {itempath.stac_path(tile_id_tuple, absolute=True)}"
+            )
 
     except Exception as e:
         logger.exception(f"Failed to process with error: {e}")

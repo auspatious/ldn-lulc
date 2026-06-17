@@ -11,20 +11,36 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-BUCKET = os.environ.get("BUCKET")
-SOURCE_COOP_PUBLIC_URL = os.environ.get("SOURCE_COOP_PUBLIC_URL") or None
-SOURCE_COOP_PREFIX_GEOMAD = os.environ.get("SOURCE_COOP_PREFIX_GEOMAD") or None
-SOURCE_COOP_PREFIX_LULC = os.environ.get("SOURCE_COOP_PREFIX_LULC") or None
-is_source_coop = bool(SOURCE_COOP_PUBLIC_URL) and bool(SOURCE_COOP_PREFIX_GEOMAD) and bool(SOURCE_COOP_PREFIX_LULC)
+
+def get_bucket() -> str:
+    """Return the bucket name from the environment variable."""
+    bucket = os.environ.get("BUCKET")
+    if not bucket:
+        raise LdnError("BUCKET environment variable must be set.")
+    return bucket
+
+
+def get_source_coop_config() -> tuple[str | None, str | None, str | None]:
+    """Return (public_url, prefix_geomad, prefix_lulc) from environment."""
+    return (
+        os.environ.get("SOURCE_COOP_PUBLIC_URL") or None,
+        os.environ.get("SOURCE_COOP_PREFIX_GEOMAD") or None,
+        os.environ.get("SOURCE_COOP_PREFIX_LULC") or None,
+    )
+
+
+# This is a function instead of a module-level variable to ensure it reflects any changes
+# to the environment variables during testing (e.g. via monkeypatch).
+def is_source_coop() -> bool:
+    """Return True if all Source.Coop environment variables are set."""
+    url, prefix_geomad, prefix_lulc = get_source_coop_config()
+    return bool(url) and bool(prefix_geomad) and bool(prefix_lulc)
 
 
 # Our custom exception class for the project. Good for filtering errors in processing.
 class LdnError(Exception):
     """Base exception for the ldn-lulc project."""
 
-
-if not BUCKET:
-    raise LdnError("BUCKET environment variable must be set.")
 
 SIDS_COUNTRIES_AND_CODES = {
     # Caribbean
@@ -182,9 +198,10 @@ def get_geomad_stac_geoparquet_url(bucket: str, version: str) -> str:
     Returns:
         URL to the STAC-Geoparquet file.
     """
-    key = get_stac_geoparquet_key(GEOMAD_DATASET_ID, version, SOURCE_COOP_PREFIX_GEOMAD)
-    if SOURCE_COOP_PUBLIC_URL:
-        return f"{SOURCE_COOP_PUBLIC_URL}/{key}"
+    source_coop_url, prefix_geomad, _ = get_source_coop_config()
+    key = get_stac_geoparquet_key(GEOMAD_DATASET_ID, version, prefix_geomad)
+    if source_coop_url:
+        return f"{source_coop_url}/{key}"
     return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/{key}"
 
 
@@ -221,9 +238,10 @@ def resolve_dataset(
     version_lulc: str,
 ) -> tuple[str, str, str | None]:
     """Return (dataset_id, version, source_coop_prefix) for the given dataset name."""
+    _, prefix_geomad, prefix_lulc = get_source_coop_config()
     if dataset == "geomad":
-        return GEOMAD_DATASET_ID, version_geomad, SOURCE_COOP_PREFIX_GEOMAD
-    return LULC_DATASET_ID, version_lulc, SOURCE_COOP_PREFIX_LULC
+        return GEOMAD_DATASET_ID, version_geomad, prefix_geomad
+    return LULC_DATASET_ID, version_lulc, prefix_lulc
 
 
 def parse_tile_id(tile_id: str) -> tuple[int, int]:
@@ -258,8 +276,9 @@ def get_public_https_prefix(bucket: str) -> str:
     Returns:
         A public HTTPS URL prefix string.
     """
-    if SOURCE_COOP_PUBLIC_URL:
-        return SOURCE_COOP_PUBLIC_URL
+    source_coop_url, _, _ = get_source_coop_config()
+    if source_coop_url:
+        return source_coop_url
     if "." in bucket:
         return f"https://{bucket}"
     return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
@@ -308,8 +327,9 @@ def get_full_path_prefix(bucket: str) -> str:
     Returns:
         A URL prefix string suitable for rasterio to open files.
     """
-    if SOURCE_COOP_PUBLIC_URL:
-        return SOURCE_COOP_PUBLIC_URL
+    source_coop_url, _, _ = get_source_coop_config()
+    if source_coop_url:
+        return source_coop_url
     return f"s3://{bucket}"
 
 

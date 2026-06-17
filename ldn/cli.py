@@ -26,20 +26,18 @@ from ldn.raster import PrefixedS3ItemPath
 from ldn.training_data import cli_training_app
 from ldn.utils import (
     AWS_REGION,
-    BUCKET,
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     LULC_VERSION,
     NON_PACIFIC_OWNER,
     PACIFIC_OWNER,
     SENSOR,
-    SOURCE_COOP_PREFIX_GEOMAD,
-    SOURCE_COOP_PREFIX_LULC,
-    SOURCE_COOP_PUBLIC_URL,
     LdnError,
     dataset_prefix,
+    get_bucket,
     get_geomad_stac_geoparquet_url,
     get_s3_mosaic_write_path,
+    get_source_coop_config,
     get_stac_geoparquet_key,
     is_source_coop,
     owner_for_region,
@@ -47,6 +45,8 @@ from ldn.utils import (
     parse_years,
     resolve_dataset,
 )
+
+source_coop_url, prefix_geomad, prefix_lulc = get_source_coop_config()
 
 app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -138,10 +138,11 @@ def _find_existing_tasks(
     # TODO: same logic in utils
     def _source_coop_prefix(dataset_id: str) -> str | None:
         """Return the source.coop path prefix for a dataset, or None."""
+        _, prefix_geomad, prefix_lulc = get_source_coop_config()
         if dataset_id == GEOMAD_DATASET_ID:
-            return SOURCE_COOP_PREFIX_GEOMAD
+            return prefix_geomad
         else:
-            return SOURCE_COOP_PREFIX_LULC
+            return prefix_lulc
 
     sc_prefix = _source_coop_prefix(dataset_id)
 
@@ -156,14 +157,16 @@ def _find_existing_tasks(
             )
         )
 
+    _is_source_coop = is_source_coop()
+
     # List all STAC items under each prefix
     existing_keys: dict[str, set[str]] = {}
     for combo_bucket, combo_owner in region_combos:
         s3_prefix = f"{dataset_prefix(combo_owner, dataset_id)}/{version}/"
-        if is_source_coop and sc_prefix:
+        if _is_source_coop and sc_prefix:
             s3_prefix = f"{sc_prefix}/{s3_prefix}"
 
-        keys = _find_stac_items_s3(combo_bucket, s3_prefix, public=is_source_coop)
+        keys = _find_stac_items_s3(combo_bucket, s3_prefix, public=_is_source_coop)
         existing_keys[f"{combo_bucket}/{combo_owner}"] = set(keys)
 
     total_existing = sum(len(v) for v in existing_keys.values())
@@ -180,11 +183,11 @@ def _find_existing_tasks(
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
 
         full_path_prefix = f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
-        if is_source_coop and sc_prefix:
-            full_path_prefix = f"{SOURCE_COOP_PUBLIC_URL}/{sc_prefix}"
+        if _is_source_coop and sc_prefix:
+            full_path_prefix = f"{source_coop_url}/{sc_prefix}"
 
         itempath = PrefixedS3ItemPath(
-            key_prefix=sc_prefix if is_source_coop else None,
+            key_prefix=sc_prefix if _is_source_coop else None,
             prefix=owner,
             bucket=bucket,
             sensor=SENSOR,
@@ -209,7 +212,7 @@ def print_tasks(
     dataset: Annotated[Literal["geomad", "lulc"], typer.Option(help="Dataset name.")] = "geomad",
     version_geomad: Annotated[str, typer.Option(help="Version string for GeoMAD dataset.")] = GEOMAD_VERSION,
     version_lulc: Annotated[str, typer.Option(help="Version string for LULC dataset.")] = LULC_VERSION,
-    bucket: Annotated[str, typer.Option(help="S3 bucket for data.")] = BUCKET,
+    bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
     owner_pacific: Annotated[
         str,
         typer.Option(help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."),
@@ -223,6 +226,7 @@ def print_tasks(
 ) -> None:
     """Print tasks for given years, optionally filtering out those with existing outputs."""
     logger.info(f"Generating tasks for years: {years} and region: {region}")
+    bucket = bucket or get_bucket()  # Default
 
     years_list = parse_years(years)
 
@@ -309,7 +313,7 @@ def index_to_stac_geoparquet(
     ),
     version_geomad: str = typer.Option(GEOMAD_VERSION, help="Version string for GeoMAD dataset."),
     version_lulc: str = typer.Option(LULC_VERSION, help="Version string for LULC dataset."),
-    bucket: str = typer.Option(BUCKET, help="S3 bucket data."),
+    bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
     owner_pacific: str = typer.Option(PACIFIC_OWNER, help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."),
     owner_non_pacific: str = typer.Option(
         NON_PACIFIC_OWNER,
@@ -319,15 +323,17 @@ def index_to_stac_geoparquet(
 ) -> None:
     """Build STAC-Geoparquet indexes from STAC items for given dataset and region(s)."""
     regions: list[Literal["pacific", "non-pacific"]] = ["pacific", "non-pacific"] if region == "all" else [region]
+    bucket = bucket or get_bucket()  # Default
 
     dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
 
+    _is_source_coop = is_source_coop()
     targets: list[tuple[str, str]] = []
     for r in regions:
         owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
         short_prefix = dataset_prefix(owner, dataset_id)
         full_prefix = (
-            f"{source_coop_prefix}/{short_prefix}/{version}" if is_source_coop else f"{short_prefix}/{version}"
+            f"{source_coop_prefix}/{short_prefix}/{version}" if _is_source_coop else f"{short_prefix}/{version}"
         )
         targets.append((full_prefix, short_prefix))
         logger.info(f"Region for indexing: '{full_prefix}'")
@@ -491,10 +497,11 @@ def make_mosaics(
         str,
         typer.Option(help="Version string for LULC dataset."),
     ] = LULC_VERSION,
-    bucket: str = typer.Option(BUCKET, help="S3 bucket for data."),
+    bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
 ) -> None:
     """Make mosaic.jsons per year from the combined STAC-Geoparquet index."""
     logger.info(f"Making mosaics for dataset '{dataset}'")
+    bucket = bucket or get_bucket()  # Default
 
     requested_years: list[int] | None = parse_years(years) if years is not None else None
 

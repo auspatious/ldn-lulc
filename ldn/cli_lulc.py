@@ -6,13 +6,13 @@ import typer
 from ldn.lulc import run_classify_task
 from ldn.utils import (
     AWS_REGION,
-    BUCKET,
     GEOMAD_VERSION,
     LULC_VERSION,
     MODEL_VERSION,
     NON_PACIFIC_OWNER,
     PACIFIC_OWNER,
     LdnError,
+    get_bucket,
     owner_for_region,
 )
 
@@ -35,7 +35,7 @@ def run(
     region: Literal["pacific", "non-pacific"] = typer.Option(
         ..., help="Region tile belongs to. Can be 'pacific' or 'non-pacific'."
     ),
-    bucket: str = typer.Option(BUCKET, help="S3 bucket for data."),
+    bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
     owner_pacific: str = typer.Option(PACIFIC_OWNER, help="S3 owner prefix for Pacific data."),
     owner_non_pacific: str = typer.Option(NON_PACIFIC_OWNER, help="S3 owner prefix for non-Pacific data."),
     product_owner: str | None = typer.Option(None, help="Override the region-derived owner prefix."),
@@ -47,6 +47,10 @@ def run(
     decimated: bool = typer.Option(
         False,
         help="Lower resolution data for faster processing/testing.",
+    ),
+    integration_test: bool = typer.Option(
+        False,
+        help="Integration test mode: use decimated data for faster processing.",
     ),
     overwrite: bool = typer.Option(False, help="Whether to overwrite existing LULC classification."),
     probability_threshold: float = typer.Option(
@@ -71,6 +75,7 @@ def run(
     if int(year) < 2000 or int(year) > 2025:
         raise LdnError("Year must be between 2000 and 2025.")
 
+    bucket = bucket or get_bucket()  # Default
     owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
 
     run_classify_task(
@@ -84,6 +89,7 @@ def run(
         model_path=model_path,
         xy_chunk_size=xy_chunk_size,
         decimated=decimated,
+        integration_test=integration_test,
         overwrite=overwrite,
         probability_threshold=probability_threshold,
         nodata_value=nodata_value,

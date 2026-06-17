@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 
 from ldn.cli import app
-from ldn.utils import SOURCE_COOP_PREFIX_GEOMAD, SOURCE_COOP_PUBLIC_URL
+from ldn.utils import get_source_coop_config
 
 runner = CliRunner()
 
@@ -40,10 +40,11 @@ class TestPrintTasksRegionConfig:
         call_args = mock_find_stac.call_args
 
         assert call_args.args[0] == "my-custom-bucket"
+        _, prefix_geomad, _ = get_source_coop_config()
 
         expected_prefix = "myorg_ls_geomad/"
-        if SOURCE_COOP_PREFIX_GEOMAD:
-            expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
+        if prefix_geomad:
+            expected_prefix = f"{prefix_geomad}/{expected_prefix}"
         assert call_args.args[1].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")
@@ -69,8 +70,9 @@ class TestPrintTasksRegionConfig:
         assert result.exit_code == 0, result.output
         call_args = mock_find_stac.call_args
         expected_prefix = "override_ls_geomad/"
-        if SOURCE_COOP_PREFIX_GEOMAD:
-            expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
+        _, prefix_geomad, _ = get_source_coop_config()
+        if prefix_geomad:
+            expected_prefix = f"{prefix_geomad}/{expected_prefix}"
         assert call_args.args[1].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")
@@ -158,7 +160,8 @@ class TestIndexToStacGeoparquetRegionConfig:
         )
 
         assert result.exit_code == 0, result.output
-        if SOURCE_COOP_PUBLIC_URL:
+        source_coop_url, _, _ = get_source_coop_config()
+        if source_coop_url:
             mock_run_index.assert_called_once_with(
                 "idx-bucket",
                 [("auspatious/geomad-sids/idxorg_ls_geomad/0-2-1", "idxorg_ls_geomad")],
@@ -190,7 +193,8 @@ class TestIndexToStacGeoparquetRegionConfig:
         assert result.exit_code == 0, result.output
         mock_run_index.assert_called_once()
         args = mock_run_index.call_args[0]
-        if SOURCE_COOP_PUBLIC_URL:
+        source_coop_url, _, _ = get_source_coop_config()
+        if source_coop_url:
             assert args[1] == [("auspatious/geomad-sids/custom_ls_geomad/0-2-1", "custom_ls_geomad")]
         else:
             assert args[1] == [("custom_ls_geomad/0-2-1", "custom_ls_geomad")]

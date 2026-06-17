@@ -11,10 +11,7 @@ import obstore
 from botocore.client import BaseClient
 from dep_tools.writers import write_to_s3
 
-from ldn.utils import (
-    AWS_REGION,
-    is_source_coop,
-)
+from ldn.utils import AWS_REGION, is_source_coop
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +30,10 @@ def get_write_session() -> boto3.Session:
     key = os.environ.get(_WRITE_KEY)
     secret = os.environ.get(_WRITE_SECRET)
 
-    if not is_source_coop:
+    _is_source_coop = is_source_coop()
+    logger.info(f"is_source_coop={_is_source_coop}, key set={bool(key)}, secret set={bool(secret)}")
+
+    if not _is_source_coop:
         logger.info("SOURCE_COOP_PUBLIC_URL or prefixes not set; skipping write credential setup.")
         return boto3.Session(region_name=AWS_REGION)
 
@@ -42,6 +42,7 @@ def get_write_session() -> boto3.Session:
         return boto3.Session(region_name=AWS_REGION)
 
     logger.info("Using explicit write credentials from environment.")
+    logger.info(f"Write session key: {key[:8]}...")
     return boto3.Session(
         aws_access_key_id=key,
         aws_secret_access_key=secret,
@@ -60,6 +61,8 @@ def make_write_function(session: boto3.Session):
         A partial of :func:`write_to_s3` with the session's S3 client bound.
     """
     client: BaseClient = session.client("s3")
+    creds = session.get_credentials().get_frozen_credentials()  # TODO: Remove
+    logger.info(f"Write function using key: {creds.access_key[:8]}...")  # TODO: Remove
     return partial(write_to_s3, client=client)
 
 

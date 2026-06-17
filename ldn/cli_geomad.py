@@ -26,14 +26,14 @@ from ldn.geomad import (
 from ldn.grids import get_gridspec
 from ldn.raster import build_pipeline_components
 from ldn.utils import (
-    BUCKET,
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     LS7_YEAR_THRESHOLD,
     NON_PACIFIC_OWNER,
     PACIFIC_OWNER,
-    SOURCE_COOP_PREFIX_GEOMAD,
+    get_bucket,
     get_full_path_prefix,
+    get_source_coop_config,
     is_source_coop,
     owner_for_region,
     parse_tile_id,
@@ -86,7 +86,7 @@ def run(
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
-    bucket: Annotated[str, typer.Option(help="S3 bucket for data.")] = BUCKET,
+    bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
     owner_pacific: Annotated[
         str,
         typer.Option(help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."),
@@ -98,6 +98,7 @@ def run(
     product_owner: Annotated[str | None, typer.Option(help="Override the region-derived owner prefix.")] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
     decimated: Annotated[bool, typer.Option()] = False,
+    integration_test: Annotated[bool, typer.Option()] = False,
     mask_shadow: Annotated[
         bool,
         typer.Option(help="True to mask cloud shadows, false to not mask them (leave them in). Defaults to True."),
@@ -123,6 +124,8 @@ def run(
     controlled by --ls7-buffer-years is used to gather enough clear
     observations. Pacific tiles may additionally include Tier 2 data.
     """
+    bucket = bucket or get_bucket()  # Default
+
     logger.info(
         f"tile={tile_id} year={year} version={version} region={region} overwrite={overwrite} decimated={decimated} "
         f"all_bands={all_bands} mask_shadow={mask_shadow} geomad_threads={geomad_threads}",
@@ -184,11 +187,25 @@ def run(
 
     if decimated:
         logger.warning("Warning, using decimated (low resolution) for testing purposes.")
-        # geobox = geobox.zoom_out(10)
-        geobox = geobox.zoom_out(500)  # TODO: Add a hyper-decimated option for fast integration testing. 1000 errors.
+        geobox = geobox.zoom_out(10)
+
+    if integration_test:
+        logger.warning(
+            "Integration test mode: using 5x5 pixel geobox and limiting to 3 items for very fast processing."
+        )
+        geobox = geobox[0:5, 0:5]
+        search_kwargs["max_items"] = 3
+        n_workers = 1
+        threads_per_worker = 1
+        memory_limit = "1GB"
+        # TODO: Implement these to further speed up.
+        # mask_clouds_kwargs["filters"] = None
+        # geomad_options["maxiters"] = 1
 
     # Configure for dask and reading data
     _ = configure_s3_access(requester_pays=True)
+
+    _, prefix_geomad, _ = get_source_coop_config()
 
     components = build_pipeline_components(
         tile_id_tuple,
@@ -197,7 +214,7 @@ def run(
         bucket,
         owner,
         GEOMAD_DATASET_ID,
-        SOURCE_COOP_PREFIX_GEOMAD if is_source_coop else None,
+        prefix_geomad if is_source_coop() else None,
         overwrite,
     )
     if components is None:
@@ -270,7 +287,9 @@ def run(
                 stac_creator=stac_creator,
                 stac_writer=stac_writer,
             ).run()
-            logger.info(f"Completed processing. Wrote {len(paths)} files. e.g. {paths[0]}")
+            logger.info(
+                f"Completed processing. Wrote {len(paths)} files to {itempath.stac_path(tile_id_tuple, absolute=True)}"
+            )
 
     except EmptyCollectionError:
         logger.info("No items found for this tile")

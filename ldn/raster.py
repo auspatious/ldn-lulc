@@ -298,6 +298,7 @@ class PrefixedS3ItemPath(S3ItemPath):
 
 
 # A shared function to create tasks for Geomad and Classification.
+# TODO: build_pipeline_components doesn't need to return write_client
 def build_pipeline_components(
     tile_id_tuple: tuple[int, int],
     year: str,
@@ -329,6 +330,29 @@ def build_pipeline_components(
 
     write_session = get_write_session()
     write_client = write_session.client("s3")
+
+    # Lightweight diagnostics to confirm which principal/session will perform writes.
+    caller_arn = "unknown"
+    try:
+        caller_arn = write_session.client("sts").get_caller_identity().get("Arn", "unknown")
+    except Exception as e:
+        logger.info(f"Unable to resolve caller identity for write session: {e}")
+
+    creds = write_session.get_credentials()
+    frozen_creds = creds.get_frozen_credentials() if creds else None
+    key_prefix = f"{frozen_creds.access_key[:8]}..." if frozen_creds and frozen_creds.access_key else "none"
+    token_set = bool(frozen_creds and frozen_creds.token)
+
+    # TODO: Remove this debugging stuff
+    logger.info(
+        "Write preflight: endpoint=%s bucket=%s stac_key=%s caller_arn=%s access_key_prefix=%s token_set=%s",
+        write_client.meta.endpoint_url,
+        bucket,
+        stac_key,
+        caller_arn,
+        key_prefix,
+        token_set,
+    )
 
     logger.info(f"Checking if item exists at {stac_document} with overwrite={overwrite}")
     if not overwrite and object_exists(bucket, stac_key, client=write_client):

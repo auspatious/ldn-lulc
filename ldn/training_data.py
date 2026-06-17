@@ -8,7 +8,7 @@ uploads the result to S3.
 import io
 import logging
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import boto3
 import geopandas as gpd
@@ -39,7 +39,6 @@ from ldn.random_sampling import random_sampling
 from ldn.raster import calculate_indices, load_dem_terrain, scale_offset_landsat
 from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
-    BUCKET,
     CLASS_ATTR,
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
@@ -49,6 +48,7 @@ from ldn.utils import (
     LdnError,
     dataset_prefix,
     get_analysis_epsg,
+    get_bucket,
     get_geomad_stac_geoparquet_url,
     owner_for_region,
     parse_tile_id,
@@ -719,6 +719,7 @@ def make_training_data(
         GeoDataFrame of final training samples.
     """
     logging.basicConfig(level=logging.INFO)
+    bucket = bucket or get_bucket()  # Default
 
     analysis_crs = get_analysis_epsg(region)
 
@@ -761,7 +762,7 @@ def make_training_data(
         country_wgs84_buffered=country_wgs84_buffered,
         analysis_crs=analysis_crs,
         product_owner=owner,
-        bucket=BUCKET,
+        bucket=bucket,
         geomad_version=geomad_version,
     )
     geobox = geomad_dem_indices.odc.geobox
@@ -819,10 +820,7 @@ def generate_training_data(
         TRAINING_DATA_VERSION, help=f"Version (default: {TRAINING_DATA_VERSION})"
     ),
     geomad_version: str = typer.Option(GEOMAD_VERSION, help=f"Geomad version (default: {GEOMAD_VERSION})"),
-    bucket: str = typer.Option(
-        BUCKET,
-        help=f"S3 bucket name for upload (default: {BUCKET})",
-    ),
+    bucket: Annotated[str | None, typer.Option(help="S3 bucket for output data.")] = None,
     # TODO: Refactor so country data doesn't need to be passed. Not sure how.
     country_name: str = typer.Option(None, help="Country name (e.g. Fiji)"),
     country_code: str = typer.Option(None, help="Country ISO3 code (e.g. FJI)"),
@@ -836,6 +834,7 @@ def generate_training_data(
         raise LdnError("Tile ID is required")
     if not year:
         raise LdnError("Year is required")
+    bucket = bucket or get_bucket()  # Default
 
     country_of_interest = None
     if country_name and country_code:
