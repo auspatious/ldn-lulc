@@ -754,7 +754,7 @@ def make_training_data(
 
     # 2. Load GeoMAD with DEM and indices
     logger.info("Loading GeoMAD")
-    owner = owner_for_region(region, product_owner=product_owner)
+    owner = owner_for_region(region, product_owner)
     geomad_dem_indices = get_tile_year_geomad_dem_indices(
         tile_id,
         year,
@@ -923,7 +923,6 @@ def search_and_load_geomad_indices_dem(
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
-    # owner = owner_for_region(region, product_owner=product_owner)
     geomad_url = get_geomad_stac_geoparquet_url(bucket=bucket, version=geomad_version)
     item_id = make_geomad_item_id(tile_id, year, product_owner=product_owner)
 

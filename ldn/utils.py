@@ -129,8 +129,6 @@ WGS84 = "EPSG:4326"
 
 def owner_for_region(
     region: Literal["pacific", "non-pacific"],
-    owner_pacific: str = PACIFIC_OWNER,
-    owner_non_pacific: str = NON_PACIFIC_OWNER,
     product_owner: str | None = None,
 ) -> str:
     """Return the short owner prefix for a given region (e.g. 'dep' or 'ci').
@@ -139,7 +137,7 @@ def owner_for_region(
     """
     if product_owner is not None:
         return product_owner
-    return owner_pacific if region == "pacific" else owner_non_pacific
+    return PACIFIC_OWNER if region == "pacific" else NON_PACIFIC_OWNER
 
 
 def dataset_prefix(owner: str | None, dataset_id: str) -> str:

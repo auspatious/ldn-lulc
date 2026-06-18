@@ -24,8 +24,6 @@ from ldn.utils import (
     AWS_REGION,
     GEOMAD_VERSION,
     LULC_VERSION,
-    NON_PACIFIC_OWNER,
-    PACIFIC_OWNER,
     SENSOR,
     LdnError,
     dataset_prefix,
@@ -120,8 +118,6 @@ def _find_existing_tasks(
     version,
     dataset_id,
     bucket,
-    owner_pacific,
-    owner_non_pacific,
     product_owner,
 ):
     """Check which tasks already have outputs using S3 listing.
@@ -138,7 +134,7 @@ def _find_existing_tasks(
         region_combos.add(
             (
                 bucket,
-                owner_for_region(r, owner_pacific, owner_non_pacific, product_owner),
+                owner_for_region(r, product_owner),
             )
         )
 
@@ -165,7 +161,7 @@ def _find_existing_tasks(
     for task in tasks:
         tile_id_tuple = parse_tile_id(task["id"])
         r = task["region"]
-        owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
+        owner = owner_for_region(r, product_owner)
 
         full_path_prefix = f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
         if _is_source_coop and sc_prefix:
@@ -198,14 +194,6 @@ def print_tasks(
     version_geomad: Annotated[str, typer.Option(help="Version string for GeoMAD dataset.")] = GEOMAD_VERSION,
     version_lulc: Annotated[str, typer.Option(help="Version string for LULC dataset.")] = LULC_VERSION,
     bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
-    owner_pacific: Annotated[
-        str,
-        typer.Option(help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."),
-    ] = PACIFIC_OWNER,
-    owner_non_pacific: Annotated[
-        str,
-        typer.Option(help=f"Short owner prefix for non-Pacific (e.g. '{NON_PACIFIC_OWNER}')."),
-    ] = NON_PACIFIC_OWNER,
     product_owner: Annotated[str | None, typer.Option(help="Override the region-derived owner prefix.")] = None,
     overwrite: Annotated[bool, typer.Option(help="If true, skip filtering existing outputs.")] = False,
 ) -> None:
@@ -239,8 +227,6 @@ def print_tasks(
             version,
             dataset_id,
             bucket,
-            owner_pacific,
-            owner_non_pacific,
             product_owner,
         )
         before_count = len(tasks)
@@ -299,11 +285,6 @@ def index_to_stac_geoparquet(
     version_geomad: str = typer.Option(GEOMAD_VERSION, help="Version string for GeoMAD dataset."),
     version_lulc: str = typer.Option(LULC_VERSION, help="Version string for LULC dataset."),
     bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
-    owner_pacific: str = typer.Option(PACIFIC_OWNER, help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."),
-    owner_non_pacific: str = typer.Option(
-        NON_PACIFIC_OWNER,
-        help=f"Short owner prefix for non-Pacific (e.g. '{NON_PACIFIC_OWNER}').",
-    ),
     product_owner: str | None = typer.Option(None, help="Override the region-derived owner prefix."),
 ) -> None:
     """Build STAC-Geoparquet indexes from STAC items for given dataset and region(s)."""
@@ -315,7 +296,7 @@ def index_to_stac_geoparquet(
     _is_source_coop = is_source_coop()
     targets: list[tuple[str, str]] = []
     for r in regions:
-        owner = owner_for_region(r, owner_pacific, owner_non_pacific, product_owner)
+        owner = owner_for_region(r, product_owner)
         short_prefix = dataset_prefix(owner, dataset_id)
         full_prefix = (
             f"{source_coop_prefix}/{short_prefix}/{version}" if _is_source_coop else f"{short_prefix}/{version}"

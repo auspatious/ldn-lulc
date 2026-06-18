@@ -30,8 +30,6 @@ class TestPrintTasksRegionConfig:
                 "pacific",
                 "--bucket",
                 "my-custom-bucket",
-                "--owner-pacific",
-                "myorg",
             ],
         )
 
@@ -41,7 +39,7 @@ class TestPrintTasksRegionConfig:
 
         assert call_args.args[0] == "my-custom-bucket"
 
-        expected_prefix = "myorg_ls_geomad/"
+        expected_prefix = "dep_ls_geomad/"
         _is_source_coop = is_source_coop()
         if _is_source_coop:
             expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
@@ -126,8 +124,6 @@ class TestGeomadRegionConfig:
                 "pacific",
                 "--bucket",
                 "my-test-bucket",
-                "--owner-pacific",
-                "testorg",
             ],
         )
 
@@ -135,7 +131,6 @@ class TestGeomadRegionConfig:
         mock_build.assert_called_once()
         call_args = mock_build.call_args.args
         assert call_args[3] == "my-test-bucket"
-        assert call_args[4] == "testorg"
         assert call_args[5] == "geomad"
 
 
@@ -155,8 +150,6 @@ class TestIndexToStacGeoparquetRegionConfig:
                 "pacific",
                 "--bucket",
                 "idx-bucket",
-                "--owner-pacific",
-                "idxorg",
             ],
         )
 
@@ -166,13 +159,13 @@ class TestIndexToStacGeoparquetRegionConfig:
         if _is_source_coop:
             mock_run_index.assert_called_once_with(
                 "idx-bucket",
-                [(f"{SOURCE_COOP_PREFIX_GEOMAD}/idxorg_ls_geomad/{GEOMAD_VERSION}", "idxorg_ls_geomad")],
+                [(f"{SOURCE_COOP_PREFIX_GEOMAD}/dep_ls_geomad/{GEOMAD_VERSION}", "dep_ls_geomad")],
                 expected_parquet_key,
             )
         else:
             mock_run_index.assert_called_once_with(
                 "idx-bucket",
-                [(f"idxorg_ls_geomad/{GEOMAD_VERSION}", "idxorg_ls_geomad")],
+                [(f"dep_ls_geomad/{GEOMAD_VERSION}", "dep_ls_geomad")],
                 expected_parquet_key,
             )
 

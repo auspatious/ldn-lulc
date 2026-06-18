@@ -9,8 +9,6 @@ from ldn.utils import (
     GEOMAD_VERSION,
     LULC_VERSION,
     MODEL_VERSION,
-    NON_PACIFIC_OWNER,
-    PACIFIC_OWNER,
     LdnError,
     get_env_var,
     owner_for_region,
@@ -36,8 +34,6 @@ def run(
         ..., help="Region tile belongs to. Can be 'pacific' or 'non-pacific'."
     ),
     bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
-    owner_pacific: str = typer.Option(PACIFIC_OWNER, help="S3 owner prefix for Pacific data."),
-    owner_non_pacific: str = typer.Option(NON_PACIFIC_OWNER, help="S3 owner prefix for non-Pacific data."),
     product_owner: str | None = typer.Option(None, help="Override the region-derived owner prefix."),
     model_path: str = typer.Option(
         # TODO: defaults to pacific. Later have per region/time period models.
@@ -76,7 +72,7 @@ def run(
         raise LdnError("Year must be between 2000 and 2025.")
 
     bucket = bucket or get_env_var("BUCKET")  # Default
-    owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
+    owner = owner_for_region(region, product_owner)
 
     run_classify_task(
         tile_id,

@@ -28,20 +28,14 @@ class TestOwnerForRegion:
     def test_non_pacific_default(self):
         assert owner_for_region("non-pacific") == NON_PACIFIC_OWNER
 
-    def test_pacific_custom(self):
-        assert owner_for_region("pacific", "x", "y") == "x"
-
-    def test_non_pacific_custom(self):
-        assert owner_for_region("non-pacific", "x", "y") == "y"
-
     def test_product_owner_overrides_pacific(self):
-        assert owner_for_region("pacific", "dep", "ci", product_owner="custom") == "custom"
+        assert owner_for_region("pacific", product_owner="custom") == "custom"
 
     def test_product_owner_overrides_non_pacific(self):
-        assert owner_for_region("non-pacific", "dep", "ci", product_owner="custom") == "custom"
+        assert owner_for_region("non-pacific", product_owner="custom") == "custom"
 
     def test_product_owner_none_uses_region(self):
-        assert owner_for_region("pacific", "dep", "ci", product_owner=None) == "dep"
+        assert owner_for_region("pacific", product_owner=None) == PACIFIC_OWNER
 
 
 class TestDatasetPrefix:

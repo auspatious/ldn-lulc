@@ -29,8 +29,6 @@ from ldn.utils import (
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     LS7_YEAR_THRESHOLD,
-    NON_PACIFIC_OWNER,
-    PACIFIC_OWNER,
     SOURCE_COOP_PREFIX_GEOMAD,
     get_env_var,
     get_full_path_prefix,
@@ -87,14 +85,6 @@ def run(
     version: Annotated[str, typer.Option()],
     region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
     bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
-    owner_pacific: Annotated[
-        str,
-        typer.Option(help=f"Short owner prefix for Pacific (e.g. '{PACIFIC_OWNER}')."),
-    ] = PACIFIC_OWNER,
-    owner_non_pacific: Annotated[
-        str,
-        typer.Option(help=f"Short owner prefix for non-Pacific (e.g. '{NON_PACIFIC_OWNER}')."),
-    ] = NON_PACIFIC_OWNER,
     product_owner: Annotated[str | None, typer.Option(help="Override the region-derived owner prefix.")] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
     decimated: Annotated[bool, typer.Option()] = False,
@@ -127,8 +117,8 @@ def run(
     bucket = bucket or get_env_var("BUCKET")  # Default
 
     logger.info(
-        f"tile={tile_id} year={year} version={version} region={region} overwrite={overwrite} decimated={decimated} "
-        f"all_bands={all_bands} mask_shadow={mask_shadow} geomad_threads={geomad_threads}",
+        f"tile={tile_id} year={year} version={version} region={region} bucket={bucket} overwrite={overwrite} "
+        f"decimated={decimated} all_bands={all_bands} mask_shadow={mask_shadow} geomad_threads={geomad_threads}",
     )
     logger.info(
         f"Dask config: n_workers={n_workers}, threads_per_worker={threads_per_worker}, "
@@ -179,8 +169,7 @@ def run(
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_id_tuple)
 
-    # Resolve prefix based on tile region and owner override
-    owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
+    owner = owner_for_region(region, product_owner)
 
     full_path_prefix = get_full_path_prefix(bucket)
     logger.info(f"Full path prefix: {full_path_prefix}")
