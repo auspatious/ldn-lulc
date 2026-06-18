@@ -5,9 +5,8 @@ metadata:
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
-  serviceAccountName: public-bucket-writer # Staging
-  # serviceAccountName: open-data-bucket-writer # Prod
-  activeDeadlineSeconds: 3600  # 1 hour. Limit due to temporary AWS Source.Coop credentials.
+  # serviceAccountName: public-bucket-writer # Staging DEP
+  serviceAccountName: open-data-bucket-writer # Prod DEP
   ttlStrategy:
     secondsAfterCompletion: 300
   podGC:
@@ -38,9 +37,11 @@ spec:
         value: "latest"
       - name: region
         # Just run Pacific in DEP Argo instance.
-        value: "all" # "all", "pacific", or "non-pacific"
+        value: "pacific" # "all", "pacific", or "non-pacific"
       - name: years
-        value: "2000-2025"
+        value: "2000-2008"
+        # value: "2009-2016"
+        # value: "2017-2025"
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated
