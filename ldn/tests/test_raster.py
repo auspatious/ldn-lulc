@@ -266,10 +266,6 @@ class TestComputeTerrain:
 
 
 # _load_dem_am
-#
-#
-# If you want integration tests for the full antimeridian path, add a
-# pytest mark (e.g. @pytest.mark.integration) and run against real tiles.
 
 
 class TestLoadDemAmGuards:
