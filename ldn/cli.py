@@ -14,10 +14,6 @@ from shapely.geometry import mapping, shape
 from typing_extensions import Annotated
 
 from ldn import get_version
-from ldn.aws_credentials import (
-    get_write_session,
-    make_obstore_s3,
-)
 from ldn.cli_geomad import geomad_app
 from ldn.cli_grid import cli_grid_app
 from ldn.cli_lulc import classify_app
@@ -26,7 +22,6 @@ from ldn.raster import PrefixedS3ItemPath
 from ldn.training_data import cli_training_app
 from ldn.utils import (
     AWS_REGION,
-    GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     LULC_VERSION,
     NON_PACIFIC_OWNER,
@@ -34,19 +29,19 @@ from ldn.utils import (
     SENSOR,
     LdnError,
     dataset_prefix,
-    get_bucket,
+    get_env_var,
     get_geomad_stac_geoparquet_url,
     get_s3_mosaic_write_path,
-    get_source_coop_config,
     get_stac_geoparquet_key,
     is_source_coop,
     owner_for_region,
     parse_tile_id,
     parse_years,
     resolve_dataset,
+    source_coop_prefix,
 )
 
-source_coop_url, prefix_geomad, prefix_lulc = get_source_coop_config()
+source_coop_url = get_env_var("SOURCE_COOP_URL")
 
 app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -134,17 +129,7 @@ def _find_existing_tasks(
     Lists all STAC items under each (bucket, owner) prefix and returns
     a set of (id, year) tuples for tasks whose output already exists.
     """
-
-    # TODO: same logic in utils
-    def _source_coop_prefix(dataset_id: str) -> str | None:
-        """Return the source.coop path prefix for a dataset, or None."""
-        _, prefix_geomad, prefix_lulc = get_source_coop_config()
-        if dataset_id == GEOMAD_DATASET_ID:
-            return prefix_geomad
-        else:
-            return prefix_lulc
-
-    sc_prefix = _source_coop_prefix(dataset_id)
+    sc_prefix = source_coop_prefix(dataset_id)
 
     # Collect unique (bucket, owner) combos
     region_combos: set[tuple[str, str]] = set()
@@ -226,7 +211,7 @@ def print_tasks(
 ) -> None:
     """Print tasks for given years, optionally filtering out those with existing outputs."""
     logger.info(f"Generating tasks for years: {years} and region: {region}")
-    bucket = bucket or get_bucket()  # Default
+    bucket = bucket or get_env_var("BUCKET")  # Default
 
     years_list = parse_years(years)
 
@@ -323,7 +308,7 @@ def index_to_stac_geoparquet(
 ) -> None:
     """Build STAC-Geoparquet indexes from STAC items for given dataset and region(s)."""
     regions: list[Literal["pacific", "non-pacific"]] = ["pacific", "non-pacific"] if region == "all" else [region]
-    bucket = bucket or get_bucket()  # Default
+    bucket = bucket or get_env_var("BUCKET")  # Default
 
     dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
 
@@ -370,8 +355,7 @@ def _run_index(
         return
 
     logger.info(f"Writing combined STAC-Geoparquet ({len(all_docs)} items) to bucket:{bucket} key:{parquet_key}")
-    write_session = get_write_session()
-    store = make_obstore_s3(bucket, write_session)
+    store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION)
     write_sync(parquet_key, all_docs, store=store)
 
     logger.info(f"Done. Wrote {len(all_docs)} items to bucket:{bucket} key:{parquet_key}")
@@ -501,7 +485,7 @@ def make_mosaics(
 ) -> None:
     """Make mosaic.jsons per year from the combined STAC-Geoparquet index."""
     logger.info(f"Making mosaics for dataset '{dataset}'")
-    bucket = bucket or get_bucket()  # Default
+    bucket = bucket or get_env_var("BUCKET")  # Default
 
     requested_years: list[int] | None = parse_years(years) if years is not None else None
 
@@ -530,7 +514,7 @@ def make_mosaics(
     else:
         years_list = available_years
 
-    write_session = get_write_session()
+    write_session = boto3.Session(region_name=AWS_REGION)
     output_path = get_s3_mosaic_write_path(bucket, dataset_id, version, source_coop_prefix)
     combined_short = dataset_prefix(None, dataset_id)
     for _year in years_list:

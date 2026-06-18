@@ -36,12 +36,12 @@ from ldn.utils import (
     GEOMAD_VERSION,
     LULC_DATASET_ID,
     LULC_VERSION,
+    SOURCE_COOP_PREFIX_LULC,
     WGS84,
     LdnError,
     get_analysis_epsg,
     get_full_path_prefix,
     get_geomad_stac_geoparquet_url,
-    get_source_coop_config,
     is_source_coop,
     parse_tile_id,
 )
@@ -463,7 +463,6 @@ def run_classify_task(
 
     full_path_prefix = get_full_path_prefix(bucket)
     logger.info(f"Full path prefix: {full_path_prefix}")
-    _, _, prefix_lulc = get_source_coop_config()
 
     components = build_pipeline_components(
         tile_id_tuple,
@@ -472,12 +471,12 @@ def run_classify_task(
         bucket,
         owner,
         LULC_DATASET_ID,
-        prefix_lulc if is_source_coop() else None,
+        SOURCE_COOP_PREFIX_LULC if is_source_coop() else None,
         overwrite,
     )
     if components is None:
         return  # Task exists and overwrite is False, so skipping processing.
-    itempath, stac_creator, writer, stac_writer = components
+    itempath, stac_creator, writer = components
 
     searcher = StacGeoparquetSearcher(
         stac_geoparquet_url=geomad_stac_geoparquet_url,
@@ -517,7 +516,6 @@ def run_classify_task(
                 logger=logger,
                 writer=writer,
                 stac_creator=stac_creator,
-                stac_writer=stac_writer,
             ).run()
             logger.info(
                 f"Completed processing. Wrote {len(paths)} files to {itempath.stac_path(tile_id_tuple, absolute=True)}"

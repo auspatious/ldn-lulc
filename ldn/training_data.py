@@ -48,7 +48,7 @@ from ldn.utils import (
     LdnError,
     dataset_prefix,
     get_analysis_epsg,
-    get_bucket,
+    get_env_var,
     get_geomad_stac_geoparquet_url,
     owner_for_region,
     parse_tile_id,
@@ -719,7 +719,7 @@ def make_training_data(
         GeoDataFrame of final training samples.
     """
     logging.basicConfig(level=logging.INFO)
-    bucket = bucket or get_bucket()  # Default
+    bucket = bucket or get_env_var("BUCKET")  # Default
 
     analysis_crs = get_analysis_epsg(region)
 
@@ -834,7 +834,7 @@ def generate_training_data(
         raise LdnError("Tile ID is required")
     if not year:
         raise LdnError("Year is required")
-    bucket = bucket or get_bucket()  # Default
+    bucket = bucket or get_env_var("BUCKET")  # Default
 
     country_of_interest = None
     if country_name and country_code:

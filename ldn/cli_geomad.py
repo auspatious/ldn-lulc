@@ -31,9 +31,9 @@ from ldn.utils import (
     LS7_YEAR_THRESHOLD,
     NON_PACIFIC_OWNER,
     PACIFIC_OWNER,
-    get_bucket,
+    SOURCE_COOP_PREFIX_GEOMAD,
+    get_env_var,
     get_full_path_prefix,
-    get_source_coop_config,
     is_source_coop,
     owner_for_region,
     parse_tile_id,
@@ -124,7 +124,7 @@ def run(
     controlled by --ls7-buffer-years is used to gather enough clear
     observations. Pacific tiles may additionally include Tier 2 data.
     """
-    bucket = bucket or get_bucket()  # Default
+    bucket = bucket or get_env_var("BUCKET")  # Default
 
     logger.info(
         f"tile={tile_id} year={year} version={version} region={region} overwrite={overwrite} decimated={decimated} "
@@ -205,8 +205,6 @@ def run(
     # Configure for dask and reading data
     _ = configure_s3_access(requester_pays=True)
 
-    _, prefix_geomad, _ = get_source_coop_config()
-
     components = build_pipeline_components(
         tile_id_tuple,
         year,
@@ -214,12 +212,12 @@ def run(
         bucket,
         owner,
         GEOMAD_DATASET_ID,
-        prefix_geomad if is_source_coop() else None,
+        SOURCE_COOP_PREFIX_GEOMAD if is_source_coop() else None,
         overwrite,
     )
     if components is None:
         return  # Task exists and overwrite is False, so skipping processing.
-    itempath, stac_creator, writer, stac_writer = components
+    itempath, stac_creator, writer = components
 
     # Searcher finds STAC Items
     searcher = PystacSearcher(
@@ -285,7 +283,6 @@ def run(
                 logger=logger,
                 writer=writer,
                 stac_creator=stac_creator,
-                stac_writer=stac_writer,
             ).run()
             logger.info(
                 f"Completed processing. Wrote {len(paths)} files to {itempath.stac_path(tile_id_tuple, absolute=True)}"

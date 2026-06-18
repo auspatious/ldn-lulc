@@ -1,49 +1,34 @@
 # Seperate folder for integration tests so they can be easily excluded from regular test runs.
-import logging
-import os
 from datetime import UTC, datetime, timedelta
 
 import boto3
 import pytest
+from moto import mock_aws
 from typer.testing import CliRunner
 
-from ldn.aws_credentials import get_write_session
 from ldn.cli_geomad import geomad_app
 from ldn.raster import PrefixedS3ItemPath
-from ldn.utils import GEOMAD_DATASET_ID, SENSOR, get_source_coop_config, parse_tile_id
+from ldn.utils import GEOMAD_DATASET_ID, SENSOR, SOURCE_COOP_PREFIX_GEOMAD, is_source_coop, parse_tile_id
 
 pytestmark = pytest.mark.integration
-
-logger = logging.getLogger(__name__)
 
 INTEGRATION_CONFIGS = [
     {
         "id": "auspatious",
         "BUCKET": "data.ldn.auspatious.com",
-        "SOURCE_COOP_PUBLIC_URL": "",
-        "SOURCE_COOP_PREFIX_GEOMAD": "",
-        "SOURCE_COOP_PREFIX_LULC": "",
-        "AWS_ACCESS_KEY_ID": os.environ.get("AUSPATIOUS_AWS_ACCESS_KEY_ID", ""),
-        "AWS_SECRET_ACCESS_KEY": os.environ.get("AUSPATIOUS_AWS_SECRET_ACCESS_KEY", ""),
-        "AWS_SESSION_TOKEN": os.environ.get("AUSPATIOUS_AWS_SESSION_TOKEN", ""),
+        "SOURCE_COOP_URL": "",
     },
     {
-        "id": "dep-staging",
+        "id": "private-bucket",
         "BUCKET": "dep-public-staging",
-        "SOURCE_COOP_PUBLIC_URL": "",
-        "SOURCE_COOP_PREFIX_GEOMAD": "",
-        "SOURCE_COOP_PREFIX_LULC": "",
-        "AWS_ACCESS_KEY_ID": os.environ.get("DEP_AWS_ACCESS_KEY_ID", ""),
-        "AWS_SECRET_ACCESS_KEY": os.environ.get("DEP_AWS_SECRET_ACCESS_KEY", ""),
-        "AWS_SESSION_TOKEN": os.environ.get("DEP_AWS_SESSION_TOKEN", ""),
+        "SOURCE_COOP_URL": "",
     },
-    {
-        "id": "source-coop",
-        "BUCKET": "us-west-2.opendata.source.coop",
-        "SOURCE_COOP_PUBLIC_URL": "https://data.source.coop",
-        "SOURCE_COOP_PREFIX_GEOMAD": "auspatious/geomad-sids",
-        "SOURCE_COOP_PREFIX_LULC": "auspatious/lulc-sids",
-    },
+    # This won't work locally because the role is only available in Argo/Kubernetes.
+    # {
+    #     "id": "source-coop",
+    #     "BUCKET": "us-west-2.opendata.source.coop",
+    #     "SOURCE_COOP_URL": "https://data.source.coop",
+    # },
 ]
 
 
@@ -51,17 +36,46 @@ INTEGRATION_CONFIGS = [
 def bucket_env(request, monkeypatch):
     config = request.param
 
-    # Source.Coop uses write credentials, other buckets use standard AWS credentials
-    if config["id"] == "source-coop":
-        if not os.environ.get("SOURCE_COOP_AWS_ACCESS_KEY_ID"):
-            pytest.skip("Source.Coop write credentials (SOURCE_COOP_AWS_ACCESS_KEY_ID) not set")
-    elif not config.get("AWS_ACCESS_KEY_ID"):
-        pytest.skip(f"AWS credentials for {config['id']} not set")
+    # moto still expects credentials to be present in the environment.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_SESSION_TOKEN", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-west-2")
 
     for k, v in config.items():
         if k != "id":
             monkeypatch.setenv(k, v)
     yield config
+
+
+@pytest.fixture
+def mock_s3(bucket_env):
+    with mock_aws():
+        s3 = boto3.client("s3", region_name="us-west-2")
+        s3.create_bucket(
+            Bucket=bucket_env["BUCKET"],
+            CreateBucketConfiguration={"LocationConstraint": "us-west-2"},
+        )
+        yield s3
+
+
+@pytest.fixture(autouse=True)
+def stub_geomad_processing(monkeypatch):
+    """Avoid external data calls while exercising CLI write/skip behavior."""
+
+    monkeypatch.setattr("ldn.cli_geomad._count_scenes", lambda **_: 25)
+
+    def fake_run(self):
+        stac_key = self.stac_writer.itempath.stac_path(self.id, absolute=False)
+        self.stac_writer.client.put_object(
+            Bucket=self.stac_writer.itempath.bucket,
+            Key=stac_key,
+            Body=b"{}",
+            ContentType="application/json",
+        )
+        return [stac_key]
+
+    monkeypatch.setattr("ldn.cli_geomad.Task.run", fake_run)
 
 
 # TODO: Add an AM-Crossing integration test. 066_022.
@@ -78,34 +92,29 @@ def runner():
 
 @pytest.fixture
 def stac_key(bucket_env):
-    source_coop_url, prefix_geomad, _ = get_source_coop_config()
+    _is_source_coop = is_source_coop()
     bucket = bucket_env["BUCKET"]
     tile_id_tuple = parse_tile_id(TILE_ID)
 
     itempath = PrefixedS3ItemPath(
-        key_prefix=prefix_geomad if source_coop_url else None,
+        key_prefix=SOURCE_COOP_PREFIX_GEOMAD if _is_source_coop else None,
         prefix="dep",
         bucket=bucket,
         sensor=SENSOR,
         dataset_id=GEOMAD_DATASET_ID,
         version=VERSION,
         time=YEAR,
-        full_path_prefix=source_coop_url if source_coop_url else f"s3://{bucket}",
+        full_path_prefix=SOURCE_COOP_PREFIX_GEOMAD if _is_source_coop else f"s3://{bucket}",
     )
     return itempath.stac_path(tile_id_tuple, absolute=False)
 
 
-def test_geomad_run_and_skip(bucket_env, runner, stac_key):
+def test_geomad_run_and_skip(bucket_env, mock_s3, runner, stac_key):
     """Write with overwrite, check item was recently written, then check skip doesn't overwrite."""
-    source_coop_url, _, _ = get_source_coop_config()
     bucket = bucket_env["BUCKET"]
     print(bucket)
 
-    # Use write client with Source.Coop credentials if applicable
-    if source_coop_url:
-        s3 = get_write_session().client("s3")
-    else:
-        s3 = boto3.client("s3")
+    s3 = mock_s3
     print(s3)
 
     # 1. Write with overwrite
@@ -154,48 +163,3 @@ def test_geomad_run_and_skip(bucket_env, runner, stac_key):
     assert last_modified == after, (
         f"Item was rewritten when it should have been skipped. Before: {last_modified}, After: {after}"
     )
-
-
-# Delete/clean-up step. Don't want to leave files in Source.Coop or DEP prod.
-# This runs after every test automatically via autouse=True
-@pytest.fixture(autouse=True)
-def cleanup_stac_item(bucket_env, stac_key):
-    """Delete the test STAC item and assets after each test."""
-    yield
-    source_coop_url, _, _ = get_source_coop_config()
-    bucket = bucket_env["BUCKET"]
-
-    # Use the same credentials that were used to write
-    if source_coop_url:
-        s3 = get_write_session().client("s3")
-    else:
-        s3 = boto3.Session(
-            aws_access_key_id=bucket_env.get("AWS_ACCESS_KEY_ID") or None,
-            aws_secret_access_key=bucket_env.get("AWS_SECRET_ACCESS_KEY") or None,
-            aws_session_token=bucket_env.get("AWS_SESSION_TOKEN") or None,
-            region_name="us-west-2",
-        ).client("s3")
-
-    folder = stac_key.rsplit("/", 1)[0] + "/"
-    logger.info(f"Cleaning up test folder: {folder}")
-
-    response = s3.list_objects_v2(Bucket=bucket, Prefix=folder)
-    contents = response.get("Contents", [])
-    len_contents = len(contents)
-    count_expected = 11
-    # Safeguard to not delete too many files
-    assert len_contents == count_expected, (
-        f"There should be {count_expected} files to clean up (1 STAC item + 10 assets), found {len_contents}."
-    )
-
-    count_deleted = 0
-    for obj in contents:
-        key = obj["Key"]
-        try:
-            s3.delete_object(Bucket=bucket, Key=key)
-            count_deleted += 1
-            logger.info(f"Deleted test item: {key}")
-        except Exception as e:
-            logger.warning(f"Failed to delete test item {key}: {e}")
-
-    assert count_deleted == count_expected, f"Expected to delete {count_expected} files, but deleted {count_deleted}."

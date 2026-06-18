@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 
 from ldn.cli import app
-from ldn.utils import GEOMAD_VERSION, get_source_coop_config, get_stac_geoparquet_key, is_source_coop
+from ldn.utils import GEOMAD_VERSION, SOURCE_COOP_PREFIX_GEOMAD, get_stac_geoparquet_key, is_source_coop
 
 runner = CliRunner()
 
@@ -40,11 +40,11 @@ class TestPrintTasksRegionConfig:
         call_args = mock_find_stac.call_args
 
         assert call_args.args[0] == "my-custom-bucket"
-        _, prefix_geomad, _ = get_source_coop_config()
 
         expected_prefix = "myorg_ls_geomad/"
-        if prefix_geomad:
-            expected_prefix = f"{prefix_geomad}/{expected_prefix}"
+        _is_source_coop = is_source_coop()
+        if _is_source_coop:
+            expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
         assert call_args.args[1].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")
@@ -70,9 +70,9 @@ class TestPrintTasksRegionConfig:
         assert result.exit_code == 0, result.output
         call_args = mock_find_stac.call_args
         expected_prefix = "override_ls_geomad/"
-        _, prefix_geomad, _ = get_source_coop_config()
-        if prefix_geomad:
-            expected_prefix = f"{prefix_geomad}/{expected_prefix}"
+        _is_source_coop = is_source_coop()
+        if _is_source_coop:
+            expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
         assert call_args.args[1].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")
@@ -161,12 +161,12 @@ class TestIndexToStacGeoparquetRegionConfig:
         )
 
         assert result.exit_code == 0, result.output
-        _, prefix_geomad, _ = get_source_coop_config()
-        expected_parquet_key = get_stac_geoparquet_key("geomad", GEOMAD_VERSION, prefix_geomad)
-        if is_source_coop() and prefix_geomad:
+        _is_source_coop = is_source_coop()
+        expected_parquet_key = get_stac_geoparquet_key("geomad", GEOMAD_VERSION, SOURCE_COOP_PREFIX_GEOMAD)
+        if _is_source_coop:
             mock_run_index.assert_called_once_with(
                 "idx-bucket",
-                [(f"{prefix_geomad}/idxorg_ls_geomad/{GEOMAD_VERSION}", "idxorg_ls_geomad")],
+                [(f"{SOURCE_COOP_PREFIX_GEOMAD}/idxorg_ls_geomad/{GEOMAD_VERSION}", "idxorg_ls_geomad")],
                 expected_parquet_key,
             )
         else:
@@ -195,8 +195,8 @@ class TestIndexToStacGeoparquetRegionConfig:
         assert result.exit_code == 0, result.output
         mock_run_index.assert_called_once()
         args = mock_run_index.call_args[0]
-        _, prefix_geomad, _ = get_source_coop_config()
-        if is_source_coop() and prefix_geomad:
-            assert args[1] == [(f"{prefix_geomad}/custom_ls_geomad/{GEOMAD_VERSION}", "custom_ls_geomad")]
+        _is_source_coop = is_source_coop()
+        if _is_source_coop:
+            assert args[1] == [(f"{SOURCE_COOP_PREFIX_GEOMAD}/custom_ls_geomad/{GEOMAD_VERSION}", "custom_ls_geomad")]
         else:
             assert args[1] == [(f"custom_ls_geomad/{GEOMAD_VERSION}", "custom_ls_geomad")]

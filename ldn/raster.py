@@ -7,7 +7,7 @@ from dep_tools.aws import object_exists
 from dep_tools.namers import S3ItemPath
 from dep_tools.stac_utils import StacCreator
 from dep_tools.utils import bbox_across_180, join_path_or_url, search_across_180
-from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
+from dep_tools.writers import AwsDsCogWriter
 from geopandas import GeoDataFrame
 from odc.geo.geobox import GeoBox
 from odc.stac import load as stac_load
@@ -18,7 +18,6 @@ from rasterio.enums import Resampling
 from scipy.ndimage import sobel
 from shapely.geometry import box
 
-from ldn.aws_credentials import get_write_session, make_write_function
 from ldn.utils import (
     SENSOR,
     WGS84,
@@ -307,7 +306,7 @@ def build_pipeline_components(
     dataset_id: Literal["geomad", "lulc"],
     source_coop_prefix: str | None,
     overwrite: bool,
-) -> tuple[PrefixedS3ItemPath, StacCreator, AwsDsCogWriter, AwsStacWriter] | None:
+) -> tuple[PrefixedS3ItemPath, StacCreator, AwsDsCogWriter] | None:
     """Build shared pipeline components for GeoMAD and classify tasks.
 
     Returns None if the item already exists and overwrite is False.
@@ -327,11 +326,8 @@ def build_pipeline_components(
     stac_document = itempath.stac_path(tile_id_tuple, absolute=True)
     stac_key = itempath.stac_path(tile_id_tuple, absolute=False)
 
-    write_session = get_write_session()
-    write_client = write_session.client("s3")
-
     logger.info(f"Checking if item exists at {stac_document} with overwrite={overwrite}")
-    if not overwrite and object_exists(bucket, stac_key, client=write_client):
+    if not overwrite and object_exists(bucket, stac_key):
         logger.info(f"Skipping because item already exists at {stac_document};")
         return None
     logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
@@ -344,8 +340,6 @@ def build_pipeline_components(
     writer = AwsDsCogWriter(
         itempath,
         write_multithreaded=True,
-        write_function=make_write_function(write_session),
     )
-    stac_writer = AwsStacWriter(itempath, client=write_client)
 
-    return itempath, stac_creator, writer, stac_writer
+    return itempath, stac_creator, writer

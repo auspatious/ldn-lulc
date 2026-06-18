@@ -540,9 +540,8 @@ OWNER = "dep"
 def mock_aws():
     """Mock all AWS I/O so no credentials are needed."""
     with (
-        patch(f"{_RASTER_MOD}.get_write_session") as mock_session,
+        patch(f"{_RASTER_MOD}.boto3.Session") as mock_session,
         patch(f"{_RASTER_MOD}.object_exists", return_value=False),
-        patch(f"{_RASTER_MOD}.make_write_function"),
     ):
         mock_session.return_value.client.return_value = MagicMock()
         yield mock_session
@@ -623,10 +622,10 @@ def test_build_pipeline_components_proceeds_when_exists_and_overwrite(mock_aws):
     assert result is not None
 
 
-def test_build_pipeline_components_returns_four_components(mock_aws):
+def test_build_pipeline_components_returns_three_components(mock_aws):
     result = build_pipeline_components(TILE, YEAR, VERSION, "dep-public-staging", OWNER, "geomad", None, overwrite=True)
     assert result is not None
-    assert len(result) == 4
+    assert len(result) == 3
 
 
 def test_build_pipeline_components_collection_url_root_correct(mock_aws):
@@ -635,6 +634,6 @@ def test_build_pipeline_components_collection_url_root_correct(mock_aws):
         result = build_pipeline_components(
             TILE, YEAR, VERSION, "data.ldn.auspatious.com", OWNER, "geomad", None, overwrite=True
         )
-    _, stac_creator, _, _ = result
+    _, stac_creator, _ = result
     assert stac_creator._collection_url_root.startswith("https://")
     assert not stac_creator._collection_url_root.startswith("s3://")

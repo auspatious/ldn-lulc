@@ -57,15 +57,12 @@ MOCK_REGION = "ap-southeast-2"
 MOCK_VERSION = "0-0-1"
 MOCK_DATASET_ID = "geomad"
 MOCK_SOURCE_COOP_URL = "https://data.source.coop"
+# TODO: Do these need mocking?
 MOCK_SOURCE_COOP_PREFIX = "auspatious/geomad-sids"
 MOCK_SOURCE_COOP_PREFIX_LULC = "auspatious/lulc-sids"
 
 NO_SOURCE_COOP = (None, None, None)
-WITH_SOURCE_COOP = (
-    MOCK_SOURCE_COOP_URL,
-    MOCK_SOURCE_COOP_PREFIX,
-    MOCK_SOURCE_COOP_PREFIX_LULC,
-)
+WITH_SOURCE_COOP = (MOCK_SOURCE_COOP_URL,)
 
 
 @pytest.fixture

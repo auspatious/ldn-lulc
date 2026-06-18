@@ -71,26 +71,15 @@ Simply run: `poetry run pytest -m 'not integration'` or for a specific file: `po
 
 #### Integration tests:
 
-Set env vars and then run:
+You need these profiles in your AWS config file:
 
 ```bash
-# Set Source.Coop env vars
-export SOURCE_COOP_PUBLIC_URL=https://data.source.coop
-export SOURCE_COOP_PREFIX_GEOMAD=auspatious/geomad-sids
-export SOURCE_COOP_PREFIX_LULC=auspatious/lulc-sids
-export SOURCE_COOP_AWS_ACCESS_KEY_ID=XXX
-export SOURCE_COOP_AWS_SECRET_ACCESS_KEY=XXX
-export SOURCE_COOP_AWS_SESSION_TOKEN=XXX
-
-# Set Auspatious env vars
-export AUSPATIOUS_AWS_ACCESS_KEY_ID=XXX
-export AUSPATIOUS_AWS_SECRET_ACCESS_KEY=XXX
-export AUSPATIOUS_AWS_SESSION_TOKEN=XXX
-
-# Set DEP env vars
-export DEP_AWS_ACCESS_KEY_ID=XXX
-export DEP_AWS_SECRET_ACCESS_KEY=XXX
-export DEP_AWS_SESSION_TOKEN=XXX
+# First configure profiles in ~/.aws/config
+# Second login
+aws sso login --profile auspatious-ldn
+aws sso login --profile dep-staging
+# aws sso login --profile dep-prod
+aws sso login --profile source-coop
 
 # Run integration tests
 pytest -m integration
@@ -189,4 +178,6 @@ Data product: https://source.coop/auspatious/geomad-sids
 
 Info here: https://github.com/auspatious/ldn-lulc/Source.Coop_README.md
 
-Writing to this requires env vars set (see integration testing section above). These env vars come from the credentials given by Source.Coop for this data repo.
+## Environment Variables
+
+See .env.example on how to set env vars. After cloning this repo you need to copy .env.example to .env

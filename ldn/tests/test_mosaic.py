@@ -38,7 +38,7 @@ def _make_feature(item_id: str, bbox: list[float], year: str = "2020") -> dict:
 
 @pytest.fixture
 def mock_write_session():
-    with patch("ldn.cli.get_write_session") as mock_get_session:
+    with patch("ldn.cli.boto3.Session") as mock_boto_session:
         mock_frozen = MagicMock()
         mock_frozen.access_key = "AKIAIOSFODNN7EXAMPLE"
         mock_frozen.secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
@@ -50,16 +50,16 @@ def mock_write_session():
         mock_session = MagicMock()
         mock_session.get_credentials.return_value = mock_creds
         mock_session.region_name = "us-west-2"
-        mock_get_session.return_value = mock_session
+        mock_boto_session.return_value = mock_session
 
-        yield mock_get_session
+        yield mock_boto_session
 
 
 @patch("ldn.cli._write_mosaic")
 @patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-@patch("ldn.cli.get_write_session")
+@patch("ldn.cli.boto3.Session")
 def test_make_mosaics_geomad_single_year(
     mock_session, mock_load, mock_years, mock_build, mock_write, mock_write_session
 ):
@@ -92,7 +92,7 @@ def test_make_mosaics_geomad_single_year(
 @patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-@patch("ldn.cli.get_write_session")
+@patch("ldn.cli.boto3.Session")
 def test_make_mosaics_prediction_single_year(
     mock_session, mock_load, mock_years, mock_build, mock_write, mock_write_session
 ):
@@ -124,7 +124,7 @@ def test_make_mosaics_prediction_single_year(
 @patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-@patch("ldn.cli.get_write_session")
+@patch("ldn.cli.boto3.Session")
 def test_make_mosaics_multiple_years(mock_session, mock_load, mock_years, mock_build, mock_write, mock_write_session):
     features = [
         _make_feature("item-1", [103.6, 1.2, 104.0, 1.5], "2020"),
@@ -158,7 +158,7 @@ def test_make_mosaics_multiple_years(mock_session, mock_load, mock_years, mock_b
 @patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-@patch("ldn.cli.get_write_session")
+@patch("ldn.cli.boto3.Session")
 def test_make_mosaics_passes_session_to_write(
     mock_session, mock_load, mock_years, mock_build, mock_write, mock_write_session
 ):

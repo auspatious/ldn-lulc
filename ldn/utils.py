@@ -12,29 +12,26 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-def get_bucket() -> str:
-    """Return the bucket name from the environment variable."""
-    bucket = os.environ.get("BUCKET")
-    if not bucket:
-        raise LdnError("BUCKET environment variable must be set.")
-    return bucket
+# For BUCKET and SOURCE_COOP_URL
+def get_env_var(name: str) -> str:
+    """Return the value of the environment variable."""
+    value = os.environ.get(name)
+    if not value:
+        raise LdnError(f"{name} environment variable must be set.")
+    return value
 
 
-def get_source_coop_config() -> tuple[str | None, str | None, str | None]:
-    """Return (public_url, prefix_geomad, prefix_lulc) from environment."""
-    return (
-        os.environ.get("SOURCE_COOP_PUBLIC_URL") or None,
-        os.environ.get("SOURCE_COOP_PREFIX_GEOMAD") or None,
-        os.environ.get("SOURCE_COOP_PREFIX_LULC") or None,
-    )
+SOURCE_COOP_PREFIX_GEOMAD = "auspatious/geomad-sids"
+SOURCE_COOP_PREFIX_LULC = "auspatious/lulc-sids"
 
 
 # This is a function instead of a module-level variable to ensure it reflects any changes
 # to the environment variables during testing (e.g. via monkeypatch).
+# TODO: Is this the best way to check if we are writing to Source.Coop?
 def is_source_coop() -> bool:
     """Return True if all Source.Coop environment variables are set."""
-    url, prefix_geomad, prefix_lulc = get_source_coop_config()
-    return bool(url) and bool(prefix_geomad) and bool(prefix_lulc)
+    url = get_env_var("SOURCE_COOP_URL")
+    return bool(url)
 
 
 # Our custom exception class for the project. Good for filtering errors in processing.
@@ -198,8 +195,8 @@ def get_geomad_stac_geoparquet_url(bucket: str, version: str) -> str:
     Returns:
         URL to the STAC-Geoparquet file.
     """
-    source_coop_url, prefix_geomad, _ = get_source_coop_config()
-    key = get_stac_geoparquet_key(GEOMAD_DATASET_ID, version, prefix_geomad)
+    source_coop_url = get_env_var("SOURCE_COOP_URL")
+    key = get_stac_geoparquet_key(GEOMAD_DATASET_ID, version, SOURCE_COOP_PREFIX_GEOMAD)
     if source_coop_url:
         return f"{source_coop_url}/{key}"
     return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/{key}"
@@ -231,17 +228,25 @@ def parse_years(years: str) -> list[int]:
         return [int(years)]
 
 
-# TODO: _source_coop_prefix() returns source_coop_prefix
+def source_coop_prefix(dataset_id: Literal["geomad", "lulc"]) -> str:
+    """Return the source.coop path prefix for a dataset"""
+    if dataset_id == GEOMAD_DATASET_ID:
+        return SOURCE_COOP_PREFIX_GEOMAD
+    else:
+        return SOURCE_COOP_PREFIX_LULC
+
+
 def resolve_dataset(
     dataset: Literal["geomad", "lulc"],
     version_geomad: str,
     version_lulc: str,
 ) -> tuple[str, str, str | None]:
     """Return (dataset_id, version, source_coop_prefix) for the given dataset name."""
-    _, prefix_geomad, prefix_lulc = get_source_coop_config()
-    if dataset == "geomad":
-        return GEOMAD_DATASET_ID, version_geomad, prefix_geomad
-    return LULC_DATASET_ID, version_lulc, prefix_lulc
+    sc_prefix = source_coop_prefix(dataset)
+
+    version = version_geomad if dataset == GEOMAD_DATASET_ID else version_lulc
+
+    return dataset, version, sc_prefix
 
 
 def parse_tile_id(tile_id: str) -> tuple[int, int]:
@@ -276,14 +281,16 @@ def get_public_https_prefix(bucket: str) -> str:
     Returns:
         A public HTTPS URL prefix string.
     """
-    source_coop_url, _, _ = get_source_coop_config()
-    if source_coop_url:
+    _is_source_coop = is_source_coop()
+    source_coop_url = get_env_var("SOURCE_COOP_URL")
+    if _is_source_coop:
         return source_coop_url
     if "." in bucket:
         return f"https://{bucket}"
     return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
 
 
+# TODO: We need to write a collection JSON. One for both regions together.
 def get_collection_url_root(
     bucket: str,
     owner: str,
@@ -327,8 +334,9 @@ def get_full_path_prefix(bucket: str) -> str:
     Returns:
         A URL prefix string suitable for rasterio to open files.
     """
-    source_coop_url, _, _ = get_source_coop_config()
-    if source_coop_url:
+    _is_source_coop = is_source_coop()
+    source_coop_url = get_env_var("SOURCE_COOP_URL")
+    if _is_source_coop:
         return source_coop_url
     return f"s3://{bucket}"
 

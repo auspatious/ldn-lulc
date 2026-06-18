@@ -256,11 +256,10 @@ class TestWriteMosaic:
 
 class TestRunIndex:
     @patch("ldn.cli.write_sync")
-    @patch("ldn.cli.make_obstore_s3")
-    @patch("ldn.cli.get_write_session")
+    @patch("ldn.cli.obstore.store.S3Store")
     @patch("ldn.cli._load_stac_docs")
     @patch("ldn.cli._find_stac_items_s3")
-    def test_writes_combined_parquet(self, mock_find, mock_load, mock_session, mock_store, mock_write):
+    def test_writes_combined_parquet(self, mock_find, mock_load, mock_store, mock_write):
         features = [_make_feature("t1", BBOX, year="2020")]
         mock_find.return_value = ["key/a.stac-item.json"]
         mock_load.return_value = features
@@ -270,20 +269,18 @@ class TestRunIndex:
         mock_write.assert_called_once_with("output/index.parquet", features, store=mock_store.return_value)
 
     @patch("ldn.cli.write_sync")
-    @patch("ldn.cli.get_write_session")
     @patch("ldn.cli._load_stac_docs")
     @patch("ldn.cli._find_stac_items_s3")
-    def test_skips_write_when_no_items_found(self, mock_find, mock_load, mock_session, mock_write):
+    def test_skips_write_when_no_items_found(self, mock_find, mock_load, mock_write):
         mock_find.return_value = []
         _run_index("my-bucket", [("full/prefix", "short/prefix")], "output/index.parquet")
         mock_write.assert_not_called()
 
     @patch("ldn.cli.write_sync")
-    @patch("ldn.cli.make_obstore_s3")
-    @patch("ldn.cli.get_write_session")
+    @patch("ldn.cli.obstore.store.S3Store")
     @patch("ldn.cli._load_stac_docs")
     @patch("ldn.cli._find_stac_items_s3")
-    def test_combines_docs_across_multiple_targets(self, mock_find, mock_load, mock_session, mock_store, mock_write):
+    def test_combines_docs_across_multiple_targets(self, mock_find, mock_load, mock_store, mock_write):
         mock_find.side_effect = [["key1.stac-item.json"], ["key2.stac-item.json"]]
         mock_load.side_effect = [
             [_make_feature("t1", BBOX, year="2020")],

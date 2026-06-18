@@ -12,7 +12,7 @@ from ldn.utils import (
     NON_PACIFIC_OWNER,
     PACIFIC_OWNER,
     LdnError,
-    get_bucket,
+    get_env_var,
     owner_for_region,
 )
 
@@ -75,7 +75,7 @@ def run(
     if int(year) < 2000 or int(year) > 2025:
         raise LdnError("Year must be between 2000 and 2025.")
 
-    bucket = bucket or get_bucket()  # Default
+    bucket = bucket or get_env_var("BUCKET")  # Default
     owner = owner_for_region(region, owner_pacific, owner_non_pacific, product_owner)
 
     run_classify_task(
