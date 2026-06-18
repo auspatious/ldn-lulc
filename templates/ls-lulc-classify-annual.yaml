@@ -5,7 +5,8 @@ metadata:
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
-  serviceAccountName: public-bucket-writer
+  serviceAccountName: public-bucket-writer # Staging
+  # serviceAccountName: open-data-bucket-writer # Prod
   ttlStrategy:
     secondsAfterCompletion: 300
   podGC:
@@ -32,7 +33,7 @@ spec:
         value: "ghcr.io/auspatious/ldn-lulc"
       - name: image-tag
         value: "latest"
-      - name: prediction-version
+      - name: lulc-version
         value: "0-0-4"
       - name: geomad-version
         value: "0-2-1"
@@ -58,9 +59,9 @@ spec:
           - name: print-tasks
             template: print-tasks
 
-          - name: classify
+          - name: lulc-classify
             depends: print-tasks.Succeeded
-            template: classify
+            template: lulc-classify
             arguments:
               parameters:
                 - name: tile-id
@@ -93,14 +94,14 @@ spec:
         command: [sh, -c]
         args:
           - |
-            ldn print-tasks --years "{{ workflow.parameters.years }}" --region "{{ workflow.parameters.region }}" --version-prediction "{{ workflow.parameters.prediction-version }}" --dataset prediction {{ workflow.parameters.overwrite }} > /tmp/tasks.json
+            ldn print-tasks --years "{{ workflow.parameters.years }}" --region "{{ workflow.parameters.region }}" --version-lulc "{{ workflow.parameters.lulc-version }}" --dataset lulc {{ workflow.parameters.overwrite }} > /tmp/tasks.json
       outputs:
         parameters:
           - name: tasks
             valueFrom:
               path: /tmp/tasks.json
 
-    - name: classify
+    - name: lulc-classify
       inputs:
         parameters:
           - name: tile-id
@@ -120,7 +121,7 @@ spec:
             cpu: 6
         command: [ldn]
         args:
-          - classify
+          - lulc
           - run
           - --tile-id
           - "{{ inputs.parameters.tile-id }}"
@@ -129,7 +130,7 @@ spec:
           - --region
           - "{{ inputs.parameters.region }}"
           - --version
-          - "{{ workflow.parameters.prediction-version }}"
+          - "{{ workflow.parameters.lulc-version }}"
           - --version-geomad
           - "{{ workflow.parameters.geomad-version }}"
           # Let model_path default
@@ -145,19 +146,3 @@ spec:
           - "4"
           - --xy-chunk-size
           - "1024"
-        env:
-          - name: AWS_WRITE_ACCESS_KEY_ID
-            valueFrom:
-              secretKeyRef:
-                name: source-coop-creds
-                key: aws_access_key_id
-          - name: AWS_WRITE_SECRET_ACCESS_KEY
-            valueFrom:
-              secretKeyRef:
-                name: source-coop-creds
-                key: aws_secret_access_key
-          - name: AWS_WRITE_SESSION_TOKEN
-            valueFrom:
-              secretKeyRef:
-                name: source-coop-creds
-                key: aws_session_token

@@ -5,17 +5,17 @@
 # 1. Run GeoMAD for all tiles/years
 # 2. Run index GeoMAD (STAC-Geoparquet)
 # 3. Make training data (in notebooks/training_data/0_Generate_Training_Points.ipynb)
-# 4. Train model (in notebooks/training_data/1_Train_Predict.ipynb)
-# 5. Run prediction for all tiles/years
-# 6. Run index prediction (STAC-Geoparquet)
-# 7. Run make-mosaic for geomad and prediction datasets
+# 4. Train model (in notebooks/training_data/1_Train_Model.ipynb)
+# 5. Run LULC prediction for all tiles/years
+# 6. Run index LULC (STAC-Geoparquet)
+# 7. Run make-mosaic for geomad and LULC datasets
 # 8. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
 VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)");
-VERSION_PREDICTION := $(shell python3 -c "from ldn.utils import PREDICTION_VERSION; print(PREDICTION_VERSION)");
+VERSION_LULC := $(shell python3 -c "from ldn.utils import LULC_VERSION; print(LULC_VERSION)");
 VERSION_MODEL := $(shell python3 -c "from ldn.utils import MODEL_VERSION; print(MODEL_VERSION)");
 
-PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.utils import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))");
+PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.training_data import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))");
 
 DECIMATED ?= --no-decimated;
 
@@ -42,8 +42,6 @@ print-tasks-2000-2025-pacific:
 
 TEST_TILES_2_REGIONS := 076_024:pacific 144_127:non-pacific
 
-# TODO: Run these non-decimated. Just testing bucket stuff here.
-# TODO: Get write access for Will to dep-public-staging.
 geomad-2-regions-decimated:
 	for site in $(TEST_TILES_2_REGIONS); do \
 		tile_id=$${site%%:*}; \
@@ -79,7 +77,7 @@ index-geomad:
 	--dataset "geomad" \
 	--region "all" \
 	--version-geomad $(VERSION_GEOMAD) \
-	--version-prediction $(VERSION_PREDICTION);
+	--version-lulc $(VERSION_LULC);
 
 
 #### Training Data
@@ -97,43 +95,41 @@ training-data-generate:
 	done;
 
 
-###### Classification/Prediction
+###### LULC Classification/Prediction
 
 # Predict LULC for the test tiles and one year (2025).
 
 # 1. Print tasks
-print-tasks-prediction-2020:
+print-tasks-lulc-2020:
 	ldn print-tasks \
 	--years="2020" \
 	--region="pacific" \
-	--dataset="prediction";
+	--dataset="lulc";
 
 
 # 2. Classify
-# TODO: Run for all years in future
 predict-lulc-test-tiles-2020:
 	for site in $(TEST_TILES); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
-		ldn classify run \
+		ldn lulc run \
 			--tile-id $$tile_id \
 			--year 2020 \
-			--version $(VERSION_PREDICTION) \
+			--version $(VERSION_LULC) \
 			--version-geomad $(VERSION_GEOMAD) \
 			--region $$region \
 			$(DECIMATED) \
 			--overwrite; \
 	done;
 
-# TODO: Get write access for Will to dep-public-staging.
-prediction-2-regions-decimated:
+lulc-2-regions-decimated:
 	for site in $(TEST_TILES_2_REGIONS); do \
 		tile_id=$${site%%:*}; \
 		region=$${site#*:}; region=$${region%%:*}; \
-		ldn classify run \
+		ldn lulc run \
 			--tile-id $$tile_id \
 			--year 2010 \
-			--version $(VERSION_PREDICTION) \
+			--version $(VERSION_LULC) \
 			--version-geomad $(VERSION_GEOMAD) \
 			--region $$region \
 			--decimated \
@@ -143,12 +139,12 @@ prediction-2-regions-decimated:
 
 
 # 3. Update the STAC-Geoparquet index after all tiles/years have run.
-index-predictions:
+index-lulc:
 	ldn index-to-stac-geoparquet \
-	--dataset "prediction" \
+	--dataset "lulc" \
 	--region "all" \
 	--version-geomad $(VERSION_GEOMAD) \
-	--version-prediction $(VERSION_PREDICTION);
+	--version-lulc $(VERSION_LULC);
 
 
 # 4. Visualisation
@@ -156,13 +152,9 @@ make-mosaics-geomad:
 	ldn make-mosaics \
 	--dataset geomad;
 
-make-mosaics-prediction:
+make-mosaics-lulc:
 	ldn make-mosaics \
-	--dataset prediction;
-
-# TODO: Write both regions geomad to the same bucket.
-
-# TODO: update index and mosaic commands to be able to write to Source.Coop.
+	--dataset lulc;
 
 
 
@@ -204,8 +196,8 @@ mosaic-geomad-source-coop-test:
 	--dataset geomad \
 	--version-geomad $(SOURCE_TEST_VERSION);
 
-classify-source-coop-test:
-	ldn classify run \
+lulc-source-coop-test:
+	ldn lulc run \
 		--tile-id $(SOURCE_TEST_TILE) \
 		--year 2025 \
 		--version $(SOURCE_TEST_VERSION_P) \
@@ -215,18 +207,14 @@ classify-source-coop-test:
 		--no-decimated \
 		--overwrite; \
 
-index-prediction-source-coop-test:
+index-lulc-source-coop-test:
 	ldn index-to-stac-geoparquet \
-	--dataset "prediction" \
+	--dataset "lulc" \
 	--version-geomad $(SOURCE_TEST_VERSION) \
-	--version-prediction $(SOURCE_TEST_VERSION_P);
+	--version-lulc $(SOURCE_TEST_VERSION_P);
 
-mosaic-prediction-source-coop-test:
+mosaic-lulc-source-coop-test:
 	ldn make-mosaics \
-	--dataset prediction \
+	--dataset lulc \
 	--version-geomad $(SOURCE_TEST_VERSION) \
-	--version-prediction $(SOURCE_TEST_VERSION_P);
-
-# export AWS_WRITE_ACCESS_KEY_ID=""
-# export AWS_WRITE_SECRET_ACCESS_KEY=""
-# export AWS_WRITE_SESSION_TOKEN=""
+	--version-lulc $(SOURCE_TEST_VERSION_P);

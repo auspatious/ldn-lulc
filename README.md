@@ -21,7 +21,6 @@ rustup-init
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-TODO: Migrate from Poetry to UV.
 ```bash
 poetry lock --no-update
 poetry export -f requirements.txt --output requirements.txt --with dev --with visualisation --without-hashes
@@ -56,6 +55,13 @@ This installs main group. Deps like `cogeo-mosaic` and `boto3` are in both main 
    poetry run ldn --help
    poetry run make {command from Makefile}
 ```
+
+## AWS
+
+Docs on AWS SSO here: https://github.com/digitalearthpacific/internal-documentation/blob/main/technical/1-systems-access.md
+
+- AWS credentials configured (per profile) `aws configure sso`
+- AWS SSO `aws sso login --profile xxx`
 
 
 ### To add a dependency
@@ -127,9 +133,15 @@ A tile server for viewing GeoMedian/GeoMAD and predicted LULC mosaics, built wit
 
 ### Prerequisites
 
-- AWS credentials configured (`aws configure` or environment variables)
 - [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
 - Docker
+
+### Run locally
+
+```bash
+poetry install --with visualisation
+poetry run uvicorn visualisation.app:app --host 0.0.0.0 --port 8081 --reload
+```
 
 ### Deploy
 
@@ -145,13 +157,6 @@ This will:
 3. Build and push the Docker image
 4. Deploy the Lambda + API Gateway via Terraform
 
-### Run locally
-
-```bash
-poetry install --with visualisation
-poetry run uvicorn visualisation.app:app --host 0.0.0.0 --port 8081 --reload
-```
-
 ### Current deployment
 
 https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
@@ -163,9 +168,6 @@ Data product: https://source.coop/auspatious/geomad-sids
 
 Info here: https://github.com/auspatious/ldn-lulc/Source.Coop_README.md
 
-Writing to this requires these env vars set:
-```bash
-export AWS_WRITE_ACCESS_KEY_ID="..."
-export AWS_WRITE_SECRET_ACCESS_KEY="..."
-export AWS_WRITE_SESSION_TOKEN="..."
-```
+## Environment Variables
+
+See .env.example on how to set env vars. After cloning this repo you need to copy .env.example to .env

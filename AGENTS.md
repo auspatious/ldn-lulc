@@ -7,8 +7,10 @@
 - Testing using pytest. Update tests as needed.
 
 ## General
-- Never use emojis or uncommon characters like "→".
+- Never use emojis or uncommon characters like "→" or "—".
 - Use f strings, not %s, %d.
+- No code bloat. Implement succinctly.
+- No hacks.
 
 ## Comments
 - Keep comments simple and minimal when needed.
@@ -23,4 +25,3 @@
 ## Quality
 - Give advice on improving code quality.
 - Use best practices.
-- Advise if a proposed solution is a "hack".

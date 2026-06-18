@@ -2,12 +2,20 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from ldn.cli import app
-from ldn.utils import SOURCE_COOP_PREFIX_GEOMAD, SOURCE_COOP_PUBLIC_URL
+from ldn.utils import GEOMAD_VERSION, SOURCE_COOP_PREFIX_GEOMAD, get_stac_geoparquet_key, is_source_coop
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def mock_required_env(monkeypatch):
+    """Set required CLI env vars so tests do not depend on shell state."""
+    monkeypatch.setenv("BUCKET", "dep-public-staging")
+    monkeypatch.setenv("SOURCE_COOP_URL", "")
 
 
 class TestPrintTasksRegionConfig:
@@ -30,8 +38,6 @@ class TestPrintTasksRegionConfig:
                 "pacific",
                 "--bucket",
                 "my-custom-bucket",
-                "--owner-pacific",
-                "myorg",
             ],
         )
 
@@ -41,8 +47,9 @@ class TestPrintTasksRegionConfig:
 
         assert call_args.args[0] == "my-custom-bucket"
 
-        expected_prefix = "myorg_ls_geomad/"
-        if SOURCE_COOP_PREFIX_GEOMAD:
+        expected_prefix = "dep_ls_geomad/"
+        _is_source_coop = is_source_coop()
+        if _is_source_coop:
             expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
         assert call_args.args[1].startswith(expected_prefix)
 
@@ -69,14 +76,15 @@ class TestPrintTasksRegionConfig:
         assert result.exit_code == 0, result.output
         call_args = mock_find_stac.call_args
         expected_prefix = "override_ls_geomad/"
-        if SOURCE_COOP_PREFIX_GEOMAD:
+        _is_source_coop = is_source_coop()
+        if _is_source_coop:
             expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
         assert call_args.args[1].startswith(expected_prefix)
 
     @patch("ldn.cli.get_grid_tiles")
     @patch("ldn.cli._find_stac_items_s3")
-    def test_filter_tasks_prediction_dataset(self, mock_find_stac, mock_get_tiles):
-        """--dataset prediction should use lulc_prediction prefix."""
+    def test_filter_tasks_lulc_dataset(self, mock_find_stac, mock_get_tiles):
+        """--dataset lulc should use lulc prefix."""
         mock_get_tiles.return_value = [((66, 22), "pacific")]
         mock_find_stac.return_value = []
 
@@ -89,24 +97,25 @@ class TestPrintTasksRegionConfig:
                 "--region",
                 "pacific",
                 "--dataset",
-                "prediction",
+                "lulc",
             ],
         )
 
         assert result.exit_code == 0, result.output
         call_args = mock_find_stac.call_args
-        assert "lulc_prediction" in call_args.args[1]
+        assert "lulc" in call_args.args[1]
 
 
 class TestGeomadRegionConfig:
     """Verify geomad command wires bucket/owner into S3ItemPath."""
 
-    @patch("ldn.cli_geomad.object_exists", return_value=True)
+    @patch("ldn.cli_geomad._count_scenes", return_value=25)
     @patch("ldn.cli_geomad.configure_s3_access")
-    @patch("ldn.cli_geomad.boto3")
-    def test_custom_bucket_skips_existing(self, mock_boto3, mock_s3_access, mock_exists):
-        """When item exists with custom bucket, geomad should skip and report the custom path."""
-        mock_boto3.client.return_value = MagicMock()
+    @patch("ldn.cli_geomad.get_gridspec")
+    @patch("ldn.cli_geomad.build_pipeline_components", return_value=None)
+    def test_custom_bucket_skips_existing(self, mock_build, mock_get_gridspec, mock_s3_access, mock_count):
+        """Custom bucket/owner should be forwarded when building GeoMAD pipeline components."""
+        mock_get_gridspec.return_value.tile_geobox.return_value = MagicMock()
 
         result = runner.invoke(
             app,
@@ -118,22 +127,19 @@ class TestGeomadRegionConfig:
                 "--year",
                 "2020",
                 "--version",
-                "0-2-1",
+                GEOMAD_VERSION,
                 "--region",
                 "pacific",
                 "--bucket",
                 "my-test-bucket",
-                "--owner-pacific",
-                "testorg",
             ],
         )
 
         assert result.exit_code == 0, result.output
-        assert "already exists" in result.output
-        mock_exists.assert_called_once()
-        call_args = mock_exists.call_args
-        assert call_args[0][0] == "my-test-bucket"
-        assert "testorg_ls_geomad" in call_args[0][1]
+        mock_build.assert_called_once()
+        call_args = mock_build.call_args.args
+        assert call_args[3] == "my-test-bucket"
+        assert call_args[5] == "geomad"
 
 
 class TestIndexToStacGeoparquetRegionConfig:
@@ -152,23 +158,23 @@ class TestIndexToStacGeoparquetRegionConfig:
                 "pacific",
                 "--bucket",
                 "idx-bucket",
-                "--owner-pacific",
-                "idxorg",
             ],
         )
 
         assert result.exit_code == 0, result.output
-        if SOURCE_COOP_PUBLIC_URL:
+        _is_source_coop = is_source_coop()
+        expected_parquet_key = get_stac_geoparquet_key("geomad", GEOMAD_VERSION, SOURCE_COOP_PREFIX_GEOMAD)
+        if _is_source_coop:
             mock_run_index.assert_called_once_with(
                 "idx-bucket",
-                [("auspatious/geomad-sids/idxorg_ls_geomad/0-2-1", "idxorg_ls_geomad")],
-                "auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet",
+                [(f"{SOURCE_COOP_PREFIX_GEOMAD}/dep_ls_geomad/{GEOMAD_VERSION}", "dep_ls_geomad")],
+                expected_parquet_key,
             )
         else:
             mock_run_index.assert_called_once_with(
                 "idx-bucket",
-                [("idxorg_ls_geomad/0-2-1", "idxorg_ls_geomad")],
-                "None/ls_geomad/0-2-1/ls_geomad.parquet",
+                [(f"dep_ls_geomad/{GEOMAD_VERSION}", "dep_ls_geomad")],
+                expected_parquet_key,
             )
 
     @patch("ldn.cli._run_index")
@@ -190,7 +196,8 @@ class TestIndexToStacGeoparquetRegionConfig:
         assert result.exit_code == 0, result.output
         mock_run_index.assert_called_once()
         args = mock_run_index.call_args[0]
-        if SOURCE_COOP_PUBLIC_URL:
-            assert args[1] == [("auspatious/geomad-sids/custom_ls_geomad/0-2-1", "custom_ls_geomad")]
+        _is_source_coop = is_source_coop()
+        if _is_source_coop:
+            assert args[1] == [(f"{SOURCE_COOP_PREFIX_GEOMAD}/custom_ls_geomad/{GEOMAD_VERSION}", "custom_ls_geomad")]
         else:
-            assert args[1] == [("custom_ls_geomad/0-2-1", "custom_ls_geomad")]
+            assert args[1] == [(f"custom_ls_geomad/{GEOMAD_VERSION}", "custom_ls_geomad")]
