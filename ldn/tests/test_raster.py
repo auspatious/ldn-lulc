@@ -528,7 +528,6 @@ class TestPrefixedS3ItemPath:
 
 # build_pipeline_components
 _RASTER_MOD = "ldn.raster"
-_UTILS_MOD = "ldn.utils"
 
 TILE = (66, 22)
 YEAR = "2025"
@@ -539,12 +538,8 @@ OWNER = "dep"
 @pytest.fixture(autouse=False)
 def mock_aws():
     """Mock all AWS I/O so no credentials are needed."""
-    with (
-        patch(f"{_RASTER_MOD}.boto3.Session") as mock_session,
-        patch(f"{_RASTER_MOD}.object_exists", return_value=False),
-    ):
-        mock_session.return_value.client.return_value = MagicMock()
-        yield mock_session
+    with patch(f"{_RASTER_MOD}.object_exists", return_value=False) as mock_object_exists:
+        yield mock_object_exists
 
 
 @pytest.mark.parametrize(
@@ -574,12 +569,7 @@ def test_build_pipeline_components_itempath_prefix(
     mock_aws, bucket, source_coop_prefix, source_coop_url, expected_prefix_start
 ):
     """itempath.full_path_prefix should reflect the correct scheme for each bucket style."""
-    source_coop_config = (
-        source_coop_url,
-        source_coop_prefix if source_coop_url else None,
-        "auspatious/lulc-sids" if source_coop_url else None,
-    )
-    with patch(f"{_UTILS_MOD}.get_source_coop_config", return_value=source_coop_config):
+    with patch(f"{_RASTER_MOD}.get_full_path_prefix", return_value=expected_prefix_start):
         result = build_pipeline_components(
             TILE, YEAR, VERSION, bucket, OWNER, "geomad", source_coop_prefix, overwrite=True
         )
@@ -630,7 +620,9 @@ def test_build_pipeline_components_returns_three_components(mock_aws):
 
 def test_build_pipeline_components_collection_url_root_correct(mock_aws):
     """collection_url_root on stac_creator should use public HTTPS, not s3://."""
-    with patch(f"{_UTILS_MOD}.get_source_coop_config", return_value=(None, None, None)):
+    with patch(
+        f"{_RASTER_MOD}.get_collection_url_root", return_value="https://data.ldn.auspatious.com/#dep_ls_geomad/"
+    ):
         result = build_pipeline_components(
             TILE, YEAR, VERSION, "data.ldn.auspatious.com", OWNER, "geomad", None, overwrite=True
         )

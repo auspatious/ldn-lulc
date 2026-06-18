@@ -6,6 +6,8 @@ from ldn.utils import (
     AWS_REGION,
     NON_PACIFIC_OWNER,
     PACIFIC_OWNER,
+    SOURCE_COOP_PREFIX_GEOMAD,
+    SOURCE_COOP_PREFIX_LULC,
     LdnError,
     dataset_prefix,
     get_collection_url_root,
@@ -76,27 +78,27 @@ def base_patches():
 
 class TestGetGeomadStacGeoparquetUrl:
     @pytest.mark.parametrize(
-        "bucket,source_coop_config,expected",
+        "bucket,source_coop_url,expected",
         [
             (
                 "us-west-2.opendata.source.coop",
-                WITH_SOURCE_COOP,
+                MOCK_SOURCE_COOP_URL,
                 f"{MOCK_SOURCE_COOP_URL}/{MOCK_SOURCE_COOP_PREFIX}/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
             ),
             (
                 "data.ldn.auspatious.com",
-                NO_SOURCE_COOP,
-                f"https://s3.{MOCK_REGION}.amazonaws.com/data.ldn.auspatious.com/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
+                "",
+                f"https://s3.{MOCK_REGION}.amazonaws.com/data.ldn.auspatious.com/{MOCK_SOURCE_COOP_PREFIX}/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
             ),
             (
                 "dep-public-staging",
-                NO_SOURCE_COOP,
-                f"https://s3.{MOCK_REGION}.amazonaws.com/dep-public-staging/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
+                "",
+                f"https://s3.{MOCK_REGION}.amazonaws.com/dep-public-staging/{MOCK_SOURCE_COOP_PREFIX}/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
             ),
         ],
     )
-    def test_bucket_styles(self, base_patches, bucket, source_coop_config, expected):
-        with patch(f"{MODULE}.get_source_coop_config", return_value=source_coop_config):
+    def test_bucket_styles(self, base_patches, bucket, source_coop_url, expected):
+        with patch(f"{MODULE}.get_env_var", return_value=source_coop_url):
             url = get_geomad_stac_geoparquet_url(bucket=bucket, version=MOCK_VERSION)
         assert url == expected
 
@@ -172,30 +174,22 @@ MODULE = "ldn.utils"
 @pytest.fixture(autouse=True)
 def mock_constants():
     with (
-        patch(f"{MODULE}.GEOMAD_DATASET_ID", "geomad-sids"),
-        patch(f"{MODULE}.LULC_DATASET_ID", "lulc-sids"),
-        patch(
-            f"{MODULE}.get_source_coop_config",
-            return_value=(
-                MOCK_SOURCE_COOP_URL,
-                "auspatious/geomad-sids",
-                "auspatious/lulc-sids",
-            ),
-        ),
+        patch(f"{MODULE}.SOURCE_COOP_PREFIX_GEOMAD", "auspatious/geomad-sids"),
+        patch(f"{MODULE}.SOURCE_COOP_PREFIX_LULC", "auspatious/lulc-sids"),
     ):
         yield
 
 
 def test_resolve_dataset_geomad():
     dataset_id, version, prefix = resolve_dataset("geomad", "0.0.1", "0.0.2")
-    assert dataset_id == "geomad-sids"
+    assert dataset_id == "geomad"
     assert version == "0.0.1"
     assert prefix == "auspatious/geomad-sids"
 
 
 def test_resolve_dataset_lulc():
     dataset_id, version, prefix = resolve_dataset("lulc", "0.0.1", "0.0.2")
-    assert dataset_id == "lulc-sids"
+    assert dataset_id == "lulc"
     assert version == "0.0.2"
     assert prefix == "auspatious/lulc-sids"
 
@@ -210,86 +204,94 @@ def test_resolve_dataset_lulc_ignores_geomad_version():
     assert version == "1.0.0"
 
 
-def test_resolve_dataset_prefix_none_when_source_coop_not_configured():
-    with patch(f"{MODULE}.get_source_coop_config", return_value=(None, None, None)):
-        _, _, geomad_prefix = resolve_dataset("geomad", "0.0.1", "0.0.2")
-        _, _, lulc_prefix = resolve_dataset("lulc", "0.0.1", "0.0.2")
-    assert geomad_prefix is None
-    assert lulc_prefix is None
+def test_resolve_dataset_prefix_from_constants():
+    _, _, geomad_prefix = resolve_dataset("geomad", "0.0.1", "0.0.2")
+    _, _, lulc_prefix = resolve_dataset("lulc", "0.0.1", "0.0.2")
+    assert geomad_prefix == SOURCE_COOP_PREFIX_GEOMAD
+    assert lulc_prefix == SOURCE_COOP_PREFIX_LULC
 
 
 @pytest.mark.parametrize(
-    "bucket,source_coop_config,expected",
+    "bucket,is_source_coop_bucket,expected",
     [
         (
             "us-west-2.opendata.source.coop",
-            WITH_SOURCE_COOP,
+            True,
             "https://data.source.coop",
         ),
         (
             "data.ldn.auspatious.com",
-            NO_SOURCE_COOP,
+            False,
             "s3://data.ldn.auspatious.com",
         ),
         (
             "dep-public-staging",
-            NO_SOURCE_COOP,
+            False,
             "s3://dep-public-staging",
         ),
     ],
 )
-def test_get_full_path_prefix(bucket, source_coop_config, expected):
-    with patch(f"{MODULE}.get_source_coop_config", return_value=source_coop_config):
+def test_get_full_path_prefix(bucket, is_source_coop_bucket, expected):
+    with (
+        patch(f"{MODULE}.is_source_coop", return_value=is_source_coop_bucket),
+        patch(f"{MODULE}.get_env_var", return_value=MOCK_SOURCE_COOP_URL),
+    ):
         assert get_full_path_prefix(bucket) == expected
 
 
 @pytest.mark.parametrize(
-    "bucket,source_coop_config,expected",
+    "bucket,is_source_coop_bucket,expected",
     [
         (
             "us-west-2.opendata.source.coop",
-            WITH_SOURCE_COOP,
+            True,
             "https://data.source.coop/#dep_ls_geomad/",
         ),
         (
             "data.ldn.auspatious.com",
-            NO_SOURCE_COOP,
+            False,
             "https://data.ldn.auspatious.com/#dep_ls_geomad/",
         ),
         (
             "dep-public-staging",
-            NO_SOURCE_COOP,
+            False,
             f"https://s3.{AWS_REGION}.amazonaws.com/dep-public-staging/#dep_ls_geomad/",
         ),
     ],
 )
-def test_get_collection_url_root(bucket, source_coop_config, expected):
-    with patch(f"{MODULE}.get_source_coop_config", return_value=source_coop_config):
+def test_get_collection_url_root(bucket, is_source_coop_bucket, expected):
+    with (
+        patch(f"{MODULE}.is_source_coop", return_value=is_source_coop_bucket),
+        patch(f"{MODULE}.get_env_var", return_value=MOCK_SOURCE_COOP_URL),
+    ):
         assert get_collection_url_root(bucket, "dep", "ls", "geomad") == expected
 
 
 @pytest.mark.parametrize(
-    "bucket,source_coop_config,expected",
+    "bucket,is_source_coop_bucket,expected",
     [
         (
             "us-west-2.opendata.source.coop",
-            WITH_SOURCE_COOP,
+            True,
             "https://data.source.coop",
         ),
         (
             "data.ldn.auspatious.com",
-            NO_SOURCE_COOP,
+            False,
             "https://data.ldn.auspatious.com",
         ),
         (
             "dep-public-staging",
-            NO_SOURCE_COOP,
+            False,
             f"https://s3.{AWS_REGION}.amazonaws.com/dep-public-staging",
         ),
     ],
 )
-def test_get_public_https_prefix(bucket, source_coop_config, expected):
-    with patch(f"{MODULE}.get_source_coop_config", return_value=source_coop_config):
+def test_get_public_https_prefix(bucket, is_source_coop_bucket, expected):
+    with (
+        patch(f"{MODULE}.is_source_coop", return_value=is_source_coop_bucket),
+        patch(f"{MODULE}.get_env_var", return_value=MOCK_SOURCE_COOP_URL),
+    ):
         assert get_public_https_prefix(bucket) == expected
 
 
