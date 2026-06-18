@@ -56,6 +56,13 @@ This installs main group. Deps like `cogeo-mosaic` and `boto3` are in both main 
    poetry run make {command from Makefile}
 ```
 
+## AWS
+
+Docs on AWS SSO here: https://github.com/digitalearthpacific/internal-documentation/blob/main/technical/1-systems-access.md
+
+- AWS credentials configured (per profile) `aws configure sso`
+- AWS SSO `aws sso login --profile xxx`
+
 
 ### To add a dependency
 
@@ -71,16 +78,7 @@ Simply run: `poetry run pytest -m 'not integration'` or for a specific file: `po
 
 #### Integration tests:
 
-You need these profiles in your AWS config file:
-
 ```bash
-# First configure profiles in ~/.aws/config
-# Second login
-aws sso login --profile auspatious-ldn
-aws sso login --profile dep-staging
-# aws sso login --profile dep-prod
-aws sso login --profile source-coop
-
 # Run integration tests
 pytest -m integration
 ```
@@ -142,7 +140,6 @@ A tile server for viewing GeoMedian/GeoMAD and predicted LULC mosaics, built wit
 
 ### Prerequisites
 
-- AWS credentials configured (`aws configure` or environment variables)
 - [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
 - Docker
 

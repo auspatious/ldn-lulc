@@ -13,10 +13,11 @@ load_dotenv()
 
 
 # For BUCKET and SOURCE_COOP_URL
-def get_env_var(name: str) -> str:
+def get_env_var(name: str) -> str | None:
     """Return the value of the environment variable."""
     value = os.environ.get(name)
-    if not value:
+    logger.info(f"Got environment variable '{name}' = '{value}'")
+    if name == "BUCKET" and not value:
         raise LdnError(f"{name} environment variable must be set.")
     return value
 
@@ -31,7 +32,9 @@ SOURCE_COOP_PREFIX_LULC = "auspatious/lulc-sids"
 def is_source_coop() -> bool:
     """Return True if all Source.Coop environment variables are set."""
     url = get_env_var("SOURCE_COOP_URL")
-    return bool(url)
+    _is_source_coop = bool(url)
+    logger.info(f"Is Source.Coop: {_is_source_coop}")
+    return _is_source_coop
 
 
 # Our custom exception class for the project. Good for filtering errors in processing.

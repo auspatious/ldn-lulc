@@ -495,6 +495,7 @@ def make_mosaics(
     else:
         years_list = available_years
 
+    # TODO: is write session needed here?
     write_session = boto3.Session(region_name=AWS_REGION)
     output_path = get_s3_mosaic_write_path(bucket, dataset_id, version, source_coop_prefix)
     combined_short = dataset_prefix(None, dataset_id)
