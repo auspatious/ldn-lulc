@@ -2,12 +2,20 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from ldn.cli import app
 from ldn.utils import GEOMAD_VERSION, SOURCE_COOP_PREFIX_GEOMAD, get_stac_geoparquet_key, is_source_coop
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def mock_required_env(monkeypatch):
+    """Set required CLI env vars so tests do not depend on shell state."""
+    monkeypatch.setenv("BUCKET", "dep-public-staging")
+    monkeypatch.setenv("SOURCE_COOP_URL", "")
 
 
 class TestPrintTasksRegionConfig:

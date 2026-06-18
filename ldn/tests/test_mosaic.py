@@ -9,6 +9,13 @@ from ldn.utils import GEOMAD_VERSION, LULC_VERSION
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def mock_required_env(monkeypatch):
+    """Set required CLI env vars so tests do not depend on shell state."""
+    monkeypatch.setenv("BUCKET", "dep-public-staging")
+    monkeypatch.setenv("SOURCE_COOP_URL", "")
+
+
 def _make_feature(item_id: str, bbox: list[float], year: str = "2020") -> dict:
     """Helper to create a STAC feature dict."""
     minx, miny, maxx, maxy = bbox
