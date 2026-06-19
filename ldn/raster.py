@@ -333,6 +333,8 @@ def build_pipeline_components(
     logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
 
     stac_creator = StacCreator(
+        # TODO: for DEP prod use this as collection url root: https://stac.digitalearthpacific.org/collections/dep_ls_geomad
+        # TODO: Make this a param for the geomad call.
         collection_url_root=get_collection_url_root(bucket, owner, SENSOR, dataset_id),
         itempath=itempath,
         with_raster=True,
@@ -343,3 +345,9 @@ def build_pipeline_components(
     )
 
     return itempath, stac_creator, writer
+
+
+# TODO: Look at this example and use it to make a collection JSON for all outputs.
+# Make it work for geomad and lulc outputs.
+# Example code to create a collection:
+# http://github.com/digitalearthpacific/dep-stac/blob/main/dep_collections/dep_ls_geomad.py

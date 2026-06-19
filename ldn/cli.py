@@ -292,6 +292,10 @@ def index_to_stac_geoparquet(
 
     dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
 
+    # TODO: When there is just one region e.g. DEP: write the index to the specific folder e.g. dep_ls_geomad
+    # instead of the region-generic one e.g. ls_geomad.
+    # if len(regions) == 1: use region specific prefix.
+
     _is_source_coop = get_bool_env_var("IS_SOURCE_COOP")
     targets: list[tuple[str, str]] = []
     for r in regions:
@@ -471,6 +475,10 @@ def make_mosaics(
 
     dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
 
+    # TODO: When there is just one region e.g. DEP: write the index to the specific folder e.g. dep_ls_geomad
+    # instead of the region-generic one e.g. ls_geomad.
+    # if len(regions) == 1: use region specific prefix.
+
     parquet_url = get_geomad_stac_geoparquet_url(bucket, version)
 
     logger.info(f"Loading combined index from {parquet_url}")
@@ -494,7 +502,7 @@ def make_mosaics(
     else:
         years_list = available_years
 
-    # TODO: is write session needed here?
+    # TODO: is write session needed here? Probably not any more.
     write_session = boto3.Session(region_name=AWS_REGION)
     output_path = get_s3_mosaic_write_path(bucket, dataset_id, version, source_coop_prefix)
     combined_short = dataset_prefix(None, dataset_id)
