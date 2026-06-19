@@ -375,7 +375,11 @@ class GeoMADProcessor(Processor):
         if self.load_data_before_writing:
             geomad = geomad.compute()
 
-        geomad["count"].odc.nodata = 0  # This could hide real values of 0. 9999 is what datacube-compute do.
+        # # Keep count as uint8 with 255 reserved for nodata.
+        # # Anything over 254 is unlikely as a count value.
+        # # 9999 and uint16 is the default
+        # geomad["count"] = geomad["count"].clip(0, 254).astype("uint8")
+        # geomad["count"].odc.nodata = 255
 
         return _set_stac_properties(data, geomad)
 

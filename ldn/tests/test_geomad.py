@@ -55,6 +55,10 @@ def test_geomad_processor_output_has_expected_bands_nodata_and_dtype() -> None:
     assert set(result.data_vars) == set(EXPECTED_BANDS)
     assert result["red"].attrs["nodata"] == 0
     assert result["red"].dtype == np.uint16
+    # assert result["count"].attrs["nodata"] == 255
+    # assert result["count"].dtype == np.uint8
+    assert result["count"].attrs["nodata"] == 9999
+    assert result["count"].dtype == np.uint16
     assert np.isnan(result["emad"].attrs["nodata"])
     assert result["emad"].dtype == np.float32
 
