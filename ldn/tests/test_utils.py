@@ -8,6 +8,7 @@ from ldn.utils import (
     PACIFIC_OWNER,
     SOURCE_COOP_PREFIX_GEOMAD,
     SOURCE_COOP_PREFIX_LULC,
+    SOURCE_COOP_URL,
     LdnError,
     dataset_prefix,
     get_collection_url_root,
@@ -52,13 +53,9 @@ MOCK_BUCKET = "my-test-bucket"
 MOCK_REGION = "ap-southeast-2"
 MOCK_VERSION = "0-0-1"
 MOCK_DATASET_ID = "geomad"
-MOCK_SOURCE_COOP_URL = "https://data.source.coop"
-# TODO: Do these need mocking?
-MOCK_SOURCE_COOP_PREFIX = "auspatious/geomad-sids"
-MOCK_SOURCE_COOP_PREFIX_LULC = "auspatious/lulc-sids"
 
 NO_SOURCE_COOP = (None, None, None)
-WITH_SOURCE_COOP = (MOCK_SOURCE_COOP_URL,)
+WITH_SOURCE_COOP = (SOURCE_COOP_URL, SOURCE_COOP_PREFIX_GEOMAD, SOURCE_COOP_PREFIX_LULC)
 
 
 @pytest.fixture
@@ -76,18 +73,18 @@ class TestGetGeomadStacGeoparquetUrl:
         [
             (
                 "us-west-2.opendata.source.coop",
-                MOCK_SOURCE_COOP_URL,
-                f"{MOCK_SOURCE_COOP_URL}/{MOCK_SOURCE_COOP_PREFIX}/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
+                SOURCE_COOP_URL,
+                f"{SOURCE_COOP_URL}/{SOURCE_COOP_PREFIX_GEOMAD}/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
             ),
             (
                 "data.ldn.auspatious.com",
                 "",
-                f"https://s3.{MOCK_REGION}.amazonaws.com/data.ldn.auspatious.com/{MOCK_SOURCE_COOP_PREFIX}/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
+                f"https://s3.{MOCK_REGION}.amazonaws.com/data.ldn.auspatious.com/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
             ),
             (
                 "dep-public-staging",
                 "",
-                f"https://s3.{MOCK_REGION}.amazonaws.com/dep-public-staging/{MOCK_SOURCE_COOP_PREFIX}/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
+                f"https://s3.{MOCK_REGION}.amazonaws.com/dep-public-staging/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
             ),
         ],
     )
@@ -226,11 +223,7 @@ def test_resolve_dataset_prefix_from_constants():
     ],
 )
 def test_get_full_path_prefix(bucket, is_source_coop_bucket, expected):
-    with (
-        patch(f"{MODULE}.is_source_coop", return_value=is_source_coop_bucket),
-        patch(f"{MODULE}.get_env_var", return_value=MOCK_SOURCE_COOP_URL),
-    ):
-        assert get_full_path_prefix(bucket) == expected
+    assert get_full_path_prefix(bucket) == expected
 
 
 @pytest.mark.parametrize(
@@ -254,11 +247,7 @@ def test_get_full_path_prefix(bucket, is_source_coop_bucket, expected):
     ],
 )
 def test_get_collection_url_root(bucket, is_source_coop_bucket, expected):
-    with (
-        patch(f"{MODULE}.is_source_coop", return_value=is_source_coop_bucket),
-        patch(f"{MODULE}.get_env_var", return_value=MOCK_SOURCE_COOP_URL),
-    ):
-        assert get_collection_url_root(bucket, "dep", "ls", "geomad") == expected
+    assert get_collection_url_root(bucket, "dep", "ls", "geomad") == expected
 
 
 @pytest.mark.parametrize(
@@ -282,11 +271,7 @@ def test_get_collection_url_root(bucket, is_source_coop_bucket, expected):
     ],
 )
 def test_get_public_https_prefix(bucket, is_source_coop_bucket, expected):
-    with (
-        patch(f"{MODULE}.is_source_coop", return_value=is_source_coop_bucket),
-        patch(f"{MODULE}.get_env_var", return_value=MOCK_SOURCE_COOP_URL),
-    ):
-        assert get_public_https_prefix(bucket) == expected
+    assert get_public_https_prefix(bucket) == expected
 
 
 def test_parse_years_reversed_range():

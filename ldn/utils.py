@@ -12,29 +12,29 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-# For BUCKET and SOURCE_COOP_URL
-def get_env_var(name: str) -> str | None:
+# For BUCKET
+def get_env_var(name: str) -> str:
     """Return the value of the environment variable."""
     value = os.environ.get(name)
+    if not value:
+        raise LdnError(f"Requested '{name}' environment variable is not set.")
     logger.info(f"Got environment variable '{name}' = '{value}'")
-    if name == "BUCKET" and not value:
-        raise LdnError(f"{name} environment variable must be set.")
     return value
 
 
+# For IS_SOURCE_COOP
+# TODO: Could replace this with a function is_source_coop_bucket(bucket) and remove the IS_SOURCE_COOP env var.
+# def is_source_coop_bucket(bucket) -> bool: if bucket.endswith("source.coop") return True else False
+def get_bool_env_var(name: str) -> bool:
+    """Return the value of the environment variable as a bool."""
+    value = os.environ.get(name)
+    logger.info(f"Got environment variable '{name}' = '{value}'")
+    return (value or "").strip().lower() in ("true", "1", "yes")
+
+
+SOURCE_COOP_URL = "https://data.source.coop"
 SOURCE_COOP_PREFIX_GEOMAD = "auspatious/geomad-sids"
 SOURCE_COOP_PREFIX_LULC = "auspatious/lulc-sids"
-
-
-# This is a function instead of a module-level variable to ensure it reflects any changes
-# to the environment variables during testing (e.g. via monkeypatch).
-# TODO: Is this the best way to check if we are writing to Source.Coop?
-def is_source_coop() -> bool:
-    """Return True if all Source.Coop environment variables are set."""
-    url = get_env_var("SOURCE_COOP_URL")
-    _is_source_coop = bool(url)
-    logger.info(f"Is Source.Coop: {_is_source_coop}")
-    return _is_source_coop
 
 
 # Our custom exception class for the project. Good for filtering errors in processing.
@@ -112,9 +112,9 @@ ALL_COUNTRIES = {**SIDS_COUNTRIES_AND_CODES, **DEP_COUNTRIES_AND_CODES}
 NON_DEP_COUNTRIES = {k: v for k, v in SIDS_COUNTRIES_AND_CODES.items() if k not in DEP_COUNTRIES_AND_CODES}
 
 GEOMAD_VERSION = "0-3-0"
-LULC_VERSION = "0-1-0"
-MODEL_VERSION = "0-1-0"
-TRAINING_DATA_VERSION = "0-1-0"
+LULC_VERSION = "0-0-9"
+MODEL_VERSION = "0-0-9"
+TRAINING_DATA_VERSION = "0-0-9"
 
 PACIFIC_OWNER = "dep"
 NON_PACIFIC_OWNER = "ci"
@@ -182,6 +182,7 @@ def get_stac_geoparquet_key(
     return key
 
 
+# TODO: Generalise this function to also make the lulc stac geoparquet url (once needed).
 def get_geomad_stac_geoparquet_url(bucket: str, version: str) -> str:
     """Return the URL to the GeoMAD STAC-Geoparquet file for use with rustac/DuckDB.
 
@@ -196,11 +197,18 @@ def get_geomad_stac_geoparquet_url(bucket: str, version: str) -> str:
     Returns:
         URL to the STAC-Geoparquet file.
     """
-    source_coop_url = get_env_var("SOURCE_COOP_URL")
-    key = get_stac_geoparquet_key(GEOMAD_DATASET_ID, version, SOURCE_COOP_PREFIX_GEOMAD)
-    if source_coop_url:
-        return f"{source_coop_url}/{key}"
+    # Can't use get_bool_env_var("IS_SOURCE_COOP") here because this bucket is dynamic.
+    # E.g. training data creation reads from Source.Coop and writes to Auspatious.
+    _is_source_coop = bucket.endswith("source.coop")  # TODO: Find a nicer way to do this.
+    sc_prefix = SOURCE_COOP_PREFIX_GEOMAD if _is_source_coop else None
+    key = get_stac_geoparquet_key(GEOMAD_DATASET_ID, version, sc_prefix)
+    if _is_source_coop:
+        return f"{SOURCE_COOP_URL}/{key}"
     return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/{key}"
+
+
+# TODO: make url better. Read from DEP instead of source.coop?
+# LINE 1: SELECT column_name FROM (DESCRIBE SELECT * from read_parquet('/auspatious/geomad-sids/ls_geomad/0-3-0/ls_ge...
 
 
 def get_analysis_epsg(
@@ -282,10 +290,9 @@ def get_public_https_prefix(bucket: str) -> str:
     Returns:
         A public HTTPS URL prefix string.
     """
-    _is_source_coop = is_source_coop()
-    source_coop_url = get_env_var("SOURCE_COOP_URL")
+    _is_source_coop = bucket.endswith("source.coop")  # TODO: Find a nicer way to do this.
     if _is_source_coop:
-        return source_coop_url
+        return SOURCE_COOP_URL
     if "." in bucket:
         return f"https://{bucket}"
     return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
@@ -335,10 +342,9 @@ def get_full_path_prefix(bucket: str) -> str:
     Returns:
         A URL prefix string suitable for rasterio to open files.
     """
-    _is_source_coop = is_source_coop()
-    source_coop_url = get_env_var("SOURCE_COOP_URL")
+    _is_source_coop = bucket.endswith("source.coop")  # TODO: Find a nicer way to do this.
     if _is_source_coop:
-        return source_coop_url
+        return SOURCE_COOP_URL
     return f"s3://{bucket}"
 
 

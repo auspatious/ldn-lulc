@@ -40,9 +40,9 @@ from ldn.utils import (
     WGS84,
     LdnError,
     get_analysis_epsg,
+    get_bool_env_var,
     get_full_path_prefix,
     get_geomad_stac_geoparquet_url,
-    is_source_coop,
     parse_tile_id,
 )
 
@@ -471,7 +471,7 @@ def run_classify_task(
         bucket,
         owner,
         LULC_DATASET_ID,
-        SOURCE_COOP_PREFIX_LULC if is_source_coop() else None,
+        SOURCE_COOP_PREFIX_LULC if get_bool_env_var("USE_SOURCE_COOP") else None,
         overwrite,
     )
     if components is None:

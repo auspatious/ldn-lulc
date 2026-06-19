@@ -25,21 +25,20 @@ from ldn.utils import (
     GEOMAD_VERSION,
     LULC_VERSION,
     SENSOR,
+    SOURCE_COOP_URL,
     LdnError,
     dataset_prefix,
+    get_bool_env_var,
     get_env_var,
     get_geomad_stac_geoparquet_url,
     get_s3_mosaic_write_path,
     get_stac_geoparquet_key,
-    is_source_coop,
     owner_for_region,
     parse_tile_id,
     parse_years,
     resolve_dataset,
     source_coop_prefix,
 )
-
-source_coop_url = get_env_var("SOURCE_COOP_URL")
 
 app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -138,7 +137,7 @@ def _find_existing_tasks(
             )
         )
 
-    _is_source_coop = is_source_coop()
+    _is_source_coop = get_bool_env_var("IS_SOURCE_COOP")
 
     # List all STAC items under each prefix
     existing_keys: dict[str, set[str]] = {}
@@ -165,7 +164,7 @@ def _find_existing_tasks(
 
         full_path_prefix = f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
         if _is_source_coop and sc_prefix:
-            full_path_prefix = f"{source_coop_url}/{sc_prefix}"
+            full_path_prefix = f"{SOURCE_COOP_URL}/{sc_prefix}"
 
         itempath = PrefixedS3ItemPath(
             key_prefix=sc_prefix if _is_source_coop else None,
@@ -293,7 +292,7 @@ def index_to_stac_geoparquet(
 
     dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
 
-    _is_source_coop = is_source_coop()
+    _is_source_coop = get_bool_env_var("IS_SOURCE_COOP")
     targets: list[tuple[str, str]] = []
     for r in regions:
         owner = owner_for_region(r, product_owner)

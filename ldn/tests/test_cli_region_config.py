@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ldn.cli import app
-from ldn.utils import GEOMAD_VERSION, SOURCE_COOP_PREFIX_GEOMAD, get_stac_geoparquet_key, is_source_coop
+from ldn.utils import GEOMAD_VERSION, SOURCE_COOP_PREFIX_GEOMAD, get_bool_env_var, get_stac_geoparquet_key
 
 runner = CliRunner()
 
@@ -15,7 +15,7 @@ runner = CliRunner()
 def mock_required_env(monkeypatch):
     """Set required CLI env vars so tests do not depend on shell state."""
     monkeypatch.setenv("BUCKET", "dep-public-staging")
-    monkeypatch.setenv("SOURCE_COOP_URL", "")
+    monkeypatch.setenv("IS_SOURCE_COOP", "false")
 
 
 class TestPrintTasksRegionConfig:
@@ -48,7 +48,7 @@ class TestPrintTasksRegionConfig:
         assert call_args.args[0] == "my-custom-bucket"
 
         expected_prefix = "dep_ls_geomad/"
-        _is_source_coop = is_source_coop()
+        _is_source_coop = get_bool_env_var("IS_SOURCE_COOP")
         if _is_source_coop:
             expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
         assert call_args.args[1].startswith(expected_prefix)
@@ -76,7 +76,7 @@ class TestPrintTasksRegionConfig:
         assert result.exit_code == 0, result.output
         call_args = mock_find_stac.call_args
         expected_prefix = "override_ls_geomad/"
-        _is_source_coop = is_source_coop()
+        _is_source_coop = get_bool_env_var("IS_SOURCE_COOP")
         if _is_source_coop:
             expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
         assert call_args.args[1].startswith(expected_prefix)
@@ -162,7 +162,7 @@ class TestIndexToStacGeoparquetRegionConfig:
         )
 
         assert result.exit_code == 0, result.output
-        _is_source_coop = is_source_coop()
+        _is_source_coop = get_bool_env_var("IS_SOURCE_COOP")
         expected_parquet_key = get_stac_geoparquet_key("geomad", GEOMAD_VERSION, SOURCE_COOP_PREFIX_GEOMAD)
         if _is_source_coop:
             mock_run_index.assert_called_once_with(
@@ -196,7 +196,7 @@ class TestIndexToStacGeoparquetRegionConfig:
         assert result.exit_code == 0, result.output
         mock_run_index.assert_called_once()
         args = mock_run_index.call_args[0]
-        _is_source_coop = is_source_coop()
+        _is_source_coop = get_bool_env_var("IS_SOURCE_COOP")
         if _is_source_coop:
             assert args[1] == [(f"{SOURCE_COOP_PREFIX_GEOMAD}/custom_ls_geomad/{GEOMAD_VERSION}", "custom_ls_geomad")]
         else:
