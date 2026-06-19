@@ -268,7 +268,7 @@ def parse_tile_id(tile_id: str) -> tuple[int, int]:
         tile_id: A string containing two integers separated by '_', ',', or '-'.
 
     Returns:
-        A tuple of two integers (x, y).
+        A tuple of two integers (x, y). These are not padded with zeros because they are integers, not strings.
 
     Raises:
         LdnError: If the tile ID does not split into exactly two integers.

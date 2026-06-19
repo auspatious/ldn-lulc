@@ -688,12 +688,12 @@ def make_training_data(
     tile_id: str,
     year: str,
     region: Literal["pacific", "non-pacific"],
-    training_data_version: str,
     geomad_version: str,
     geomad_bucket: str,
     output_bucket: str,
     country_of_interest: dict[str, str],
     product_owner: str | None,
+    file_prefix: str,
     n: int = 2100,
     min_sample_per_class_n: int = 300,
 ):
@@ -794,9 +794,7 @@ def make_training_data(
     samples = filter_outliers(samples)
 
     # 10. Write outputs (local)
-    tile_x_index, tile_y_index = parse_tile_id(tile_id)
-    out_fname = f"training_data/{training_data_version}/{region}/{tile_x_index}/{tile_y_index}/{year}/samples"
-    out_fname_local = f"ldn/{out_fname}"
+    out_fname_local = f"ldn/{file_prefix}"
     Path(out_fname_local).parent.mkdir(parents=True, exist_ok=True)
 
     samples.to_file(f"{out_fname_local}.geojson", driver="GeoJSON", index=False)
@@ -804,7 +802,7 @@ def make_training_data(
     logger.info(f"Saved training data to {out_fname_local}")
 
     # 11. Upload to S3
-    s3_uri = _upload_dataframe_csv_to_s3(samples, output_bucket, f"{out_fname}.csv")
+    s3_uri = _upload_dataframe_csv_to_s3(samples, output_bucket, f"{file_prefix}.csv")
     logger.info(f"Uploaded training data to {s3_uri}")
 
 
@@ -848,25 +846,32 @@ def generate_training_data(
         f"min_sample_per_class_n={min_sample_per_class_n}, overwrite={overwrite}, "
         f"product_owner={product_owner} training_data_version={training_data_version}, geomad_version={geomad_version}"
     )
+    if training_data_version != TRAINING_DATA_VERSION:
+        logger.info(
+            f"Overriding the latest LULC prediction version ({TRAINING_DATA_VERSION}) with "
+            f"the specified version ({training_data_version})."
+        )
+    if geomad_version != GEOMAD_VERSION:
+        logger.info(
+            f"Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({geomad_version})."
+        )
 
     tile_id_x, tile_id_y = parse_tile_id(tile_id)
 
-    s3_client = boto3.client("s3")
-
     # TODO: Does this exists check work with Source.Coop and normal S3 buckets?
     # TODO: I think it needs source coop prefix prefixed.
-
-    prefix = f"training_data/{training_data_version}/{region}/{tile_id_x}/{tile_id_y}/{year}/samples.csv"
+    # Zero padded indexes
+    file_prefix = f"training_data/{training_data_version}/{region}/{tile_id_x:03d}/{tile_id_y:03d}/{year}/samples"
     # Training data shouldn't be written to source.coop, but supported just in case.
     _is_source_coop = output_bucket.endswith("source.coop")
     if _is_source_coop:
         raise NotImplementedError("Writing training data to Source.Coop is not supported.")
-        # prefix = f"{SOURCE_COOP_PREFIX_LULC}/{prefix}"
-    logger.info(f"Checking if object exists at s3://{output_bucket}/{prefix}")
+        # file_prefix = f"{SOURCE_COOP_PREFIX_LULC}/{file_prefix}"
+    # logger.info(f"Checking if object exists at s3://{output_bucket}/{file_prefix}")
 
     if not overwrite:
         logger.info("Overwrite is False, checking for existing object")
-        exists = object_exists(output_bucket, prefix, client=s3_client)
+        exists = object_exists(output_bucket, f"{file_prefix}.csv")
         if exists:
             logger.info("Item already exists and overwrite is False. Skipping.")
             return
@@ -879,7 +884,6 @@ def generate_training_data(
         tile_id=tile_id,
         year=year,
         region=region,
-        training_data_version=training_data_version,
         geomad_version=geomad_version,
         geomad_bucket=geomad_bucket,
         output_bucket=output_bucket,
@@ -887,6 +891,7 @@ def generate_training_data(
         n=n,
         min_sample_per_class_n=min_sample_per_class_n,
         product_owner=product_owner,
+        file_prefix=file_prefix,
     )
 
 
