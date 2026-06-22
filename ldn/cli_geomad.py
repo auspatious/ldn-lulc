@@ -24,7 +24,7 @@ from ldn.geomad import (
     AwsStacTask as Task,
 )
 from ldn.grids import get_gridspec
-from ldn.raster import build_pipeline_components
+from ldn.raster import build_pipeline_components, make_collection
 from ldn.utils import (
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
@@ -103,6 +103,7 @@ def run(
     threads_per_worker: Annotated[int, typer.Option()] = 16,
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
+    collection_url_root: Annotated[str | None, typer.Option(help="Override the default collection URL root.")] = None,
 ) -> None:
     """Run GeoMAD processing on a single tile for a year.
 
@@ -194,6 +195,8 @@ def run(
     # Configure for dask and reading data
     _ = configure_s3_access(requester_pays=True)
 
+    collection_url_root = make_collection(collection_url_root)
+
     components = build_pipeline_components(
         tile_id_tuple,
         year,
@@ -203,6 +206,7 @@ def run(
         GEOMAD_DATASET_ID,
         SOURCE_COOP_PREFIX_GEOMAD if get_bool_env_var("IS_SOURCE_COOP") else None,
         overwrite,
+        collection_url_root=collection_url_root,
     )
     if components is None:
         return  # Task exists and overwrite is False, so skipping processing.

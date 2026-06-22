@@ -229,3 +229,8 @@ mosaic-lulc-source-coop-test:
 # 	--country-name "Papua New Guinea" \
 # 	--country-code "PNG" \
 # 	--geomad-version 0-2-1;
+
+# make-geomad-collection:
+# 	ldn create-collection \
+# 		--dataset-id geomad \
+# 		# TODO...

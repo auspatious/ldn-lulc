@@ -306,6 +306,7 @@ def build_pipeline_components(
     dataset_id: Literal["geomad", "lulc"],
     source_coop_prefix: str | None,
     overwrite: bool,
+    collection_url_root: str,
 ) -> tuple[PrefixedS3ItemPath, StacCreator, AwsDsCogWriter] | None:
     """Build shared pipeline components for GeoMAD and classify tasks.
 
@@ -333,9 +334,7 @@ def build_pipeline_components(
     logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
 
     stac_creator = StacCreator(
-        # TODO: for DEP prod use this as collection url root: https://stac.digitalearthpacific.org/collections/dep_ls_geomad
-        # TODO: Make this a param for the geomad call.
-        collection_url_root=get_collection_url_root(bucket, owner, SENSOR, dataset_id),
+        collection_url_root=collection_url_root,
         itempath=itempath,
         with_raster=True,
     )
@@ -351,3 +350,13 @@ def build_pipeline_components(
 # Make it work for geomad and lulc outputs.
 # Example code to create a collection:
 # http://github.com/digitalearthpacific/dep-stac/blob/main/dep_collections/dep_ls_geomad.py
+
+
+def make_collection(collection_url_root: str | None, bucket: str, owner: str, dataset_id: str) -> str:
+    """Make a STAC collection JSON for the dataset. Uses a default collection_url_root based on bucket/owner/dataset_id
+    but can be overridden e.g. for DEP prod's STAC API."""
+    collection_url_root = collection_url_root or get_collection_url_root(bucket, owner, SENSOR, dataset_id)
+
+    # Make it
+
+    return collection_url_root

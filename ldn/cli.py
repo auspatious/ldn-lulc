@@ -294,7 +294,13 @@ def index_to_stac_geoparquet(
 
     # TODO: When there is just one region e.g. DEP: write the index to the specific folder e.g. dep_ls_geomad
     # instead of the region-generic one e.g. ls_geomad.
-    # if len(regions) == 1: use region specific prefix.
+    if len(regions) == 1:
+        logger.info(
+            f"Single region '{regions[0]}' selected, index will be written to "
+            f"the region-specific prefix instead of the generic one."
+        )
+        # source_coop_prefix = f"{source_coop_prefix}/{dataset_prefix(owner_for_region(regions[0],
+        #  product_owner), dataset_id)}"
 
     _is_source_coop = get_bool_env_var("IS_SOURCE_COOP")
     targets: list[tuple[str, str]] = []
@@ -432,7 +438,7 @@ def _extract_years(features: list[dict]) -> list[int]:
     return sorted(years)
 
 
-def _write_mosaic(mosaic: MosaicJSON, out_path: str, session: boto3.Session) -> None:
+def _write_mosaic(mosaic: MosaicJSON, out_path: str, client: boto3.Session.client) -> None:
     """Write a MosaicJSON to S3 using an explicit boto3 session."""
     # out_path is like s3://bucket/prefix/mosaic.json
     if not out_path.startswith("s3://"):
@@ -441,7 +447,6 @@ def _write_mosaic(mosaic: MosaicJSON, out_path: str, session: boto3.Session) -> 
     bucket, _, key = rest.partition("/")
 
     body = mosaic.model_dump_json(exclude_none=True).encode("utf-8")
-    client = session.client("s3", region_name=AWS_REGION)
     client.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/json")
 
 
@@ -475,7 +480,7 @@ def make_mosaics(
 
     dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
 
-    # TODO: When there is just one region e.g. DEP: write the index to the specific folder e.g. dep_ls_geomad
+    # TODO: When there is just one region e.g. DEP: write the mosaics to the specific folder e.g. dep_ls_geomad
     # instead of the region-generic one e.g. ls_geomad.
     # if len(regions) == 1: use region specific prefix.
 
@@ -502,17 +507,19 @@ def make_mosaics(
     else:
         years_list = available_years
 
-    # TODO: is write session needed here? Probably not any more.
-    write_session = boto3.Session(region_name=AWS_REGION)
+    # Make AWS client once to be used in for loop.
+    session = boto3.Session(region_name=AWS_REGION)
+    client = session.client("s3", region_name=AWS_REGION)
+
     output_path = get_s3_mosaic_write_path(bucket, dataset_id, version, source_coop_prefix)
     combined_short = dataset_prefix(None, dataset_id)
     for _year in years_list:
         mosaic = _build_mosaic_for_year(_year, features)
+
         out_path = f"{output_path}/{combined_short}_{_year}_mosaic.json"
         logger.info(f"  {_year} built successfully, writing to {out_path}")
 
-        _write_mosaic(mosaic, out_path, write_session)
-
+        _write_mosaic(mosaic, out_path, client)
         logger.info(f"  {_year} written.")
 
     logger.info("Finished writing mosaics.")

@@ -384,8 +384,8 @@ def find_agreement(wc: xr.Dataset, cci: xr.Dataset, io_ds: xr.Dataset) -> xr.Dat
 def generate_samples(
     agreed: xr.DataArray,
     geomad_dem_indices: xr.Dataset,
-    n: int = 2100,
-    min_sample_per_class_n: int = 300,
+    n: int,
+    min_sample_per_class_n: int,
     drop_value: int = 255,
 ) -> gpd.GeoDataFrame:
     """Generate stratified random samples from the agreement map.
