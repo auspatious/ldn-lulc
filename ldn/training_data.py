@@ -49,7 +49,8 @@ from ldn.utils import (
     dataset_prefix,
     get_analysis_epsg,
     get_env_var,
-    get_geomad_stac_geoparquet_url,
+    get_stac_geoparquet_url,
+    is_bucket_source_coop,
     owner_for_region,
     parse_tile_id,
 )
@@ -863,8 +864,8 @@ def generate_training_data(
     # Zero padded indexes
     file_prefix = f"training_data/{training_data_version}/{region}/{tile_id_x:03d}/{tile_id_y:03d}/{year}/samples"
     # Training data shouldn't be written to source.coop, but supported just in case.
-    _is_source_coop = output_bucket.endswith("source.coop")
-    if _is_source_coop:
+    _is_bucket_source_coop = is_bucket_source_coop(output_bucket)
+    if _is_bucket_source_coop:
         raise NotImplementedError("Writing training data to Source.Coop is not supported.")
         # file_prefix = f"{SOURCE_COOP_PREFIX_LULC}/{file_prefix}"
     # logger.info(f"Checking if object exists at s3://{output_bucket}/{file_prefix}")
@@ -942,7 +943,7 @@ def search_and_load_geomad_indices_dem(
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
-    geomad_url = get_geomad_stac_geoparquet_url(bucket=bucket, version=geomad_version)
+    geomad_url = get_stac_geoparquet_url(bucket, geomad_version, "geomad")
     item_id = make_geomad_item_id(tile_id, year, product_owner=product_owner)
 
     logging.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}.")

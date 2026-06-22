@@ -40,9 +40,9 @@ from ldn.utils import (
     WGS84,
     LdnError,
     get_analysis_epsg,
-    get_bool_env_var,
     get_full_path_prefix,
-    get_geomad_stac_geoparquet_url,
+    get_stac_geoparquet_url,
+    is_bucket_source_coop,
     parse_tile_id,
 )
 
@@ -434,7 +434,7 @@ def run_classify_task(
             f"Overriding the latest LULC prediction version ({LULC_VERSION}) with the specified version ({version})."
         )
 
-    geomad_stac_geoparquet_url = get_geomad_stac_geoparquet_url(bucket=bucket, version=version_geomad)
+    geomad_stac_geoparquet_url = get_stac_geoparquet_url(bucket, version_geomad, "geomad")
 
     tile_id_tuple = parse_tile_id(tile_id)
 
@@ -471,7 +471,7 @@ def run_classify_task(
         bucket,
         owner,
         LULC_DATASET_ID,
-        SOURCE_COOP_PREFIX_LULC if get_bool_env_var("USE_SOURCE_COOP") else None,
+        SOURCE_COOP_PREFIX_LULC if is_bucket_source_coop(bucket) else None,
         overwrite,
     )
     if components is None:

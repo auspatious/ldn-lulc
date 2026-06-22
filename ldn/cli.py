@@ -28,16 +28,16 @@ from ldn.utils import (
     SOURCE_COOP_URL,
     LdnError,
     dataset_prefix,
-    get_bool_env_var,
     get_env_var,
-    get_geomad_stac_geoparquet_url,
     get_s3_mosaic_write_path,
     get_stac_geoparquet_key,
+    get_stac_geoparquet_url,
+    is_bucket_source_coop,
     owner_for_region,
     parse_tile_id,
     parse_years,
-    resolve_dataset,
     source_coop_prefix,
+    version_for_dataset,
 )
 
 app = typer.Typer()
@@ -112,6 +112,7 @@ def _find_stac_items_s3(
     return matches
 
 
+# _find_existing_tasks should be updated to use the same read logic for all buckets (with auth).
 def _find_existing_tasks(
     tasks,
     version,
@@ -124,7 +125,6 @@ def _find_existing_tasks(
     Lists all STAC items under each (bucket, owner) prefix and returns
     a set of (id, year) tuples for tasks whose output already exists.
     """
-    sc_prefix = source_coop_prefix(dataset_id)
 
     # Collect unique (bucket, owner) combos
     region_combos: set[tuple[str, str]] = set()
@@ -137,16 +137,18 @@ def _find_existing_tasks(
             )
         )
 
-    _is_source_coop = get_bool_env_var("IS_SOURCE_COOP")
+    _is_bucket_source_coop = is_bucket_source_coop(bucket)
+    sc_prefix = source_coop_prefix(dataset_id)
 
     # List all STAC items under each prefix
+    # TODO: use utils functions to do this path stuff:
     existing_keys: dict[str, set[str]] = {}
     for combo_bucket, combo_owner in region_combos:
         s3_prefix = f"{dataset_prefix(combo_owner, dataset_id)}/{version}/"
-        if _is_source_coop and sc_prefix:
+        if _is_bucket_source_coop and sc_prefix:
             s3_prefix = f"{sc_prefix}/{s3_prefix}"
 
-        keys = _find_stac_items_s3(combo_bucket, s3_prefix, public=_is_source_coop)
+        keys = _find_stac_items_s3(combo_bucket, s3_prefix, public=_is_bucket_source_coop)
         existing_keys[f"{combo_bucket}/{combo_owner}"] = set(keys)
 
     total_existing = sum(len(v) for v in existing_keys.values())
@@ -161,13 +163,14 @@ def _find_existing_tasks(
         tile_id_tuple = parse_tile_id(task["id"])
         r = task["region"]
         owner = owner_for_region(r, product_owner)
+        # TODO: use utils functions to do this path stuff:
 
         full_path_prefix = f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
-        if _is_source_coop and sc_prefix:
+        if _is_bucket_source_coop and sc_prefix:
             full_path_prefix = f"{SOURCE_COOP_URL}/{sc_prefix}"
 
         itempath = PrefixedS3ItemPath(
-            key_prefix=sc_prefix if _is_source_coop else None,
+            key_prefix=sc_prefix if _is_bucket_source_coop else None,
             prefix=owner,
             bucket=bucket,
             sensor=SENSOR,
@@ -219,12 +222,12 @@ def print_tasks(
 
     # Filter out tasks whose output already exists in S3
     if not overwrite:
-        dataset_id, version, _source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
+        version = version_for_dataset(dataset, version_geomad, version_lulc)
 
         existing = _find_existing_tasks(
             tasks,
             version,
-            dataset_id,
+            dataset,
             bucket,
             product_owner,
         )
@@ -289,21 +292,20 @@ def index_to_stac_geoparquet(
     """Build STAC-Geoparquet indexes from STAC items for given dataset and region(s)."""
     regions: list[Literal["pacific", "non-pacific"]] = ["pacific", "non-pacific"] if region == "all" else [region]
     bucket = bucket or get_env_var("BUCKET")  # Default
+    version = version_for_dataset(dataset, version_geomad, version_lulc)
+    sc_prefix = source_coop_prefix(dataset)
+    _is_bucket_source_coop = is_bucket_source_coop(bucket)
 
-    dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
-
-    _is_source_coop = get_bool_env_var("IS_SOURCE_COOP")
     targets: list[tuple[str, str]] = []
     for r in regions:
+        # TODO: can this be done with utils path functions?
         owner = owner_for_region(r, product_owner)
-        short_prefix = dataset_prefix(owner, dataset_id)
-        full_prefix = (
-            f"{source_coop_prefix}/{short_prefix}/{version}" if _is_source_coop else f"{short_prefix}/{version}"
-        )
+        short_prefix = dataset_prefix(owner, dataset)
+        full_prefix = f"{sc_prefix}/{short_prefix}/{version}" if _is_bucket_source_coop else f"{short_prefix}/{version}"
         targets.append((full_prefix, short_prefix))
         logger.info(f"Region for indexing: '{full_prefix}'")
 
-    parquet_key = get_stac_geoparquet_key(dataset_id, version, source_coop_prefix)
+    parquet_key = get_stac_geoparquet_key(dataset, version, sc_prefix)
 
     _run_index(bucket, targets, parquet_key)
 
@@ -469,9 +471,9 @@ def make_mosaics(
 
     requested_years: list[int] | None = parse_years(years) if years is not None else None
 
-    dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
+    version = version_for_dataset(dataset, version_geomad, version_lulc)
 
-    parquet_url = get_geomad_stac_geoparquet_url(bucket, version)
+    parquet_url = get_stac_geoparquet_url(bucket, version, dataset)
 
     logger.info(f"Loading combined index from {parquet_url}")
     features = _load_all_features(parquet_url)
@@ -494,10 +496,9 @@ def make_mosaics(
     else:
         years_list = available_years
 
-    # TODO: is write session needed here?
     write_session = boto3.Session(region_name=AWS_REGION)
-    output_path = get_s3_mosaic_write_path(bucket, dataset_id, version, source_coop_prefix)
-    combined_short = dataset_prefix(None, dataset_id)
+    output_path = get_s3_mosaic_write_path(bucket, dataset, version)
+    combined_short = dataset_prefix(None, dataset)
     for _year in years_list:
         mosaic = _build_mosaic_for_year(_year, features)
         out_path = f"{output_path}/{combined_short}_{_year}_mosaic.json"

@@ -280,6 +280,7 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
 
 
 # This is needed to support Source.Coop prefix.
+# PrefixedS3ItemPath needs the key_prefix thing for Source.Coop.
 class PrefixedS3ItemPath(S3ItemPath):
     def __init__(self, key_prefix: str | None = None, **kwargs):
         super().__init__(**kwargs)

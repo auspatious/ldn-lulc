@@ -30,9 +30,9 @@ from ldn.utils import (
     GEOMAD_VERSION,
     LS7_YEAR_THRESHOLD,
     SOURCE_COOP_PREFIX_GEOMAD,
-    get_bool_env_var,
     get_env_var,
     get_full_path_prefix,
+    is_bucket_source_coop,
     owner_for_region,
     parse_tile_id,
 )
@@ -201,7 +201,7 @@ def run(
         bucket,
         owner,
         GEOMAD_DATASET_ID,
-        SOURCE_COOP_PREFIX_GEOMAD if get_bool_env_var("IS_SOURCE_COOP") else None,
+        SOURCE_COOP_PREFIX_GEOMAD if is_bucket_source_coop(bucket) else None,
         overwrite,
     )
     if components is None:
