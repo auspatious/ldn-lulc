@@ -296,14 +296,15 @@ def index_to_stac_geoparquet(
     sc_prefix = source_coop_prefix(dataset)
     _is_bucket_source_coop = is_bucket_source_coop(bucket)
 
-    targets: list[tuple[str, str]] = []
+    targets: list[str] = []
     for r in regions:
-        # TODO: can this be done with utils path functions?
         owner = owner_for_region(r, product_owner)
-        short_prefix = dataset_prefix(owner, dataset)
-        full_prefix = f"{sc_prefix}/{short_prefix}/{version}" if _is_bucket_source_coop else f"{short_prefix}/{version}"
-        targets.append((full_prefix, short_prefix))
-        logger.info(f"Region for indexing: '{full_prefix}'")
+        prefix = dataset_prefix(owner, dataset)
+        if _is_bucket_source_coop and sc_prefix:
+            prefix = f"{sc_prefix}/{prefix}"
+
+        targets.append(prefix)
+        logger.info(f"Region for indexing: '{prefix}'")
 
     parquet_key = get_stac_geoparquet_key(dataset, version, sc_prefix)
 
@@ -312,24 +313,23 @@ def index_to_stac_geoparquet(
 
 def _run_index(
     bucket: str,
-    targets: list[tuple[str, str]],
+    targets: list[str],
     parquet_key: str,
 ) -> None:
     """Find all STAC items across all targets and write a single combined Geoparquet."""
     all_docs: list = []
-
-    for full_prefix, short_prefix in targets:
-        logger.info(f"Listing STAC items under s3://{bucket}/{full_prefix}")
-        keys = _find_stac_items_s3(bucket, full_prefix)
-        logger.info(f"Found {len(keys)} STAC items under {short_prefix}")
+    for prefix in targets:
+        logger.info(f"Listing STAC items under s3://{bucket}/{prefix}")
+        keys = _find_stac_items_s3(bucket, prefix)
+        logger.info(f"Found {len(keys)} STAC items under {prefix}")
 
         if not keys:
-            logger.warning(f"No STAC items found under s3://{bucket}/{full_prefix}, skipping.")
+            logger.warning(f"No STAC items found under s3://{bucket}/{prefix}, skipping.")
             continue
 
-        logger.info(f"Loading STAC items from {short_prefix}")
+        logger.info(f"Loading STAC items from {prefix}")
         docs = _load_stac_docs(bucket, keys)
-        logger.info(f"Loaded {len(docs)} STAC documents from {short_prefix}")
+        logger.info(f"Loaded {len(docs)} STAC documents from {prefix}")
         all_docs.extend(docs)
 
     if not all_docs:
