@@ -10,7 +10,6 @@ from ldn.utils import (
     GEOMAD_VERSION,
     SOURCE_COOP_PREFIX_GEOMAD,
     get_env_var,
-    get_stac_geoparquet_key,
     is_bucket_source_coop,
 )
 
@@ -154,9 +153,14 @@ class TestIndexToStacGeoparquetRegionConfig:
 
     BUCKET = "idx-bucket"
 
-    @patch("ldn.cli._run_index")
-    def test_custom_bucket_and_owner(self, mock_run_index):
-        """Custom bucket/owner should be forwarded to _run_index."""
+    @patch("ldn.cli.write_sync")
+    @patch("ldn.cli._load_stac_docs")
+    @patch("ldn.cli._find_stac_items_s3")
+    def test_custom_bucket_and_owner(self, mock_find, mock_load, mock_write):
+        """Custom bucket/owner should be used in listing and write target."""
+        mock_find.return_value = ["a.stac-item.json"]
+        mock_load.return_value = [{"id": "item-1"}]
+
         result = runner.invoke(
             app,
             [
@@ -172,23 +176,21 @@ class TestIndexToStacGeoparquetRegionConfig:
 
         assert result.exit_code == 0, result.output
         _is_bucket_source_coop = is_bucket_source_coop(self.BUCKET)
-        expected_parquet_key = get_stac_geoparquet_key("geomad", GEOMAD_VERSION, SOURCE_COOP_PREFIX_GEOMAD)
+        expected_prefix = f"dep_ls_geomad/{GEOMAD_VERSION}/"
         if _is_bucket_source_coop:
-            mock_run_index.assert_called_once_with(
-                "idx-bucket",
-                [(f"{SOURCE_COOP_PREFIX_GEOMAD}/dep_ls_geomad/{GEOMAD_VERSION}", "dep_ls_geomad")],
-                expected_parquet_key,
-            )
-        else:
-            mock_run_index.assert_called_once_with(
-                "idx-bucket",
-                [(f"dep_ls_geomad/{GEOMAD_VERSION}", "dep_ls_geomad")],
-                expected_parquet_key,
-            )
+            expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
+        mock_find.assert_called_once_with(self.BUCKET, expected_prefix)
+        mock_write.assert_called_once()
+        assert mock_write.call_args[0][0] == f"dep_ls_geomad/{GEOMAD_VERSION}/dep_ls_geomad.parquet"
 
-    @patch("ldn.cli._run_index")
-    def test_product_owner_override(self, mock_run_index):
+    @patch("ldn.cli.write_sync")
+    @patch("ldn.cli._load_stac_docs")
+    @patch("ldn.cli._find_stac_items_s3")
+    def test_product_owner_override(self, mock_find, mock_load, mock_write):
         """--product-owner overrides the region-derived owner."""
+        mock_find.return_value = ["a.stac-item.json"]
+        mock_load.return_value = [{"id": "item-1"}]
+
         result = runner.invoke(
             app,
             [
@@ -203,10 +205,10 @@ class TestIndexToStacGeoparquetRegionConfig:
         )
 
         assert result.exit_code == 0, result.output
-        mock_run_index.assert_called_once()
-        args = mock_run_index.call_args[0]
         _is_bucket_source_coop = is_bucket_source_coop(get_env_var("BUCKET"))
+        expected_prefix = f"custom_ls_geomad/{GEOMAD_VERSION}/"
         if _is_bucket_source_coop:
-            assert args[1] == [(f"{SOURCE_COOP_PREFIX_GEOMAD}/custom_ls_geomad/{GEOMAD_VERSION}", "custom_ls_geomad")]
-        else:
-            assert args[1] == [(f"custom_ls_geomad/{GEOMAD_VERSION}", "custom_ls_geomad")]
+            expected_prefix = f"{SOURCE_COOP_PREFIX_GEOMAD}/{expected_prefix}"
+        mock_find.assert_called_once_with(get_env_var("BUCKET"), expected_prefix)
+        mock_write.assert_called_once()
+        assert mock_write.call_args[0][0] == f"dep_ls_geomad/{GEOMAD_VERSION}/dep_ls_geomad.parquet"

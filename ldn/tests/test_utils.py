@@ -4,6 +4,7 @@ import pytest
 
 from ldn.utils import (
     AWS_REGION,
+    GEOMAD_DATASET_ID,
     NON_PACIFIC_OWNER,
     PACIFIC_OWNER,
     SOURCE_COOP_PREFIX_GEOMAD,
@@ -13,12 +14,13 @@ from ldn.utils import (
     dataset_prefix,
     get_collection_url_root,
     get_full_path_prefix,
-    get_geomad_stac_geoparquet_url,
     get_public_https_prefix,
+    get_stac_geoparquet_url,
     owner_for_region,
     parse_tile_id,
     parse_years,
-    resolve_dataset,
+    source_coop_prefix,
+    version_for_dataset,
 )
 
 
@@ -69,28 +71,25 @@ def base_patches():
 
 class TestGetGeomadStacGeoparquetUrl:
     @pytest.mark.parametrize(
-        "bucket,source_coop_url,expected",
+        "bucket,expected",
         [
             (
                 "us-west-2.opendata.source.coop",
-                SOURCE_COOP_URL,
-                f"{SOURCE_COOP_URL}/{SOURCE_COOP_PREFIX_GEOMAD}/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
+                f"https://s3.{MOCK_REGION}.amazonaws.com/us-west-2.opendata.source.coop/"
+                f"{SOURCE_COOP_PREFIX_GEOMAD}/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
             ),
             (
                 "data.ldn.auspatious.com",
-                "",
                 f"https://s3.{MOCK_REGION}.amazonaws.com/data.ldn.auspatious.com/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
             ),
             (
                 "dep-public-staging",
-                "",
                 f"https://s3.{MOCK_REGION}.amazonaws.com/dep-public-staging/ls_geomad/{MOCK_VERSION}/ls_geomad.parquet",
             ),
         ],
     )
-    def test_bucket_styles(self, base_patches, bucket, source_coop_url, expected):
-        with patch(f"{MODULE}.get_env_var", return_value=source_coop_url):
-            url = get_geomad_stac_geoparquet_url(bucket=bucket, version=MOCK_VERSION)
+    def test_bucket_styles(self, base_patches, bucket, expected):
+        url = get_stac_geoparquet_url(bucket=bucket, version=MOCK_VERSION, dataset="geomad", single_prefix=False)
         assert url == expected
 
 
@@ -172,32 +171,36 @@ def mock_constants():
 
 
 def test_resolve_dataset_geomad():
-    dataset_id, version, prefix = resolve_dataset("geomad", "0.0.1", "0.0.2")
+    dataset_id = GEOMAD_DATASET_ID
+    version = version_for_dataset("geomad", "0-0-1", "0-0-2")
+    prefix = source_coop_prefix("geomad")
     assert dataset_id == "geomad"
-    assert version == "0.0.1"
+    assert version == "0-0-1"
     assert prefix == "auspatious/geomad-sids"
 
 
 def test_resolve_dataset_lulc():
-    dataset_id, version, prefix = resolve_dataset("lulc", "0.0.1", "0.0.2")
+    dataset_id = "lulc"
+    version = version_for_dataset("lulc", "0-0-1", "0-0-2")
+    prefix = source_coop_prefix("lulc")
     assert dataset_id == "lulc"
-    assert version == "0.0.2"
+    assert version == "0-0-2"
     assert prefix == "auspatious/lulc-sids"
 
 
 def test_resolve_dataset_geomad_ignores_lulc_version():
-    _, version, _ = resolve_dataset("geomad", "1.0.0", "9.9.9")
-    assert version == "1.0.0"
+    version = version_for_dataset("geomad", "1-0-0", "9-9-9")
+    assert version == "1-0-0"
 
 
 def test_resolve_dataset_lulc_ignores_geomad_version():
-    _, version, _ = resolve_dataset("lulc", "9.9.9", "1.0.0")
-    assert version == "1.0.0"
+    version = version_for_dataset("lulc", "9-9-9", "1-0-0")
+    assert version == "1-0-0"
 
 
 def test_resolve_dataset_prefix_from_constants():
-    _, _, geomad_prefix = resolve_dataset("geomad", "0.0.1", "0.0.2")
-    _, _, lulc_prefix = resolve_dataset("lulc", "0.0.1", "0.0.2")
+    geomad_prefix = source_coop_prefix("geomad")
+    lulc_prefix = source_coop_prefix("lulc")
     assert geomad_prefix == SOURCE_COOP_PREFIX_GEOMAD
     assert lulc_prefix == SOURCE_COOP_PREFIX_LULC
 

@@ -13,7 +13,6 @@ runner = CliRunner()
 def mock_required_env(monkeypatch):
     """Set required CLI env vars so tests do not depend on shell state."""
     monkeypatch.setenv("BUCKET", "dep-public-staging")
-    monkeypatch.setenv("IS_SOURCE_COOP", "false")
 
 
 def _make_feature(item_id: str, bbox: list[float], year: str = "2020") -> dict:
@@ -66,10 +65,7 @@ def mock_write_session():
 @patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-@patch("ldn.cli.boto3.Session")
-def test_make_mosaics_geomad_single_year(
-    mock_session, mock_load, mock_years, mock_build, mock_write, mock_write_session
-):
+def test_make_mosaics_geomad_single_year(mock_load, mock_years, mock_build, mock_write, mock_write_session):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
     mock_years.return_value = [2020]
@@ -81,6 +77,7 @@ def test_make_mosaics_geomad_single_year(
             "make-mosaics",
             "--dataset",
             "geomad",
+            "--single-region",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-lulc",
@@ -91,18 +88,15 @@ def test_make_mosaics_geomad_single_year(
     assert result.exit_code == 0, result.output
     mock_build.assert_called_once()
     mock_write.assert_called_once()
-    out_path = mock_write.call_args[0][1]
-    assert "geomad_2020_mosaic.json" in out_path
+    out_path = mock_write.call_args[0][2]
+    assert "mosaics/2020/2020_mosaic.json" in out_path
 
 
 @patch("ldn.cli._write_mosaic")
 @patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-@patch("ldn.cli.boto3.Session")
-def test_make_mosaics_prediction_single_year(
-    mock_session, mock_load, mock_years, mock_build, mock_write, mock_write_session
-):
+def test_make_mosaics_prediction_single_year(mock_load, mock_years, mock_build, mock_write, mock_write_session):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
     mock_years.return_value = [2020]
@@ -114,6 +108,7 @@ def test_make_mosaics_prediction_single_year(
             "make-mosaics",
             "--dataset",
             "lulc",
+            "--single-region",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-lulc",
@@ -123,16 +118,15 @@ def test_make_mosaics_prediction_single_year(
 
     assert result.exit_code == 0, result.output
     mock_write.assert_called_once()
-    out_path = mock_write.call_args[0][1]
-    assert "lulc_2020_mosaic.json" in out_path
+    out_path = mock_write.call_args[0][2]
+    assert "mosaics/2020/2020_mosaic.json" in out_path
 
 
 @patch("ldn.cli._write_mosaic")
 @patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-@patch("ldn.cli.boto3.Session")
-def test_make_mosaics_multiple_years(mock_session, mock_load, mock_years, mock_build, mock_write, mock_write_session):
+def test_make_mosaics_multiple_years(mock_load, mock_years, mock_build, mock_write, mock_write_session):
     features = [
         _make_feature("item-1", [103.6, 1.2, 104.0, 1.5], "2020"),
         _make_feature("item-2", [104.0, 1.2, 104.4, 1.5], "2021"),
@@ -147,6 +141,7 @@ def test_make_mosaics_multiple_years(mock_session, mock_load, mock_years, mock_b
             "make-mosaics",
             "--dataset",
             "geomad",
+            "--single-region",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-lulc",
@@ -156,32 +151,27 @@ def test_make_mosaics_multiple_years(mock_session, mock_load, mock_years, mock_b
 
     assert result.exit_code == 0, result.output
     assert mock_write.call_count == 2
-    out_paths = [c[0][1] for c in mock_write.call_args_list]
-    assert any("geomad_2020_mosaic.json" in p for p in out_paths)
-    assert any("geomad_2021_mosaic.json" in p for p in out_paths)
+    out_paths = [c[0][2] for c in mock_write.call_args_list]
+    assert any("mosaics/2020/2020_mosaic.json" in p for p in out_paths)
+    assert any("mosaics/2021/2021_mosaic.json" in p for p in out_paths)
 
 
 @patch("ldn.cli._write_mosaic")
 @patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
 @patch("ldn.cli._load_all_features")
-@patch("ldn.cli.boto3.Session")
-def test_make_mosaics_passes_session_to_write(
-    mock_session, mock_load, mock_years, mock_build, mock_write, mock_write_session
-):
+def test_make_mosaics_passes_bucket_to_write(mock_load, mock_years, mock_build, mock_write, mock_write_session):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
     mock_years.return_value = [2020]
     mock_build.return_value = MagicMock()
-    fake_session = MagicMock()
-    mock_session.return_value = fake_session
-
     result = runner.invoke(
         app,
         [
             "make-mosaics",
             "--dataset",
             "geomad",
+            "--single-region",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-lulc",
@@ -190,4 +180,4 @@ def test_make_mosaics_passes_session_to_write(
     )
 
     assert result.exit_code == 0, result.output
-    assert mock_write.call_args[0][2] is fake_session
+    assert mock_write.call_args[0][1] == "dep-public-staging"
