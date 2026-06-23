@@ -7,18 +7,16 @@ from typer.testing import CliRunner
 
 from ldn.cli_geomad import geomad_app
 from ldn.raster import PrefixedS3ItemPath
-from ldn.utils import GEOMAD_DATASET_ID, SENSOR, SOURCE_COOP_PREFIX_GEOMAD, is_source_coop, parse_tile_id
+from ldn.utils import GEOMAD_DATASET_ID, SENSOR, SOURCE_COOP_PREFIX_GEOMAD, is_bucket_source_coop, parse_tile_id
 
 SMOKE_CONFIGS = [
     {
         "id": "auspatious",
         "BUCKET": "data.ldn.auspatious.com",
-        "SOURCE_COOP_URL": "",
     },
     {
         "id": "private-bucket",
         "BUCKET": "dep-public-staging",
-        "SOURCE_COOP_URL": "",
     },
 ]
 
@@ -85,8 +83,8 @@ def runner():
 @pytest.fixture
 def stac_key(bucket_env):
     """Build expected STAC key for the test tile/year."""
-    _is_source_coop = is_source_coop()
     bucket = bucket_env["BUCKET"]
+    _is_source_coop = is_bucket_source_coop(bucket)
     tile_id_tuple = parse_tile_id(TILE_ID)
 
     itempath = PrefixedS3ItemPath(

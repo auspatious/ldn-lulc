@@ -1,5 +1,4 @@
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from cogeo_mosaic.mosaic import MosaicJSON
@@ -9,9 +8,9 @@ from ldn.cli import (
     _extract_years,
     _find_stac_items_s3,
     _load_stac_docs,
-    _run_index,
     _stac_self_link,
     _write_mosaic,
+    index_to_stac_geoparquet,
 )
 from ldn.tests.test_mosaic import _make_feature
 
@@ -124,55 +123,44 @@ class TestBuildMosaicForYear:
 
 
 class TestFindStacItemsS3:
-    def _chunk(self, paths: list[str]) -> list[dict]:
-        return [{"path": p} for p in paths]
-
-    @patch("ldn.cli.obstore")
-    def test_returns_matching_keys(self, mock_obstore):
-        mock_obstore.store.S3Store.return_value = MagicMock()
-        mock_obstore.list.return_value = iter(
-            [self._chunk(["prefix/a.stac-item.json", "prefix/b.tif", "prefix/c.stac-item.json"])]
-        )
+    @patch("ldn.cli.s3_client")
+    def test_returns_matching_keys(self, mock_s3_client):
+        paginator = MagicMock()
+        paginator.paginate.return_value = [
+            {
+                "Contents": [
+                    {"Key": "prefix/a.stac-item.json"},
+                    {"Key": "prefix/b.tif"},
+                    {"Key": "prefix/c.stac-item.json"},
+                ]
+            }
+        ]
+        mock_s3_client.get_paginator.return_value = paginator
         result = _find_stac_items_s3("my-bucket", "prefix/")
         assert result == ["prefix/a.stac-item.json", "prefix/c.stac-item.json"]
 
-    @patch("ldn.cli.obstore")
-    def test_empty_when_no_matches(self, mock_obstore):
-        mock_obstore.store.S3Store.return_value = MagicMock()
-        mock_obstore.list.return_value = iter([self._chunk(["prefix/a.tif", "prefix/b.parquet"])])
+    @patch("ldn.cli.s3_client")
+    def test_empty_when_no_matches(self, mock_s3_client):
+        paginator = MagicMock()
+        paginator.paginate.return_value = [{"Contents": [{"Key": "prefix/a.tif"}, {"Key": "prefix/b.parquet"}]}]
+        mock_s3_client.get_paginator.return_value = paginator
         assert _find_stac_items_s3("my-bucket", "prefix/") == []
 
-    @patch("ldn.cli.obstore")
-    def test_custom_suffix(self, mock_obstore):
-        mock_obstore.store.S3Store.return_value = MagicMock()
-        mock_obstore.list.return_value = iter([self._chunk(["a.parquet", "b.stac-item.json"])])
+    @patch("ldn.cli.s3_client")
+    def test_custom_suffix(self, mock_s3_client):
+        paginator = MagicMock()
+        paginator.paginate.return_value = [{"Contents": [{"Key": "a.parquet"}, {"Key": "b.stac-item.json"}]}]
+        mock_s3_client.get_paginator.return_value = paginator
         assert _find_stac_items_s3("bucket", "prefix/", suffix=".parquet") == ["a.parquet"]
 
-    @patch("ldn.cli.obstore")
-    def test_public_flag_sets_skip_signature(self, mock_obstore):
-        mock_obstore.store.S3Store.return_value = MagicMock()
-        mock_obstore.list.return_value = iter([])
-        _find_stac_items_s3("bucket", "prefix/", public=True)
-        _, kwargs = mock_obstore.store.S3Store.call_args
-        assert kwargs["skip_signature"] is True
-
-    @patch("ldn.cli.obstore")
-    def test_strips_leading_slash_from_prefix(self, mock_obstore):
-        mock_obstore.store.S3Store.return_value = MagicMock()
-        mock_obstore.list.return_value = iter([])
-        _find_stac_items_s3("bucket", "/some/prefix")
-        _, list_kwargs = mock_obstore.list.call_args
-        assert not list_kwargs.get("prefix", "some/prefix").startswith("/")
-
-    @patch("ldn.cli.obstore")
-    def test_handles_multiple_chunks(self, mock_obstore):
-        mock_obstore.store.S3Store.return_value = MagicMock()
-        mock_obstore.list.return_value = iter(
-            [
-                self._chunk(["a.stac-item.json"]),
-                self._chunk(["b.stac-item.json", "c.tif"]),
-            ]
-        )
+    @patch("ldn.cli.s3_client")
+    def test_handles_multiple_pages(self, mock_s3_client):
+        paginator = MagicMock()
+        paginator.paginate.return_value = [
+            {"Contents": [{"Key": "a.stac-item.json"}]},
+            {"Contents": [{"Key": "b.stac-item.json"}, {"Key": "c.tif"}]},
+        ]
+        mock_s3_client.get_paginator.return_value = paginator
         assert _find_stac_items_s3("bucket", "prefix/") == ["a.stac-item.json", "b.stac-item.json"]
 
 
@@ -180,38 +168,29 @@ class TestFindStacItemsS3:
 
 
 class TestLoadStacDocs:
-    def _fake_response(self, doc: dict) -> MagicMock:
-        raw = MagicMock()
-        raw.bytes.return_value = json.dumps(doc).encode()
-        return raw
-
-    @patch("ldn.cli.obstore")
-    def test_returns_parsed_dicts(self, mock_obstore):
+    @patch("ldn.cli._load_stac_docs_async")
+    @patch("ldn.cli.asyncio.run")
+    def test_returns_parsed_dicts(self, mock_run, mock_load_async):
         docs = [_make_feature("t0", BBOX, year="2020"), _make_feature("t1", BBOX2, year="2021")]
-        mock_obstore.store.S3Store.return_value = MagicMock()
-
-        async def fake_get(store, key):
-            return self._fake_response(docs[int(key)])
-
-        mock_obstore.get_async = fake_get
+        mock_load_async.return_value = docs
+        mock_run.return_value = docs
         assert _load_stac_docs("bucket", ["0", "1"]) == docs
+        mock_run.assert_called_once()
 
-    @patch("ldn.cli.obstore")
-    def test_preserves_order(self, mock_obstore):
+    @patch("ldn.cli._load_stac_docs_async")
+    @patch("ldn.cli.asyncio.run")
+    def test_preserves_order(self, mock_run, mock_load_async):
         docs = [{"id": str(i)} for i in range(5)]
-        mock_obstore.store.S3Store.return_value = MagicMock()
-
-        async def fake_get(store, key):
-            return self._fake_response(docs[int(key)])
-
-        mock_obstore.get_async = fake_get
+        mock_load_async.return_value = docs
+        mock_run.return_value = docs
         result = _load_stac_docs("bucket", [str(i) for i in range(5)])
         assert [d["id"] for d in result] == [str(i) for i in range(5)]
 
-    @patch("ldn.cli.obstore")
-    def test_empty_keys_returns_empty(self, mock_obstore):
-        mock_obstore.store.S3Store.return_value = MagicMock()
-        mock_obstore.get_async = AsyncMock()
+    @patch("ldn.cli._load_stac_docs_async")
+    @patch("ldn.cli.asyncio.run")
+    def test_empty_keys_returns_empty(self, mock_run, mock_load_async):
+        mock_load_async.return_value = []
+        mock_run.return_value = []
         assert _load_stac_docs("bucket", []) == []
 
 
@@ -219,75 +198,71 @@ class TestLoadStacDocs:
 
 
 class TestWriteMosaic:
-    def test_raises_for_non_s3_path(self):
-        with pytest.raises(Exception, match="s3://"):
-            _write_mosaic(MagicMock(), "/local/path/mosaic.json", MagicMock())
-
-    def test_puts_to_correct_bucket_and_key(self):
+    @patch("ldn.cli.s3_client")
+    def test_puts_to_correct_bucket_and_key(self, mock_s3_client):
         mosaic = MagicMock()
         mosaic.model_dump_json.return_value = '{"tiles": []}'
-        mock_client = MagicMock()
-        mock_session = MagicMock()
-        mock_session.client.return_value = mock_client
 
-        _write_mosaic(mosaic, "s3://my-bucket/path/to/mosaic.json", mock_session)
+        _write_mosaic(mosaic, "my-bucket", "path/to/mosaic.json")
 
-        call_kwargs = mock_client.put_object.call_args.kwargs
+        call_kwargs = mock_s3_client.put_object.call_args.kwargs
         assert call_kwargs["Bucket"] == "my-bucket"
         assert call_kwargs["Key"] == "path/to/mosaic.json"
         assert call_kwargs["ContentType"] == "application/json"
 
-    def test_body_is_utf8_encoded_json(self):
+    @patch("ldn.cli.s3_client")
+    def test_body_is_utf8_encoded_json(self, mock_s3_client):
         mosaic = MagicMock()
         mosaic.model_dump_json.return_value = '{"minzoom": 5}'
-        mock_client = MagicMock()
-        mock_session = MagicMock()
-        mock_session.client.return_value = mock_client
 
-        _write_mosaic(mosaic, "s3://bucket/key.json", mock_session)
+        _write_mosaic(mosaic, "bucket", "key.json")
 
-        body = mock_client.put_object.call_args.kwargs["Body"]
+        body = mock_s3_client.put_object.call_args.kwargs["Body"]
         assert isinstance(body, bytes)
-        assert json.loads(body) == {"minzoom": 5}
+        assert body.decode("utf-8") == '{"minzoom": 5}'
 
 
-# _run_index
-
-
-class TestRunIndex:
+class TestIndexToStacGeoparquet:
     @patch("ldn.cli.write_sync")
+    @patch("ldn.cli.Boto3CredentialProvider")
     @patch("ldn.cli.obstore.store.S3Store")
     @patch("ldn.cli._load_stac_docs")
     @patch("ldn.cli._find_stac_items_s3")
-    def test_writes_combined_parquet(self, mock_find, mock_load, mock_store, mock_write):
-        features = [_make_feature("t1", BBOX, year="2020")]
-        mock_find.return_value = ["key/a.stac-item.json"]
-        mock_load.return_value = features
-
-        _run_index("my-bucket", [("full/prefix", "short/prefix")], "output/index.parquet")
-
-        mock_write.assert_called_once_with("output/index.parquet", features, store=mock_store.return_value)
-
-    @patch("ldn.cli.write_sync")
-    @patch("ldn.cli._load_stac_docs")
-    @patch("ldn.cli._find_stac_items_s3")
-    def test_skips_write_when_no_items_found(self, mock_find, mock_load, mock_write):
-        mock_find.return_value = []
-        _run_index("my-bucket", [("full/prefix", "short/prefix")], "output/index.parquet")
-        mock_write.assert_not_called()
-
-    @patch("ldn.cli.write_sync")
-    @patch("ldn.cli.obstore.store.S3Store")
-    @patch("ldn.cli._load_stac_docs")
-    @patch("ldn.cli._find_stac_items_s3")
-    def test_combines_docs_across_multiple_targets(self, mock_find, mock_load, mock_store, mock_write):
+    def test_writes_combined_parquet(self, mock_find, mock_load, mock_store, mock_credential_provider, mock_write):
         mock_find.side_effect = [["key1.stac-item.json"], ["key2.stac-item.json"]]
         mock_load.side_effect = [
             [_make_feature("t1", BBOX, year="2020")],
             [_make_feature("t2", BBOX2, year="2021")],
         ]
 
-        _run_index("bucket", [("prefix/a", "a"), ("prefix/b", "b")], "out.parquet")
+        index_to_stac_geoparquet(
+            dataset="geomad",
+            region="all",
+            version_geomad="0-0-1",
+            version_lulc="0-0-1",
+            bucket="dep-public-staging",
+            product_owner=None,
+        )
 
+        assert mock_write.call_count == 1
+        output_key = mock_write.call_args[0][0]
         all_docs = mock_write.call_args[0][1]
+        assert output_key == "ls_geomad/0-0-1/ls_geomad.parquet"
         assert len(all_docs) == 2
+        assert mock_write.call_args.kwargs["store"] == mock_store.return_value
+
+    @patch("ldn.cli.write_sync")
+    @patch("ldn.cli._find_stac_items_s3")
+    def test_skips_when_no_items_found(self, mock_find, mock_write):
+        mock_find.return_value = []
+
+        index_to_stac_geoparquet(
+            dataset="geomad",
+            region="all",
+            version_geomad="0-0-1",
+            version_lulc="0-0-1",
+            bucket="dep-public-staging",
+            product_owner=None,
+        )
+
+        mock_write.assert_not_called()

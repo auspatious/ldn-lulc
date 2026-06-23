@@ -39,6 +39,7 @@ from ldn.random_sampling import random_sampling
 from ldn.raster import calculate_indices, load_dem_terrain, scale_offset_landsat
 from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
+    AWS_REGION,
     CLASS_ATTR,
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
@@ -49,7 +50,8 @@ from ldn.utils import (
     dataset_prefix,
     get_analysis_epsg,
     get_env_var,
-    get_geomad_stac_geoparquet_url,
+    get_stac_geoparquet_url,
+    is_bucket_source_coop,
     owner_for_region,
     parse_tile_id,
 )
@@ -90,6 +92,10 @@ PACIFIC_TRAINING_TILES = [
     # New Caledonia for maquis shrubland / lagoon
     ("050_015", "pacific", {"New Caledonia": "NCL"}),
 ]
+# PACIFIC_TRAINING_TILES are for training and validation.
+
+# MODEL_TEST_TILES = [] # TODO: define this. It should have all classes! Maybe pick 2.
+# Classify using a model (not trained on these). Compare output against LULC agreeing classes.
 
 
 def _get_pc_client():
@@ -489,6 +495,11 @@ def remove_nan_samples(samples: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return samples
 
 
+# Outliers can be important. Rare examples of valid members of a class. e.g. muddy water.
+# Should we filter outliers?
+# Is clustering within a class a good idea? 5 sub-classes for a class.
+# Test this. Does it improve the model?
+# Ablation study to test.
 def filter_outliers(samples: gpd.GeoDataFrame, cap: float = 0.05) -> gpd.GeoDataFrame:
     """Filter outliers per class using K-Means clustering.
 
@@ -579,7 +590,7 @@ def _upload_dataframe_csv_to_s3(df, bucket: str, path: str) -> str:
     df.to_csv(csv_buffer, index=False)
 
     key = f"{path}"
-    boto3.client("s3").put_object(
+    boto3.client("s3", region_name=AWS_REGION).put_object(
         Bucket=bucket,
         Key=key,
         Body=csv_buffer.getvalue(),
@@ -638,6 +649,7 @@ def get_tile_year_geomad_dem_indices(
     product_owner: str,
     bucket: str,
     geomad_version: str,
+    single_region: bool,
 ) -> xr.Dataset:
     """Load GeoMAD + DEM features for a tile, clipped to buffered country.
 
@@ -667,6 +679,7 @@ def get_tile_year_geomad_dem_indices(
         product_owner=product_owner,
         geomad_version=geomad_version,
         bucket=bucket,
+        single_region=single_region,
     )
 
     # Clip to intersection of tile extent and buffered country
@@ -688,19 +701,22 @@ def make_training_data(
     tile_id: str,
     year: str,
     region: Literal["pacific", "non-pacific"],
-    training_data_version: str,
     geomad_version: str,
-    bucket: str,
+    geomad_bucket: str,
+    output_bucket: str,
     country_of_interest: dict[str, str],
-    product_owner: str,
-    n: int = 2100,
-    min_sample_per_class_n: int = 300,
-) -> gpd.GeoDataFrame:
+    product_owner: str | None,
+    file_prefix: str,
+    n: int,
+    min_sample_per_class_n: int,
+    single_region: bool,
+):
     """Generate training data for a single tile and upload to S3.
 
-    End-to-end pipeline: loads GeoMAD, loads 3 LULC products, finds
+    End-to-end pipeline: loads GeoMAD (from any bucket), loads 3 LULC products, finds
     agreement, samples, extracts band values, filters outliers, and
-    writes results locally and to S3.
+    writes results locally and to S3 (to any bucket, can be different from the GeoMAD bucket).
+    We do not support writing training data to Source.Coop. We can if needed.
 
     Args:
         tile_id: Grid tile identifier (e.g. "058_043").
@@ -708,7 +724,8 @@ def make_training_data(
         region: Either "pacific" or "non-pacific".
         training_data_version: Version string (e.g. "0-0-4").
         geomad_version: GeoMAD version string (e.g. "0-2-1").
-        bucket: S3 bucket name for upload.
+        geomad_bucket: S3 bucket name for GeoMAD input.
+        output_bucket: S3 bucket name for upload.
         country_of_interest: Dict mapping country name to ISO3 code.
             If None, uses all countries in the tile.
         n: Total number of sample points.
@@ -718,15 +735,12 @@ def make_training_data(
     Returns:
         GeoDataFrame of final training samples.
     """
-    logging.basicConfig(level=logging.INFO)
-    bucket = bucket or get_env_var("BUCKET")  # Default
-
     analysis_crs = get_analysis_epsg(region)
 
     # 1. Get buffered country boundary
     country_wgs84_buffered = get_buffered_country(country_of_interest, analysis_crs)
 
-    # 1b. Clip country geometry to this tile's footprint before any data loading.
+    # 2. Clip country geometry to this tile's footprint before any data loading.
     # Critical for countries like Kiribati that span huge parts of the Pacific —
     # passing the full country geometry into get_tile_year_geomad_dem_indices
     # causes Dask to materialise a massive array, leading to OOM kills.
@@ -752,7 +766,7 @@ def make_training_data(
             raise LdnError(f"Country geometry does not overlap tile {tile_id}")
         logger.info("Clipped country geometry to tile footprint")
 
-    # 2. Load GeoMAD with DEM and indices
+    # 3. Load GeoMAD with DEM and indices
     logger.info("Loading GeoMAD")
     owner = owner_for_region(region, product_owner)
     geomad_dem_indices = get_tile_year_geomad_dem_indices(
@@ -762,53 +776,50 @@ def make_training_data(
         country_wgs84_buffered=country_wgs84_buffered,
         analysis_crs=analysis_crs,
         product_owner=owner,
-        bucket=bucket,
+        bucket=geomad_bucket,
         geomad_version=geomad_version,
+        single_region=single_region,
     )
     geobox = geomad_dem_indices.odc.geobox
 
-    # 3. Load 3 LULC products
+    # 4. Load 3 LULC products
     logger.info("Loading LULC products")
     wc = load_and_prepare(geobox, country_wgs84_buffered, LULC_PRODUCTS[0], year)
     cci = load_and_prepare(geobox, country_wgs84_buffered, LULC_PRODUCTS[1], year)
     io_ds = load_and_prepare(geobox, country_wgs84_buffered, LULC_PRODUCTS[2], year)
 
-    # 4. Find agreement
+    # 5. Find agreement
     logger.info("Finding product agreement")
     agreed = find_agreement(wc, cci, io_ds)
 
-    # 5. Generate samples
+    # 6. Generate samples
     logger.info("Generating samples")
     samples = generate_samples(agreed, geomad_dem_indices, n=n, min_sample_per_class_n=min_sample_per_class_n)
 
-    # 6. Extract GeoMAD values
+    # 7. Extract GeoMAD values
     logger.info("Extracting GeoMAD values")
     samples = extract_geomad_dem_indices_values(samples, geomad_dem_indices, analysis_crs)
 
-    # 7. Remove NaN samples
+    # 8. Remove NaN samples
     logger.info("Removing NaN samples")
     samples = remove_nan_samples(samples)
 
-    # 8. Filter outliers
-    logger.info("Filtering outliers")
-    samples = filter_outliers(samples)
+    # TODO: Run a baseline version and then test if outlier filtering improves the model and classification.
+    # # 9. Filter outliers
+    # logger.info("Filtering outliers")
+    # samples = filter_outliers(samples)
 
-    # 9. Write outputs (local)
-    tile_x_index, tile_y_index = parse_tile_id(tile_id)
-    out_fname = f"training_data/{training_data_version}/{region}/{tile_x_index}/{tile_y_index}/{year}/samples"
-    out_fname_local = f"ldn/{out_fname}"
+    # 10. Write outputs (local)
+    out_fname_local = f"ldn/{file_prefix}"
     Path(out_fname_local).parent.mkdir(parents=True, exist_ok=True)
 
     samples.to_file(f"{out_fname_local}.geojson", driver="GeoJSON", index=False)
     samples.to_csv(f"{out_fname_local}.csv", index=False)
     logger.info(f"Saved training data to {out_fname_local}")
 
-    # 10. Upload to S3
-    # TODO: add owner to path and source.coop stuff?
-    s3_uri = _upload_dataframe_csv_to_s3(samples, bucket, f"{out_fname}.csv")
+    # 11. Upload to S3
+    s3_uri = _upload_dataframe_csv_to_s3(samples, output_bucket, f"{file_prefix}.csv")
     logger.info(f"Uploaded training data to {s3_uri}")
-
-    return samples
 
 
 @cli_training_app.command()
@@ -820,7 +831,15 @@ def generate_training_data(
         TRAINING_DATA_VERSION, help=f"Version (default: {TRAINING_DATA_VERSION})"
     ),
     geomad_version: str = typer.Option(GEOMAD_VERSION, help=f"Geomad version (default: {GEOMAD_VERSION})"),
-    bucket: Annotated[str | None, typer.Option(help="S3 bucket for output data.")] = None,
+    geomad_bucket: Annotated[
+        str, typer.Option(help="S3 bucket for GeoMAD data. Defaults to Source.Coop.")
+    ] = "us-west-2.opendata.source.coop",
+    output_bucket: Annotated[
+        str | None,
+        typer.Option(
+            help="S3 bucket for output data. Defaults to BUCKET env var which should be for Auspatious bucket."
+        ),
+    ] = None,
     # TODO: Refactor so country data doesn't need to be passed. Not sure how.
     country_name: str = typer.Option(None, help="Country name (e.g. Fiji)"),
     country_code: str = typer.Option(None, help="Country ISO3 code (e.g. FJI)"),
@@ -828,32 +847,52 @@ def generate_training_data(
     min_sample_per_class_n: int = typer.Option(300, help="Minimum samples per class"),
     overwrite: bool = typer.Option(False, help="Whether to overwrite existing data in S3"),
     product_owner: str | None = typer.Option(None, help="Override the default product owner"),
+    single_region: bool = typer.Option(
+        ...,
+        help="Whether to use the single region prefix (e.g. 'dep_ls_geomad') "
+        "or the generic prefix (e.g. 'ls_geomad') when accessing GeoMAD data.",
+    ),
 ):
-    """Generate training data for LULC classification."""
-    if not tile_id:
-        raise LdnError("Tile ID is required")
-    if not year:
-        raise LdnError("Year is required")
-    bucket = bucket or get_env_var("BUCKET")  # Default
+    """Generate training data for LULC classification.
+    Read geomad from any bucket and write training data to any bucket.
+    """
+    output_bucket = output_bucket or get_env_var("BUCKET")  # Default
+    if not output_bucket or not geomad_bucket:
+        raise LdnError("Output bucket and GeoMAD bucket must be set either via options or BUCKET environment variable")
+    country_of_interest = {country_name: country_code}
 
-    country_of_interest = None
-    if country_name and country_code:
-        country_of_interest = {country_name: country_code}
-    else:
-        raise LdnError("Country name and code must both be provided")
-
-    logger.info(f"Processing tile {tile_id}, year {year}, region {region}")
+    logger.info(
+        f"Creating training data for tile {tile_id}, year {year}, region {region}, geomad_bucket "
+        f"{geomad_bucket}, output_bucket {output_bucket}, country {country_of_interest}, n={n}, "
+        f"min_sample_per_class_n={min_sample_per_class_n}, overwrite={overwrite}, "
+        f"product_owner={product_owner} training_data_version={training_data_version}, geomad_version={geomad_version}"
+    )
+    if training_data_version != TRAINING_DATA_VERSION:
+        logger.info(
+            f"Overriding the latest LULC prediction version ({TRAINING_DATA_VERSION}) with "
+            f"the specified version ({training_data_version})."
+        )
+    if geomad_version != GEOMAD_VERSION:
+        logger.info(
+            f"Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({geomad_version})."
+        )
 
     tile_id_x, tile_id_y = parse_tile_id(tile_id)
 
-    s3_client = boto3.client("s3")
-
-    prefix = f"training_data/{training_data_version}/{region}/{tile_id_x}/{tile_id_y}/{year}/samples.csv"
-    logger.info(f"Checking if object exists at s3://{bucket}/{prefix}")
+    # TODO: Does this exists check work with Source.Coop and normal S3 buckets?
+    # TODO: I think it needs source coop prefix prefixed.
+    # Zero padded indexes
+    file_prefix = f"training_data/{training_data_version}/{region}/{tile_id_x:03d}/{tile_id_y:03d}/{year}/samples"
+    # Training data shouldn't be written to source.coop, but supported just in case.
+    _is_bucket_source_coop = is_bucket_source_coop(output_bucket)
+    if _is_bucket_source_coop:
+        raise NotImplementedError("Writing training data to Source.Coop is not supported.")
+        # file_prefix = f"{SOURCE_COOP_PREFIX_LULC}/{file_prefix}"
+    # logger.info(f"Checking if object exists at s3://{output_bucket}/{file_prefix}")
 
     if not overwrite:
         logger.info("Overwrite is False, checking for existing object")
-        exists = object_exists(bucket, prefix, client=s3_client)
+        exists = object_exists(output_bucket, f"{file_prefix}.csv")
         if exists:
             logger.info("Item already exists and overwrite is False. Skipping.")
             return
@@ -866,16 +905,19 @@ def generate_training_data(
         tile_id=tile_id,
         year=year,
         region=region,
-        training_data_version=training_data_version,
         geomad_version=geomad_version,
-        bucket=bucket,
+        geomad_bucket=geomad_bucket,
+        output_bucket=output_bucket,
         country_of_interest=country_of_interest,
         n=n,
         min_sample_per_class_n=min_sample_per_class_n,
         product_owner=product_owner,
+        file_prefix=file_prefix,
+        single_region=single_region,
     )
 
 
+# Can this be replaced with a DEP namers method?
 def make_geomad_item_id(
     tile_id: str,
     year: str,
@@ -905,6 +947,7 @@ def search_and_load_geomad_indices_dem(
     product_owner: str,
     bucket: str,
     geomad_version: str,
+    single_region: bool,
 ) -> xr.Dataset:
     """Search, load, scale, and merge GeoMAD bands, spectral indices, and DEM terrain for a tile.
         Supports antimeridian-crossing tiles.
@@ -923,7 +966,7 @@ def search_and_load_geomad_indices_dem(
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
-    geomad_url = get_geomad_stac_geoparquet_url(bucket=bucket, version=geomad_version)
+    geomad_url = get_stac_geoparquet_url(bucket, geomad_version, "geomad", single_region)
     item_id = make_geomad_item_id(tile_id, year, product_owner=product_owner)
 
     logging.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}.")

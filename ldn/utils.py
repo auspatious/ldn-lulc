@@ -12,29 +12,25 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-# For BUCKET and SOURCE_COOP_URL
-def get_env_var(name: str) -> str | None:
+# For BUCKET
+# Keep this bucket. It is important.
+def get_env_var(name: str) -> str:
     """Return the value of the environment variable."""
     value = os.environ.get(name)
+    if not value:
+        raise LdnError(f"Requested '{name}' environment variable is not set.")
     logger.info(f"Got environment variable '{name}' = '{value}'")
-    if name == "BUCKET" and not value:
-        raise LdnError(f"{name} environment variable must be set.")
     return value
 
 
+def is_bucket_source_coop(bucket: str) -> bool:
+    """Determine if a bucket is a Source.Coop bucket based on its name."""
+    return bucket.endswith("source.coop")
+
+
+SOURCE_COOP_URL = "https://data.source.coop"  # Public URL. Just used for STAC metadata so users can read it easily.
 SOURCE_COOP_PREFIX_GEOMAD = "auspatious/geomad-sids"
 SOURCE_COOP_PREFIX_LULC = "auspatious/lulc-sids"
-
-
-# This is a function instead of a module-level variable to ensure it reflects any changes
-# to the environment variables during testing (e.g. via monkeypatch).
-# TODO: Is this the best way to check if we are writing to Source.Coop?
-def is_source_coop() -> bool:
-    """Return True if all Source.Coop environment variables are set."""
-    url = get_env_var("SOURCE_COOP_URL")
-    _is_source_coop = bool(url)
-    logger.info(f"Is Source.Coop: {_is_source_coop}")
-    return _is_source_coop
 
 
 # Our custom exception class for the project. Good for filtering errors in processing.
@@ -112,9 +108,9 @@ ALL_COUNTRIES = {**SIDS_COUNTRIES_AND_CODES, **DEP_COUNTRIES_AND_CODES}
 NON_DEP_COUNTRIES = {k: v for k, v in SIDS_COUNTRIES_AND_CODES.items() if k not in DEP_COUNTRIES_AND_CODES}
 
 GEOMAD_VERSION = "0-3-0"
-LULC_VERSION = "0-1-0"
-MODEL_VERSION = "0-1-0"
-TRAINING_DATA_VERSION = "0-1-0"
+LULC_VERSION = "0-0-9"
+MODEL_VERSION = "0-0-9"
+TRAINING_DATA_VERSION = "0-0-9"
 
 PACIFIC_OWNER = "dep"
 NON_PACIFIC_OWNER = "ci"
@@ -122,7 +118,7 @@ NON_PACIFIC_OWNER = "ci"
 SENSOR = "ls"
 GEOMAD_DATASET_ID = "geomad"
 LULC_DATASET_ID = "lulc"
-AWS_REGION = "us-west-2"
+AWS_REGION = "us-west-2"  # TODO: This should come from AWS SSO profile
 
 LS7_YEAR_THRESHOLD = 2012
 TRAINING_DATA_YEAR = "2020"
@@ -162,44 +158,53 @@ def dataset_prefix(owner: str | None, dataset_id: str) -> str:
 def get_stac_geoparquet_key(
     dataset_id: str,
     version: str,
-    source_coop_prefix: str | None = None,
+    source_coop_prefix: str | None,
+    single_prefix: bool,
 ) -> str:
-    """Return the S3 key for the STAC-Geoparquet file (no bucket, no scheme).
+    """Return the S3 key for the STAC-Geoparquet file (no bucket etc.).
 
     Args:
         dataset_id: The dataset ID (e.g. 'geomad').
         version: Version string.
         source_coop_prefix: Source.Coop prefix if applicable, else None.
+        single_prefix: Whether to use the single region prefix
+        (e.g. 'dep_ls_geomad') or the generic prefix (e.g. 'ls_geomad').
 
     Returns:
         S3 key string e.g. 'auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet'
         or 'ls_geomad/0-2-1/ls_geomad.parquet' for a standard bucket.
     """
-    combined_short = dataset_prefix(None, dataset_id)
-    key = f"{combined_short}/{version}/{combined_short}.parquet"
+    prefix = dataset_prefix(None, dataset_id)
+    if single_prefix:
+        owner = owner_for_region("pacific")
+        prefix = dataset_prefix(owner, dataset_id)
+    key = f"{prefix}/{version}/{prefix}.parquet"
     if source_coop_prefix:
         return f"{source_coop_prefix}/{key}"
     return key
 
 
-def get_geomad_stac_geoparquet_url(bucket: str, version: str) -> str:
+def get_stac_geoparquet_url(
+    bucket: str, version: str, dataset: Literal["geomad", "lulc"], single_prefix: bool, just_key: bool = False
+) -> str:
     """Return the URL to the GeoMAD STAC-Geoparquet file for use with rustac/DuckDB.
-
-    For Source.Coop, returns a public HTTPS URL (publicly readable).
-    For all other buckets, returns a regional S3 HTTPS URL since DuckDB needs
-    a resolvable endpoint and cannot handle custom-domain buckets directly.
 
     Args:
         bucket: The S3 bucket name or custom domain.
         version: GeoMAD version string.
-
+        dataset: The dataset type ("geomad" or "lulc").
+        single_prefix: Whether to use the single region prefix
+        (e.g. 'dep_ls_geomad') or the generic prefix (e.g. 'ls_geomad').
     Returns:
-        URL to the STAC-Geoparquet file.
+        URL to the STAC-Geoparquet file. e.g. https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet
     """
-    source_coop_url = get_env_var("SOURCE_COOP_URL")
-    key = get_stac_geoparquet_key(GEOMAD_DATASET_ID, version, SOURCE_COOP_PREFIX_GEOMAD)
-    if source_coop_url:
-        return f"{source_coop_url}/{key}"
+    _is_bucket_source_coop = is_bucket_source_coop(bucket)
+    sc_prefix = source_coop_prefix(dataset) if _is_bucket_source_coop else None
+    key = get_stac_geoparquet_key(GEOMAD_DATASET_ID, version, sc_prefix, single_prefix)
+    if just_key:
+        return key
+    # https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet
+    # https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ls_geomad/test/ls_geomad.parquet
     return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/{key}"
 
 
@@ -237,17 +242,13 @@ def source_coop_prefix(dataset_id: Literal["geomad", "lulc"]) -> str:
         return SOURCE_COOP_PREFIX_LULC
 
 
-def resolve_dataset(
+def version_for_dataset(
     dataset: Literal["geomad", "lulc"],
     version_geomad: str,
     version_lulc: str,
-) -> tuple[str, str, str | None]:
-    """Return (dataset_id, version, source_coop_prefix) for the given dataset name."""
-    sc_prefix = source_coop_prefix(dataset)
-
-    version = version_geomad if dataset == GEOMAD_DATASET_ID else version_lulc
-
-    return dataset, version, sc_prefix
+) -> str:
+    """Return the version string for the given dataset name."""
+    return version_geomad if dataset == GEOMAD_DATASET_ID else version_lulc
 
 
 def parse_tile_id(tile_id: str) -> tuple[int, int]:
@@ -260,7 +261,7 @@ def parse_tile_id(tile_id: str) -> tuple[int, int]:
         tile_id: A string containing two integers separated by '_', ',', or '-'.
 
     Returns:
-        A tuple of two integers (x, y).
+        A tuple of two integers (x, y). These are not padded with zeros because they are integers, not strings.
 
     Raises:
         LdnError: If the tile ID does not split into exactly two integers.
@@ -276,18 +277,26 @@ def get_public_https_prefix(bucket: str) -> str:
 
     Used for STAC hrefs and other public HTTP contexts (e.g. geoparquet URLs).
 
+    Supports three bucket styles:
+    - Source.Coop buckets (e.g. 'us-west-2.opendata.source.coop'): returns the public Source.Coop HTTPS URL
+    since files are publicly readable without auth.
+    - Custom-domain buckets (e.g. 'data.ldn.auspatious.com'): returns 'https://{bucket}'.
+    - Standard S3 buckets (e.g. 'dep-public-staging'): returns the regional S3 endpoint URL.
+
     Args:
         bucket: The S3 bucket name or custom domain.
 
     Returns:
         A public HTTPS URL prefix string.
     """
-    _is_source_coop = is_source_coop()
-    source_coop_url = get_env_var("SOURCE_COOP_URL")
-    if _is_source_coop:
-        return source_coop_url
+    _is_bucket_source_coop = is_bucket_source_coop(bucket)
+    if _is_bucket_source_coop:
+        # "https://data.source.coop"
+        return SOURCE_COOP_URL
     if "." in bucket:
+        # e.g. "data.ldn.auspatious.com"
         return f"https://{bucket}"
+    # e.g. "dep-public-staging"
     return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
 
 
@@ -315,7 +324,7 @@ def get_collection_url_root(
         A public HTTPS URL string suitable for use as a STAC collection URL root.
     """
     base = get_public_https_prefix(bucket)
-    return f"{base}/#{owner}_{sensor}_{dataset_id}/"
+    return f"{base}/#{owner}_{sensor}_{dataset_id}/"  # TODO: There should be one collection for both regions.
 
 
 def get_full_path_prefix(bucket: str) -> str:
@@ -324,10 +333,8 @@ def get_full_path_prefix(bucket: str) -> str:
     Handles three bucket styles:
     - Source.Coop (e.g. 'us-west-2.opendata.source.coop'): returns the public
       Source.Coop HTTPS URL since files are publicly readable without auth.
-    - Custom-domain bucket (e.g. 'data.ldn.auspatious.com'): returns 's3://{bucket}'
-      so rasterio uses boto3 credentials to authenticate.
-    - Standard S3 bucket (e.g. 'dep-public-staging'): returns 's3://{bucket}'
-      so rasterio uses boto3 credentials to authenticate.
+    - Custom-domain bucket (e.g. 'data.ldn.auspatious.com') and Standard S3 bucket (e.g. 'dep-public-staging'):
+     returns 's3://{bucket}' so rasterio uses boto3 credentials to authenticate.
 
     Args:
         bucket: The S3 bucket name or custom domain.
@@ -335,34 +342,7 @@ def get_full_path_prefix(bucket: str) -> str:
     Returns:
         A URL prefix string suitable for rasterio to open files.
     """
-    _is_source_coop = is_source_coop()
-    source_coop_url = get_env_var("SOURCE_COOP_URL")
-    if _is_source_coop:
-        return source_coop_url
+    _is_bucket_source_coop = is_bucket_source_coop(bucket)
+    if _is_bucket_source_coop:
+        return SOURCE_COOP_URL
     return f"s3://{bucket}"
-
-
-def get_s3_mosaic_write_path(
-    bucket: str,
-    dataset_id: str,
-    version: str,
-    source_coop_prefix: str | None = None,
-) -> str:
-    """Return the S3 write path prefix for a given dataset.
-
-    Handles Source.Coop (includes prefix) and standard/custom-domain buckets.
-
-    Args:
-        bucket: The S3 bucket name or custom domain.
-        dataset_id: The dataset ID (e.g. 'geomad').
-        version: Version string.
-        source_coop_prefix: Source.Coop prefix if applicable, else None.
-
-    Returns:
-        S3 path string e.g. 's3://us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1'
-        or 's3://data.ldn.auspatious.com/ls_geomad/0-2-1'
-    """
-    combined_short = dataset_prefix(None, dataset_id)
-    if source_coop_prefix:
-        return f"s3://{bucket}/{source_coop_prefix}/{combined_short}/{version}"
-    return f"s3://{bucket}/{combined_short}/{version}"

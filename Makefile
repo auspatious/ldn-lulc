@@ -218,3 +218,18 @@ mosaic-lulc-source-coop-test:
 	--dataset lulc \
 	--version-geomad $(SOURCE_TEST_VERSION) \
 	--version-lulc $(SOURCE_TEST_VERSION_P);
+
+
+# poetry run ldn geomad run --tile-id 10_20 --year 2025 --version test-integration --region pacific --integration-test --overwrite
+
+
+# poetry run ldn training generate-training-data \
+# 	--tile-id 028_030 \
+# 	--region pacific \
+# 	--country-name "Papua New Guinea" \
+# 	--country-code "PNG" \
+# 	--geomad-version 0-2-1;
+
+# poetry run ldn index-to-stac-geoparquet --dataset "geomad" --version-geomad test-integration;
+
+# poetry run ldn make-mosaics --dataset geomad --version-geomad test-integration --single-region;

@@ -31,8 +31,7 @@ from ldn.utils import (
     LS7_YEAR_THRESHOLD,
     SOURCE_COOP_PREFIX_GEOMAD,
     get_env_var,
-    get_full_path_prefix,
-    is_source_coop,
+    is_bucket_source_coop,
     owner_for_region,
     parse_tile_id,
 )
@@ -171,9 +170,6 @@ def run(
 
     owner = owner_for_region(region, product_owner)
 
-    full_path_prefix = get_full_path_prefix(bucket)
-    logger.info(f"Full path prefix: {full_path_prefix}")
-
     if decimated:
         logger.warning("Warning, using decimated (low resolution) for testing purposes.")
         geobox = geobox.zoom_out(10)
@@ -201,7 +197,7 @@ def run(
         bucket,
         owner,
         GEOMAD_DATASET_ID,
-        SOURCE_COOP_PREFIX_GEOMAD if is_source_coop() else None,
+        SOURCE_COOP_PREFIX_GEOMAD if is_bucket_source_coop(bucket) else None,
         overwrite,
     )
     if components is None:

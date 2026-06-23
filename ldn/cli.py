@@ -2,12 +2,14 @@ import asyncio
 import json
 import logging
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
 import boto3
 import obstore
 import typer
 from cogeo_mosaic.mosaic import MosaicJSON
+from obstore.auth.boto3 import Boto3CredentialProvider
 from pystac import ItemCollection
 from rustac import search_sync, write_sync
 from shapely.geometry import mapping, shape
@@ -28,18 +30,15 @@ from ldn.utils import (
     LdnError,
     dataset_prefix,
     get_env_var,
-    get_geomad_stac_geoparquet_url,
-    get_s3_mosaic_write_path,
-    get_stac_geoparquet_key,
-    is_source_coop,
+    get_full_path_prefix,
+    get_stac_geoparquet_url,
+    is_bucket_source_coop,
     owner_for_region,
     parse_tile_id,
     parse_years,
-    resolve_dataset,
     source_coop_prefix,
+    version_for_dataset,
 )
-
-source_coop_url = get_env_var("SOURCE_COOP_URL")
 
 app = typer.Typer()
 logger = logging.getLogger(__name__)
@@ -54,6 +53,9 @@ logging.basicConfig(
     force=True,
 )
 logging.getLogger("ldn").setLevel(logging.INFO)  # Our logging level.
+
+aws_session = boto3.Session()  # Uses AWS_PROFILE env var automatically
+s3_client = aws_session.client("s3", region_name=AWS_REGION)
 
 # Add the subcommands
 app.add_typer(cli_grid_app, name="grid", help="Commands for working with the ODC Geo Grid.")
@@ -82,7 +84,6 @@ def _find_stac_items_s3(
     prefix: str,
     suffix: str = ".stac-item.json",
     chunk_size: int = 200,
-    public: bool = False,
 ) -> list[str]:
     """List S3 keys ending in suffix under bucket/prefix.
 
@@ -91,64 +92,57 @@ def _find_stac_items_s3(
         prefix: Key prefix to search under.
         suffix: File suffix to match.
         chunk_size: Number of objects per listing page.
-        public: If True, skip signing (for public buckets like source.coop).
 
     Returns:
         List of S3 keys (without the s3://bucket/ prefix) that match.
     """
-    store = obstore.store.S3Store(
-        bucket=bucket,
-        region=AWS_REGION,
-        skip_signature=public,
-    )
-    matches: list[str] = []
-    stream = obstore.list(store, prefix=prefix.lstrip("/"), chunk_size=chunk_size)
+    paginator = s3_client.get_paginator("list_objects_v2")
 
-    for chunk in stream:
-        for obj in chunk:
-            path = obj.get("path", "")
-            if path.endswith(suffix):
-                matches.append(path)
+    matches: list[str] = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix, PaginationConfig={"PageSize": chunk_size}):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if key.endswith(suffix):
+                matches.append(key)
 
     return matches
 
 
+# _find_existing_tasks should be updated to use the same read logic for all buckets (with auth).
 def _find_existing_tasks(
-    tasks,
-    version,
-    dataset_id,
-    bucket,
-    product_owner,
+    input_tasks: list[dict],
+    version: str,
+    dataset_id: Literal["geomad", "lulc"],
+    bucket: str,
+    product_owner: str | None,
 ):
     """Check which tasks already have outputs using S3 listing.
 
     Lists all STAC items under each (bucket, owner) prefix and returns
     a set of (id, year) tuples for tasks whose output already exists.
     """
-    sc_prefix = source_coop_prefix(dataset_id)
+    region_owners: set[str] = set()
+    if product_owner:
+        logger.info(f"Using product owner override: {product_owner}")
+        region_owners.add(product_owner)
+    else:
+        logger.info("No product owner override, deriving owner from input task region/s.")
+        for task in input_tasks:
+            r = task["region"]
+            region_owners.add(owner_for_region(r, product_owner))
 
-    # Collect unique (bucket, owner) combos
-    region_combos: set[tuple[str, str]] = set()
-    for task in tasks:
-        r = task["region"]
-        region_combos.add(
-            (
-                bucket,
-                owner_for_region(r, product_owner),
-            )
-        )
+    _is_bucket_source_coop = is_bucket_source_coop(bucket)
+    sc_prefix = source_coop_prefix(dataset_id) if _is_bucket_source_coop else None
 
-    _is_source_coop = is_source_coop()
-
-    # List all STAC items under each prefix
+    # List all STAC items under each region prefix
     existing_keys: dict[str, set[str]] = {}
-    for combo_bucket, combo_owner in region_combos:
-        s3_prefix = f"{dataset_prefix(combo_owner, dataset_id)}/{version}/"
-        if _is_source_coop and sc_prefix:
+    for region_owner in region_owners:
+        s3_prefix = f"{dataset_prefix(region_owner, dataset_id)}/{version}/"
+        if _is_bucket_source_coop and sc_prefix:
             s3_prefix = f"{sc_prefix}/{s3_prefix}"
-
-        keys = _find_stac_items_s3(combo_bucket, s3_prefix, public=_is_source_coop)
-        existing_keys[f"{combo_bucket}/{combo_owner}"] = set(keys)
+        logger.info(f"For region {region_owner}, finding STAC items under prefix: {s3_prefix}")
+        keys = _find_stac_items_s3(bucket, s3_prefix)
+        existing_keys[f"{bucket}/{region_owner}"] = set(keys)
 
     total_existing = sum(len(v) for v in existing_keys.values())
     logger.info(
@@ -158,17 +152,14 @@ def _find_existing_tasks(
 
     # Check each task against the set
     existing_tasks: set[tuple[str, str]] = set()
-    for task in tasks:
+    for task in input_tasks:
         tile_id_tuple = parse_tile_id(task["id"])
         r = task["region"]
         owner = owner_for_region(r, product_owner)
-
-        full_path_prefix = f"https://{bucket}.s3.{AWS_REGION}.amazonaws.com"
-        if _is_source_coop and sc_prefix:
-            full_path_prefix = f"{source_coop_url}/{sc_prefix}"
+        full_path_prefix = get_full_path_prefix(bucket)
 
         itempath = PrefixedS3ItemPath(
-            key_prefix=sc_prefix if _is_source_coop else None,
+            key_prefix=sc_prefix if _is_bucket_source_coop else None,
             prefix=owner,
             bucket=bucket,
             sensor=SENSOR,
@@ -200,17 +191,14 @@ def print_tasks(
     """Print tasks for given years, optionally filtering out those with existing outputs."""
     logger.info(f"Generating tasks for years: {years} and region: {region}")
     bucket = bucket or get_env_var("BUCKET")  # Default
-
     years_list = parse_years(years)
-
     tiles = get_grid_tiles(format="list", grids=region, overwrite=False)
-
     logger.info(f"Number of tasks: {len(years_list) * len(tiles)} (years: {len(years_list)}, tiles: {len(tiles)})")
 
-    tasks = []
+    input_tasks = []
     for year in years_list:
         for tile in tiles:
-            tasks.append(
+            input_tasks.append(
                 {
                     "id": "_".join(str(i) for i in tile[0]),
                     "year": year,
@@ -220,24 +208,23 @@ def print_tasks(
 
     # Filter out tasks whose output already exists in S3
     if not overwrite:
-        dataset_id, version, _source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
-
+        version = version_for_dataset(dataset, version_geomad, version_lulc)
         existing = _find_existing_tasks(
-            tasks,
+            input_tasks,
             version,
-            dataset_id,
+            dataset,
             bucket,
             product_owner,
         )
-        before_count = len(tasks)
-        tasks = [t for t in tasks if (t["id"], t["year"]) not in existing]
-        logger.info(f"Filtered: {before_count - len(tasks)} already exist, {len(tasks)} remaining.")
+        before_count = len(input_tasks)
+        input_tasks = [t for t in input_tasks if (t["id"], t["year"]) not in existing]
+        logger.info(f"Filtered: {before_count - len(input_tasks)} already exist, {len(input_tasks)} remaining.")
     else:
         logger.info("Overwrite enabled, skipping existence check.")
 
-    tasks_json_str = json.dumps(tasks, separators=(",", ":"))
+    tasks_json_str = json.dumps(input_tasks, separators=(",", ":"))
     sys.stdout.write(tasks_json_str)
-    logger.info(f"{len(tasks)} tasks output for years: {years} and region: {region}.")
+    logger.info(f"{len(input_tasks)} tasks output for years: {years} and region: {region}.")
     return
 
 
@@ -256,17 +243,14 @@ async def _load_stac_docs_async(
     Returns:
         List of parsed STAC item dictionaries, in the same order as keys.
     """
-    store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION)
     semaphore = asyncio.Semaphore(concurrency)
+    loop = asyncio.get_event_loop()
+    executor = ThreadPoolExecutor()
 
     async def fetch(key: str) -> dict:
         async with semaphore:
-            raw = await obstore.get_async(store, key)
-            payload = raw.bytes()
-            if hasattr(payload, "to_bytes"):
-                payload = payload.to_bytes()
-            elif not isinstance(payload, (bytes, bytearray)):
-                payload = bytes(payload)
+            response = await loop.run_in_executor(executor, lambda: s3_client.get_object(Bucket=bucket, Key=key))
+            payload = response["Body"].read()
             return json.loads(payload.decode("utf-8"))
 
     return await asyncio.gather(*[fetch(key) for key in keys])
@@ -287,59 +271,61 @@ def index_to_stac_geoparquet(
     bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
     product_owner: str | None = typer.Option(None, help="Override the region-derived owner prefix."),
 ) -> None:
-    """Build STAC-Geoparquet indexes from STAC items for given dataset and region(s)."""
+    """Build STAC-Geoparquet indexes from STAC items for given dataset and region(s).
+    Find all STAC items across all targets and write a single combined Geoparquet."""
     regions: list[Literal["pacific", "non-pacific"]] = ["pacific", "non-pacific"] if region == "all" else [region]
     bucket = bucket or get_env_var("BUCKET")  # Default
+    version = version_for_dataset(dataset, version_geomad, version_lulc)
+    sc_prefix = source_coop_prefix(dataset)
+    _is_bucket_source_coop = is_bucket_source_coop(bucket)
 
-    dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
-
-    _is_source_coop = is_source_coop()
-    targets: list[tuple[str, str]] = []
+    targets: list[str] = []
     for r in regions:
         owner = owner_for_region(r, product_owner)
-        short_prefix = dataset_prefix(owner, dataset_id)
-        full_prefix = (
-            f"{source_coop_prefix}/{short_prefix}/{version}" if _is_source_coop else f"{short_prefix}/{version}"
-        )
-        targets.append((full_prefix, short_prefix))
-        logger.info(f"Region for indexing: '{full_prefix}'")
+        prefix = f"{dataset_prefix(owner, dataset)}/{version}/"
+        if _is_bucket_source_coop and sc_prefix:
+            prefix = f"{sc_prefix}/{prefix}"
 
-    parquet_key = get_stac_geoparquet_key(dataset_id, version, source_coop_prefix)
+        targets.append(prefix)
+        logger.info(f"Region for indexing: '{prefix}'")
 
-    _run_index(bucket, targets, parquet_key)
-
-
-def _run_index(
-    bucket: str,
-    targets: list[tuple[str, str]],
-    parquet_key: str,
-) -> None:
-    """Find all STAC items across all targets and write a single combined Geoparquet."""
+    counts_per_region: dict[str, int] = {}
     all_docs: list = []
-
-    for full_prefix, short_prefix in targets:
-        logger.info(f"Listing STAC items under s3://{bucket}/{full_prefix}")
-        keys = _find_stac_items_s3(bucket, full_prefix)
-        logger.info(f"Found {len(keys)} STAC items under {short_prefix}")
+    for prefix in targets:
+        logger.info(f"Listing STAC items for {prefix}")
+        keys = _find_stac_items_s3(bucket, prefix)
+        logger.info(f"Found {len(keys)} STAC items for prefix '{prefix}'.")
 
         if not keys:
-            logger.warning(f"No STAC items found under s3://{bucket}/{full_prefix}, skipping.")
+            logger.warning(f"No STAC items found for '{prefix}', skipping.")
             continue
 
-        logger.info(f"Loading STAC items from {short_prefix}")
+        logger.info("Loading STAC items")
         docs = _load_stac_docs(bucket, keys)
-        logger.info(f"Loaded {len(docs)} STAC documents from {short_prefix}")
+        logger.info("Loaded STAC documents.")
+        counts_per_region[prefix] = len(docs)
         all_docs.extend(docs)
 
     if not all_docs:
         logger.warning("No STAC items found across any targets, skipping write.")
         return
 
-    logger.info(f"Writing combined STAC-Geoparquet ({len(all_docs)} items) to bucket:{bucket} key:{parquet_key}")
-    store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION)
-    write_sync(parquet_key, all_docs, store=store)
+    regions_with_data = sum(1 for count in counts_per_region.values() if count > 0)
+    single_region = regions_with_data == 1  # Only one prefix has data
+    logger.info(f"Is single region: {single_region}. Counts per region: {counts_per_region}")
 
-    logger.info(f"Done. Wrote {len(all_docs)} items to bucket:{bucket} key:{parquet_key}")
+    if single_region:
+        logger.info("Single region. Writing index to the region prefix e.g. 'dep_ls_geomad'.")
+    else:
+        logger.info("Multiple regions. Writing combined index to the generic prefix e.g. 'ls_geomad'.")
+
+    parquet_key = get_stac_geoparquet_url(bucket, version, dataset, single_region, just_key=True)
+    # Use explicit S3Store to ensure auth works (otherwise rustac can set obstore with wrong auth).
+    credential_provider = Boto3CredentialProvider(aws_session)
+    store = obstore.store.S3Store(bucket=bucket, region=AWS_REGION, credential_provider=credential_provider)
+    logger.info(f"Writing combined STAC-Geoparquet ({len(all_docs)} items) to {parquet_key}")
+    write_sync(parquet_key, all_docs, store=store)
+    logger.info(f"Done. Wrote {len(all_docs)} items to {parquet_key}")
 
 
 def _stac_self_link(feature: dict) -> str:
@@ -429,17 +415,11 @@ def _extract_years(features: list[dict]) -> list[int]:
     return sorted(years)
 
 
-def _write_mosaic(mosaic: MosaicJSON, out_path: str, session: boto3.Session) -> None:
-    """Write a MosaicJSON to S3 using an explicit boto3 session."""
-    # out_path is like s3://bucket/prefix/mosaic.json
-    if not out_path.startswith("s3://"):
-        raise LdnError(f"Output path must start with s3://, got: {out_path}")
-    _, _, rest = out_path.partition("s3://")
-    bucket, _, key = rest.partition("/")
-
+def _write_mosaic(mosaic: MosaicJSON, bucket: str, prefix: str) -> None:
+    """Write a MosaicJSON to S3."""
+    # Prefix is like "prefix/2025_mosaic.json"
     body = mosaic.model_dump_json(exclude_none=True).encode("utf-8")
-    client = session.client("s3", region_name=AWS_REGION)
-    client.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/json")
+    s3_client.put_object(Bucket=bucket, Key=prefix, Body=body, ContentType="application/json")
 
 
 @app.command()
@@ -447,6 +427,13 @@ def make_mosaics(
     dataset: Annotated[
         Literal["geomad", "lulc"],
         typer.Option(help="Which dataset to build mosaics for: 'geomad' or 'lulc'."),
+    ],
+    single_region: Annotated[
+        bool,
+        typer.Option(
+            help="Whether to use the single region prefix (e.g. 'dep_ls_geomad') "
+            "or the generic prefix (e.g. 'ls_geomad')."
+        ),
     ],
     years: Annotated[
         str | None,
@@ -470,11 +457,11 @@ def make_mosaics(
 
     requested_years: list[int] | None = parse_years(years) if years is not None else None
 
-    dataset_id, version, source_coop_prefix = resolve_dataset(dataset, version_geomad, version_lulc)
+    version = version_for_dataset(dataset, version_geomad, version_lulc)
 
-    parquet_url = get_geomad_stac_geoparquet_url(bucket, version)
+    parquet_url = get_stac_geoparquet_url(bucket, version, dataset, single_region)
 
-    logger.info(f"Loading combined index from {parquet_url}")
+    logger.info(f"Loading {'single region' if single_region else 'many regions'} index from {parquet_url}")
     features = _load_all_features(parquet_url)
 
     if not features:
@@ -495,17 +482,14 @@ def make_mosaics(
     else:
         years_list = available_years
 
-    # TODO: is write session needed here?
-    write_session = boto3.Session(region_name=AWS_REGION)
-    output_path = get_s3_mosaic_write_path(bucket, dataset_id, version, source_coop_prefix)
-    combined_short = dataset_prefix(None, dataset_id)
+    parquet_key = get_stac_geoparquet_url(bucket, version, dataset, single_region, just_key=True)
+    output_prefix = parquet_key.rsplit("/", 1)[0]
+    output_prefix = f"{output_prefix}/mosaics"
+
     for _year in years_list:
         mosaic = _build_mosaic_for_year(_year, features)
-        out_path = f"{output_path}/{combined_short}_{_year}_mosaic.json"
-        logger.info(f"  {_year} built successfully, writing to {out_path}")
-
-        _write_mosaic(mosaic, out_path, write_session)
-
-        logger.info(f"  {_year} written.")
+        output_prefix_year = f"{output_prefix}/{_year}/{_year}_mosaic.json"
+        _write_mosaic(mosaic, bucket, output_prefix_year)
+        logger.info(f"  {_year} written to {output_prefix_year}.")
 
     logger.info("Finished writing mosaics.")
