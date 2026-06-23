@@ -131,7 +131,7 @@ def run(
 
     year_int = int(year)
     search_year = year
-    search_kwargs = {"query": {"landsat:collection_category": {"in": ["T1"]}}}
+    search_kwargs: dict = {"query": {"landsat:collection_category": {"in": ["T1"]}}}
 
     min_scenes_threshold = 20
 
@@ -179,7 +179,7 @@ def run(
             "Integration test mode: using 5x5 pixel geobox and limiting to 3 items for very fast processing."
         )
         geobox = geobox[0:5, 0:5]
-        search_kwargs["max_items"] = 3
+        search_kwargs["max_items"] = 4  # Only need 3 but these get merged on solar day.
         n_workers = 1
         threads_per_worker = 1
         memory_limit = "1GB"
