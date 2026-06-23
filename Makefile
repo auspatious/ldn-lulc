@@ -231,3 +231,5 @@ mosaic-lulc-source-coop-test:
 # 	--geomad-version 0-2-1;
 
 # poetry run ldn index-to-stac-geoparquet --dataset "geomad" --version-geomad test-integration;
+
+# poetry run ldn make-mosaics --dataset geomad --version-geomad test-integration --single-region;

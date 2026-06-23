@@ -346,29 +346,3 @@ def get_full_path_prefix(bucket: str) -> str:
     if _is_bucket_source_coop:
         return SOURCE_COOP_URL
     return f"s3://{bucket}"
-
-
-def get_s3_mosaic_write_path(
-    bucket: str,
-    dataset_id: Literal["geomad", "lulc"],
-    version: str,
-) -> str:
-    """Return the S3 write path prefix for a given dataset.
-
-    Handles Source.Coop (includes prefix) and standard/custom-domain buckets.
-
-    Args:
-        bucket: The S3 bucket name or custom domain.
-        dataset_id: The dataset ID (e.g. 'geomad').
-        version: Version string.
-
-    Returns:
-        S3 path string e.g. 's3://us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1'
-        or 's3://data.ldn.auspatious.com/ls_geomad/0-2-1'
-    """
-    combined_short = dataset_prefix(None, dataset_id)
-    _is_bucket_source_coop = is_bucket_source_coop(bucket)
-    sc_prefix = source_coop_prefix(dataset_id) if _is_bucket_source_coop else None
-    if sc_prefix:
-        return f"s3://{bucket}/{sc_prefix}/{combined_short}/{version}"
-    return f"s3://{bucket}/{combined_short}/{version}"

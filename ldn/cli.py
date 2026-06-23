@@ -31,7 +31,6 @@ from ldn.utils import (
     dataset_prefix,
     get_env_var,
     get_full_path_prefix,
-    get_s3_mosaic_write_path,
     get_stac_geoparquet_url,
     is_bucket_source_coop,
     owner_for_region,
@@ -416,16 +415,11 @@ def _extract_years(features: list[dict]) -> list[int]:
     return sorted(years)
 
 
-def _write_mosaic(mosaic: MosaicJSON, out_path: str) -> None:
-    """Write a MosaicJSON to S3 using an explicit boto3 session."""
-    # out_path is like s3://bucket/prefix/mosaic.json
-    if not out_path.startswith("s3://"):
-        raise LdnError(f"Output path must start with s3://, got: {out_path}")
-    _, _, rest = out_path.partition("s3://")
-    bucket, _, key = rest.partition("/")
-
+def _write_mosaic(mosaic: MosaicJSON, bucket: str, prefix: str) -> None:
+    """Write a MosaicJSON to S3."""
+    # Prefix is like "prefix/2025_mosaic.json"
     body = mosaic.model_dump_json(exclude_none=True).encode("utf-8")
-    s3_client.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/json")
+    s3_client.put_object(Bucket=bucket, Key=prefix, Body=body, ContentType="application/json")
 
 
 @app.command()
@@ -467,7 +461,7 @@ def make_mosaics(
 
     parquet_url = get_stac_geoparquet_url(bucket, version, dataset, single_region)
 
-    logger.info(f"Loading combined index from {parquet_url}")
+    logger.info(f"Loading {'single region' if single_region else 'many regions'} index from {parquet_url}")
     features = _load_all_features(parquet_url)
 
     if not features:
@@ -488,13 +482,14 @@ def make_mosaics(
     else:
         years_list = available_years
 
-    output_path = get_s3_mosaic_write_path(bucket, dataset, version)
-    combined_short = dataset_prefix(None, dataset)
+    parquet_key = get_stac_geoparquet_url(bucket, version, dataset, single_region, just_key=True)
+    output_prefix = parquet_key.rsplit("/", 1)[0]
+    output_prefix = f"{output_prefix}/mosaics"
+
     for _year in years_list:
         mosaic = _build_mosaic_for_year(_year, features)
-        out_path = f"{output_path}/{combined_short}_{_year}_mosaic.json"
-        logger.info(f"  {_year} built successfully, writing to {out_path}")
-        _write_mosaic(mosaic, out_path)
-        logger.info(f"  {_year} written.")
+        output_prefix_year = f"{output_prefix}/{_year}/{_year}_mosaic.json"
+        _write_mosaic(mosaic, bucket, output_prefix_year)
+        logger.info(f"  {_year} written to {output_prefix_year}.")
 
     logger.info("Finished writing mosaics.")
