@@ -154,9 +154,18 @@ class TestIndexToStacGeoparquetRegionConfig:
     BUCKET = "idx-bucket"
 
     @patch("ldn.cli.write_sync")
+    @patch("ldn.cli.obstore.store.S3Store")
+    @patch("ldn.cli.Boto3CredentialProvider")
     @patch("ldn.cli._load_stac_docs")
     @patch("ldn.cli._find_stac_items_s3")
-    def test_custom_bucket_and_owner(self, mock_find, mock_load, mock_write):
+    def test_custom_bucket_and_owner(
+        self,
+        mock_find,
+        mock_load,
+        mock_credential_provider,
+        mock_store,
+        mock_write,
+    ):
         """Custom bucket/owner should be used in listing and write target."""
         mock_find.return_value = ["a.stac-item.json"]
         mock_load.return_value = [{"id": "item-1"}]
@@ -184,9 +193,18 @@ class TestIndexToStacGeoparquetRegionConfig:
         assert mock_write.call_args[0][0] == f"dep_ls_geomad/{GEOMAD_VERSION}/dep_ls_geomad.parquet"
 
     @patch("ldn.cli.write_sync")
+    @patch("ldn.cli.obstore.store.S3Store")
+    @patch("ldn.cli.Boto3CredentialProvider")
     @patch("ldn.cli._load_stac_docs")
     @patch("ldn.cli._find_stac_items_s3")
-    def test_product_owner_override(self, mock_find, mock_load, mock_write):
+    def test_product_owner_override(
+        self,
+        mock_find,
+        mock_load,
+        mock_credential_provider,
+        mock_store,
+        mock_write,
+    ):
         """--product-owner overrides the region-derived owner."""
         mock_find.return_value = ["a.stac-item.json"]
         mock_load.return_value = [{"id": "item-1"}]
