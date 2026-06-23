@@ -31,7 +31,6 @@ from ldn.utils import (
     LS7_YEAR_THRESHOLD,
     SOURCE_COOP_PREFIX_GEOMAD,
     get_env_var,
-    get_full_path_prefix,
     is_bucket_source_coop,
     owner_for_region,
     parse_tile_id,
@@ -170,9 +169,6 @@ def run(
     geobox = grid.tile_geobox(tile_id_tuple)
 
     owner = owner_for_region(region, product_owner)
-
-    full_path_prefix = get_full_path_prefix(bucket)
-    logger.info(f"Full path prefix: {full_path_prefix}")
 
     if decimated:
         logger.warning("Warning, using decimated (low resolution) for testing purposes.")

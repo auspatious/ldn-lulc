@@ -39,6 +39,7 @@ from ldn.random_sampling import random_sampling
 from ldn.raster import calculate_indices, load_dem_terrain, scale_offset_landsat
 from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
+    AWS_REGION,
     CLASS_ATTR,
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
@@ -589,7 +590,7 @@ def _upload_dataframe_csv_to_s3(df, bucket: str, path: str) -> str:
     df.to_csv(csv_buffer, index=False)
 
     key = f"{path}"
-    boto3.client("s3").put_object(
+    boto3.client("s3", region_name=AWS_REGION).put_object(
         Bucket=bucket,
         Key=key,
         Body=csv_buffer.getvalue(),
@@ -648,6 +649,7 @@ def get_tile_year_geomad_dem_indices(
     product_owner: str,
     bucket: str,
     geomad_version: str,
+    single_region: bool,
 ) -> xr.Dataset:
     """Load GeoMAD + DEM features for a tile, clipped to buffered country.
 
@@ -677,6 +679,7 @@ def get_tile_year_geomad_dem_indices(
         product_owner=product_owner,
         geomad_version=geomad_version,
         bucket=bucket,
+        single_region=single_region,
     )
 
     # Clip to intersection of tile extent and buffered country
@@ -706,6 +709,7 @@ def make_training_data(
     file_prefix: str,
     n: int,
     min_sample_per_class_n: int,
+    single_region: bool,
 ):
     """Generate training data for a single tile and upload to S3.
 
@@ -774,6 +778,7 @@ def make_training_data(
         product_owner=owner,
         bucket=geomad_bucket,
         geomad_version=geomad_version,
+        single_region=single_region,
     )
     geobox = geomad_dem_indices.odc.geobox
 
@@ -842,6 +847,11 @@ def generate_training_data(
     min_sample_per_class_n: int = typer.Option(300, help="Minimum samples per class"),
     overwrite: bool = typer.Option(False, help="Whether to overwrite existing data in S3"),
     product_owner: str | None = typer.Option(None, help="Override the default product owner"),
+    single_region: bool = typer.Option(
+        ...,
+        help="Whether to use the single region prefix (e.g. 'dep_ls_geomad') "
+        "or the generic prefix (e.g. 'ls_geomad') when accessing GeoMAD data.",
+    ),
 ):
     """Generate training data for LULC classification.
     Read geomad from any bucket and write training data to any bucket.
@@ -903,9 +913,11 @@ def generate_training_data(
         min_sample_per_class_n=min_sample_per_class_n,
         product_owner=product_owner,
         file_prefix=file_prefix,
+        single_region=single_region,
     )
 
 
+# Can this be replaced with a DEP namers method?
 def make_geomad_item_id(
     tile_id: str,
     year: str,
@@ -935,6 +947,7 @@ def search_and_load_geomad_indices_dem(
     product_owner: str,
     bucket: str,
     geomad_version: str,
+    single_region: bool,
 ) -> xr.Dataset:
     """Search, load, scale, and merge GeoMAD bands, spectral indices, and DEM terrain for a tile.
         Supports antimeridian-crossing tiles.
@@ -953,7 +966,7 @@ def search_and_load_geomad_indices_dem(
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
-    geomad_url = get_stac_geoparquet_url(bucket, geomad_version, "geomad")
+    geomad_url = get_stac_geoparquet_url(bucket, geomad_version, "geomad", single_region)
     item_id = make_geomad_item_id(tile_id, year, product_owner=product_owner)
 
     logging.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}.")

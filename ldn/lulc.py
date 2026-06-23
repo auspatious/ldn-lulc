@@ -40,7 +40,6 @@ from ldn.utils import (
     WGS84,
     LdnError,
     get_analysis_epsg,
-    get_full_path_prefix,
     get_stac_geoparquet_url,
     is_bucket_source_coop,
     parse_tile_id,
@@ -394,6 +393,7 @@ def run_classify_task(
     memory_limit: str,
     n_workers: int,
     threads_per_worker: int,
+    single_region: bool,
 ) -> None:
     """Run LULC prediction for a single tile and year, writing results to S3.
 
@@ -434,7 +434,7 @@ def run_classify_task(
             f"Overriding the latest LULC prediction version ({LULC_VERSION}) with the specified version ({version})."
         )
 
-    geomad_stac_geoparquet_url = get_stac_geoparquet_url(bucket, version_geomad, "geomad")
+    geomad_stac_geoparquet_url = get_stac_geoparquet_url(bucket, version_geomad, "geomad", single_region)
 
     tile_id_tuple = parse_tile_id(tile_id)
 
@@ -460,9 +460,6 @@ def run_classify_task(
 
     logger.info("Loading model")
     loaded_model = _load_joblib_model(model_path)
-
-    full_path_prefix = get_full_path_prefix(bucket)
-    logger.info(f"Full path prefix: {full_path_prefix}")
 
     components = build_pipeline_components(
         tile_id_tuple,

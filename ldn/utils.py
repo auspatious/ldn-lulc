@@ -118,7 +118,7 @@ NON_PACIFIC_OWNER = "ci"
 SENSOR = "ls"
 GEOMAD_DATASET_ID = "geomad"
 LULC_DATASET_ID = "lulc"
-AWS_REGION = "us-west-2"
+AWS_REGION = "us-west-2"  # TODO: This should come from AWS SSO profile
 
 LS7_YEAR_THRESHOLD = 2012
 TRAINING_DATA_YEAR = "2020"
@@ -158,7 +158,8 @@ def dataset_prefix(owner: str | None, dataset_id: str) -> str:
 def get_stac_geoparquet_key(
     dataset_id: str,
     version: str,
-    source_coop_prefix: str | None = None,
+    source_coop_prefix: str | None,
+    single_prefix: bool,
 ) -> str:
     """Return the S3 key for the STAC-Geoparquet file (no bucket etc.).
 
@@ -166,31 +167,42 @@ def get_stac_geoparquet_key(
         dataset_id: The dataset ID (e.g. 'geomad').
         version: Version string.
         source_coop_prefix: Source.Coop prefix if applicable, else None.
+        single_prefix: Whether to use the single region prefix
+        (e.g. 'dep_ls_geomad') or the generic prefix (e.g. 'ls_geomad').
 
     Returns:
         S3 key string e.g. 'auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet'
         or 'ls_geomad/0-2-1/ls_geomad.parquet' for a standard bucket.
     """
-    combined_short = dataset_prefix(None, dataset_id)
-    key = f"{combined_short}/{version}/{combined_short}.parquet"
+    prefix = dataset_prefix(None, dataset_id)
+    if single_prefix:
+        owner = owner_for_region("pacific")
+        prefix = dataset_prefix(owner, dataset_id)
+    key = f"{prefix}/{version}/{prefix}.parquet"
     if source_coop_prefix:
         return f"{source_coop_prefix}/{key}"
     return key
 
 
-def get_stac_geoparquet_url(bucket: str, version: str, dataset: Literal["geomad", "lulc"]) -> str:
+def get_stac_geoparquet_url(
+    bucket: str, version: str, dataset: Literal["geomad", "lulc"], single_prefix: bool, just_key: bool = False
+) -> str:
     """Return the URL to the GeoMAD STAC-Geoparquet file for use with rustac/DuckDB.
 
     Args:
         bucket: The S3 bucket name or custom domain.
         version: GeoMAD version string.
         dataset: The dataset type ("geomad" or "lulc").
+        single_prefix: Whether to use the single region prefix
+        (e.g. 'dep_ls_geomad') or the generic prefix (e.g. 'ls_geomad').
     Returns:
         URL to the STAC-Geoparquet file. e.g. https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet
     """
     _is_bucket_source_coop = is_bucket_source_coop(bucket)
     sc_prefix = source_coop_prefix(dataset) if _is_bucket_source_coop else None
-    key = get_stac_geoparquet_key(GEOMAD_DATASET_ID, version, sc_prefix)
+    key = get_stac_geoparquet_key(GEOMAD_DATASET_ID, version, sc_prefix, single_prefix)
+    if just_key:
+        return key
     # https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet
     # https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ls_geomad/test/ls_geomad.parquet
     return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/{key}"
@@ -321,10 +333,8 @@ def get_full_path_prefix(bucket: str) -> str:
     Handles three bucket styles:
     - Source.Coop (e.g. 'us-west-2.opendata.source.coop'): returns the public
       Source.Coop HTTPS URL since files are publicly readable without auth.
-    - Custom-domain bucket (e.g. 'data.ldn.auspatious.com'): returns 's3://{bucket}'
-      so rasterio uses boto3 credentials to authenticate.
-    - Standard S3 bucket (e.g. 'dep-public-staging'): returns 's3://{bucket}'
-      so rasterio uses boto3 credentials to authenticate.
+    - Custom-domain bucket (e.g. 'data.ldn.auspatious.com') and Standard S3 bucket (e.g. 'dep-public-staging'):
+     returns 's3://{bucket}' so rasterio uses boto3 credentials to authenticate.
 
     Args:
         bucket: The S3 bucket name or custom domain.

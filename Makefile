@@ -229,3 +229,5 @@ mosaic-lulc-source-coop-test:
 # 	--country-name "Papua New Guinea" \
 # 	--country-code "PNG" \
 # 	--geomad-version 0-2-1;
+
+# poetry run ldn index-to-stac-geoparquet --dataset "geomad" --version-geomad test-integration;

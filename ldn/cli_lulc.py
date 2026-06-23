@@ -67,6 +67,11 @@ def run(
             help="Chunk size in pixels for x and y dimensions. Larger chunk sizes may be faster but use more memory."
         ),
     ] = 1024,
+    single_region: bool = typer.Option(
+        ...,
+        help="Whether to use the single region prefix (e.g. 'dep_ls_geomad') "
+        "or the generic prefix (e.g. 'ls_geomad') when accessing GeoMAD data.",
+    ),
 ) -> None:
     if int(year) < 2000 or int(year) > 2025:
         raise LdnError("Year must be between 2000 and 2025.")
@@ -92,4 +97,5 @@ def run(
         memory_limit=memory_limit,
         n_workers=n_workers,
         threads_per_worker=threads_per_worker,
+        single_region=single_region,
     )
