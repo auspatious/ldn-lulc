@@ -91,6 +91,10 @@ PACIFIC_TRAINING_TILES = [
     # New Caledonia for maquis shrubland / lagoon
     ("050_015", "pacific", {"New Caledonia": "NCL"}),
 ]
+# PACIFIC_TRAINING_TILES are for training and validation.
+
+# MODEL_TEST_TILES = [] # TODO: define this. It should have all classes! Maybe pick 2.
+# Classify using a model (not trained on these). Compare output against LULC agreeing classes.
 
 
 def _get_pc_client():
@@ -490,6 +494,11 @@ def remove_nan_samples(samples: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return samples
 
 
+# Outliers can be important. Rare examples of valid members of a class. e.g. muddy water.
+# Should we filter outliers?
+# Is clustering within a class a good idea? 5 sub-classes for a class.
+# Test this. Does it improve the model?
+# Ablation study to test.
 def filter_outliers(samples: gpd.GeoDataFrame, cap: float = 0.05) -> gpd.GeoDataFrame:
     """Filter outliers per class using K-Means clustering.
 
@@ -695,8 +704,8 @@ def make_training_data(
     country_of_interest: dict[str, str],
     product_owner: str | None,
     file_prefix: str,
-    n: int = 2100,
-    min_sample_per_class_n: int = 300,
+    n: int,
+    min_sample_per_class_n: int,
 ):
     """Generate training data for a single tile and upload to S3.
 
@@ -790,9 +799,10 @@ def make_training_data(
     logger.info("Removing NaN samples")
     samples = remove_nan_samples(samples)
 
-    # 9. Filter outliers
-    logger.info("Filtering outliers")
-    samples = filter_outliers(samples)
+    # TODO: Run a baseline version and then test if outlier filtering improves the model and classification.
+    # # 9. Filter outliers
+    # logger.info("Filtering outliers")
+    # samples = filter_outliers(samples)
 
     # 10. Write outputs (local)
     out_fname_local = f"ldn/{file_prefix}"
