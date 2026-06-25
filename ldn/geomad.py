@@ -375,12 +375,11 @@ class GeoMADProcessor(Processor):
         if self.load_data_before_writing:
             geomad = geomad.compute()
 
-        geomad["count"].odc.nodata = 0  # This could hide real values of 0. 9999 is what datacube-compute do.
-
         return _set_stac_properties(data, geomad)
 
 
 # This is a generic function used be geomad creation and lulc classification tasks.
+# TODO: Move it to raster.py
 class AwsStacTask(AreaTask):
     """Area task with search + STAC creation/writing for AWS workflows."""
 

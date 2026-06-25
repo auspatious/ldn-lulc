@@ -221,6 +221,22 @@ mosaic-lulc-source-coop-test:
 
 
 # poetry run ldn geomad run --tile-id 10_20 --year 2025 --version test-integration --region pacific --integration-test --overwrite
+# Test 9999 count nodata on this tile https://stac.staging.digitalearthpacific.io/collections/dep_ls_geomad/items/dep_ls_geomad_046_020_2025
+geomad-count-9999-test:
+	poetry run ldn geomad run \
+		--tile-id 046_020 \
+		--region pacific \
+		--year 2012 \
+		--version 0-3-0-test \
+		--decimated \
+		--overwrite;
+geomad-count-9999-test-integration:
+	poetry run ldn geomad run \
+		--tile-id 036_028 \
+		--region pacific \
+		--year 2025 \
+		--version 0-3-0-test \
+		--integration-test;
 
 
 # poetry run ldn training generate-training-data \
@@ -230,6 +246,28 @@ mosaic-lulc-source-coop-test:
 # 	--country-code "PNG" \
 # 	--geomad-version 0-2-1;
 
-# poetry run ldn index-to-stac-geoparquet --dataset "geomad" --version-geomad test-integration;
+# poetry run ldn index-to-stac-geoparquet --dataset "geomad" --version-geomad test-integration --single-region --product-owner dep;
+# poetry run ldn index-to-stac-geoparquet --dataset "geomad" --version-geomad 0-3-0-test --single-region --product-owner dep;
+# poetry run ldn make-mosaics --dataset geomad --version-geomad test-integration --single-region --product-owner dep;
+# poetry run ldn make-mosaics --dataset geomad --version-geomad 0-3-0-test --single-region --product-owner dep;
 
-# poetry run ldn make-mosaics --dataset geomad --version-geomad test-integration --single-region;
+
+create-geomad-collection-single-region:
+	ldn collection create-collection \
+ 		--dataset geomad \
+		--stac-geoparquet-url "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ls_geomad/test/ls_geomad.parquet" \
+		--single-region \
+		--product-owner dep;
+
+create-geomad-collection-multi-region:
+	ldn collection create-collection \
+ 		--dataset geomad \
+		--stac-geoparquet-url "https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet" \
+		--no-single-region;
+
+# For DEP prod the links should go to:
+# https://stac.digitalearthpacific.org/collections/dep_ls_geomad
+
+aws-login:
+	unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN && \
+	aws sso login --profile $(AWS_PROFILE)

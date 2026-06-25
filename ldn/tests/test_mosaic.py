@@ -64,7 +64,7 @@ def mock_write_session():
 @patch("ldn.cli._write_mosaic")
 @patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
-@patch("ldn.cli._load_all_features")
+@patch("ldn.utils.load_stac_geoparquet_features")
 def test_make_mosaics_geomad_single_year(mock_load, mock_years, mock_build, mock_write, mock_write_session):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
@@ -95,7 +95,7 @@ def test_make_mosaics_geomad_single_year(mock_load, mock_years, mock_build, mock
 @patch("ldn.cli._write_mosaic")
 @patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
-@patch("ldn.cli._load_all_features")
+@patch("ldn.utils.load_stac_geoparquet_features")
 def test_make_mosaics_prediction_single_year(mock_load, mock_years, mock_build, mock_write, mock_write_session):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features
@@ -125,7 +125,7 @@ def test_make_mosaics_prediction_single_year(mock_load, mock_years, mock_build, 
 @patch("ldn.cli._write_mosaic")
 @patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
-@patch("ldn.cli._load_all_features")
+@patch("ldn.utils.load_stac_geoparquet_features")
 def test_make_mosaics_multiple_years(mock_load, mock_years, mock_build, mock_write, mock_write_session):
     features = [
         _make_feature("item-1", [103.6, 1.2, 104.0, 1.5], "2020"),
@@ -159,7 +159,7 @@ def test_make_mosaics_multiple_years(mock_load, mock_years, mock_build, mock_wri
 @patch("ldn.cli._write_mosaic")
 @patch("ldn.cli._build_mosaic_for_year")
 @patch("ldn.cli._extract_years")
-@patch("ldn.cli._load_all_features")
+@patch("ldn.utils.load_stac_geoparquet_features")
 def test_make_mosaics_passes_bucket_to_write(mock_load, mock_years, mock_build, mock_write, mock_write_session):
     features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
     mock_load.return_value = features

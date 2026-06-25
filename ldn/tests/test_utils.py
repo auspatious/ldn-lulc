@@ -14,7 +14,7 @@ from ldn.utils import (
     dataset_prefix,
     get_collection_url_root,
     get_full_path_prefix,
-    get_public_https_prefix,
+    get_public_https_base,
     get_stac_geoparquet_url,
     owner_for_region,
     parse_tile_id,
@@ -43,10 +43,10 @@ class TestOwnerForRegion:
 
 class TestDatasetPrefix:
     def test_geomad(self):
-        assert dataset_prefix("dep", "geomad") == "dep_ls_geomad"
+        assert dataset_prefix("dep", "ls", "geomad") == "dep_ls_geomad"
 
     def test_lulc(self):
-        assert dataset_prefix("ci", "lulc") == "ci_ls_lulc"
+        assert dataset_prefix("ci", "ls", "lulc") == "ci_ls_lulc"
 
 
 MODULE = "ldn.utils"
@@ -89,7 +89,7 @@ class TestGetGeomadStacGeoparquetUrl:
         ],
     )
     def test_bucket_styles(self, base_patches, bucket, expected):
-        url = get_stac_geoparquet_url(bucket=bucket, version=MOCK_VERSION, dataset="geomad", single_prefix=False)
+        url = get_stac_geoparquet_url(bucket=bucket, version=MOCK_VERSION, dataset="geomad", single_region=False)
         assert url == expected
 
 
@@ -274,7 +274,7 @@ def test_get_collection_url_root(bucket, is_source_coop_bucket, expected):
     ],
 )
 def test_get_public_https_prefix(bucket, is_source_coop_bucket, expected):
-    assert get_public_https_prefix(bucket) == expected
+    assert get_public_https_base(bucket) == expected
 
 
 def test_parse_years_reversed_range():
@@ -296,4 +296,4 @@ def test_parse_years_same_year_range():
 )
 def test_dataset_prefix(owner, expected):
     with patch(f"{MODULE}.SENSOR", "ls"):
-        assert dataset_prefix(owner, "geomad") == expected
+        assert dataset_prefix(owner, "ls", "geomad") == expected

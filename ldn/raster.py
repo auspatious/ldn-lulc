@@ -3,7 +3,7 @@ from typing import Literal
 
 import numpy as np
 import xarray as xr
-from dep_tools.aws import object_exists
+from dep_tools.aws import BaseClient, object_exists
 from dep_tools.namers import S3ItemPath
 from dep_tools.stac_utils import StacCreator
 from dep_tools.utils import bbox_across_180, join_path_or_url, search_across_180
@@ -307,6 +307,8 @@ def build_pipeline_components(
     dataset_id: Literal["geomad", "lulc"],
     source_coop_prefix: str | None,
     overwrite: bool,
+    collection_url_root: str,
+    s3_client: BaseClient,
 ) -> tuple[PrefixedS3ItemPath, StacCreator, AwsDsCogWriter] | None:
     """Build shared pipeline components for GeoMAD and classify tasks.
 
@@ -334,13 +336,27 @@ def build_pipeline_components(
     logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
 
     stac_creator = StacCreator(
-        collection_url_root=get_collection_url_root(bucket, owner, SENSOR, dataset_id),
+        collection_url_root=collection_url_root,
         itempath=itempath,
         with_raster=True,
     )
     writer = AwsDsCogWriter(
         itempath,
         write_multithreaded=True,
+        client=s3_client,
     )
 
     return itempath, stac_creator, writer
+
+
+# TODO: Make collection for geomad and lulc outputs.
+def collection_url_root(
+    collection_url_root: str | None, bucket: str, owner: str, dataset_id: Literal["geomad", "lulc"]
+) -> str:
+    """Make a STAC collection JSON for the dataset. Uses a default collection_url_root based on bucket/owner/dataset_id
+    but can be overridden e.g. for DEP prod's STAC API."""
+    collection_url_root = collection_url_root or get_collection_url_root(bucket, owner, SENSOR, dataset_id)
+
+    # Make it
+
+    return collection_url_root

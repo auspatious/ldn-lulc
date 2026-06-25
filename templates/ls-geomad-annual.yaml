@@ -68,6 +68,11 @@ spec:
             # Test tiles (2 regions and 2 years)
             # withParam: '[{"id":"115_14","year":"2000","region":"pacific"}, {"id":"115_14","year":"2025","region":"pacific"},{"id":"252_87","year":"2000","region":"non-pacific"},{"id":"252_87","year":"2025","region":"non-pacific"}]'
 
+          # TODO: Do this after index.
+          # - name: make-geomad-collection
+          #   depends: process-geomad.Succeeded # This won't run if any fail. TODO: make it run?
+          #   template: make-geomad-collection
+
 
     - name: print-tasks
       activeDeadlineSeconds: 900 # 15 mins
@@ -150,3 +155,16 @@ spec:
           - "{{= asInt(retries) == 0 ? '800' : '1600'}}"
           - "{{ workflow.parameters.overwrite }}"
           - "{{ workflow.parameters.decimated }}"
+
+
+    # TODO: Do this after index.
+    # - name: make-geomad-collection
+    #   activeDeadlineSeconds: 900 # 15 mins
+    #   container:
+    #     image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+    #     imagePullPolicy: IfNotPresent
+    #     command: [ldn]
+    #     args:
+    #       - create-collection
+    #       - --dataset
+    #       - geomad

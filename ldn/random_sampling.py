@@ -13,12 +13,12 @@ logger = logging.getLogger(__name__)
 def random_sampling(
     da,
     n,
-    min_sample_n=5,
+    min_sample_n,
     sampling="stratified_random",
     manual_class_ratios=None,
     out_fname=None,
     class_attr=CLASS_ATTR,
-    drop_value=0,
+    drop_value=255,
 ):
     """
     Creates randomly sampled points for post-classification

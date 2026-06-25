@@ -8,9 +8,9 @@ from dask.distributed import KilledWorker
 from dep_tools.exceptions import EmptyCollectionError
 from dep_tools.loaders import OdcLoader
 from dep_tools.searchers import PystacSearcher
-from odc.stac import configure_s3_access
 from typing_extensions import Annotated
 
+from ldn.aws import s3_client
 from ldn.geomad import (
     LANDSAT_BANDS,
     LANDSAT_OFFSET,
@@ -24,11 +24,12 @@ from ldn.geomad import (
     AwsStacTask as Task,
 )
 from ldn.grids import get_gridspec
-from ldn.raster import build_pipeline_components
+from ldn.raster import build_pipeline_components, get_collection_url_root
 from ldn.utils import (
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     LS7_YEAR_THRESHOLD,
+    SENSOR,
     SOURCE_COOP_PREFIX_GEOMAD,
     get_env_var,
     is_bucket_source_coop,
@@ -102,6 +103,8 @@ def run(
     threads_per_worker: Annotated[int, typer.Option()] = 16,
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
+    collection_url_root: Annotated[str | None, typer.Option(help="Override the default collection URL root.")] = None,
+    sensor: Annotated[str, typer.Option(help="Sensor name, e.g. 'ls'.")] = SENSOR,
 ) -> None:
     """Run GeoMAD processing on a single tile for a year.
 
@@ -179,7 +182,7 @@ def run(
             "Integration test mode: using 5x5 pixel geobox and limiting to 3 items for very fast processing."
         )
         geobox = geobox[0:5, 0:5]
-        search_kwargs["max_items"] = 3
+        search_kwargs["max_items"] = 4
         n_workers = 1
         threads_per_worker = 1
         memory_limit = "1GB"
@@ -188,7 +191,9 @@ def run(
         # geomad_options["maxiters"] = 1
 
     # Configure for dask and reading data
-    _ = configure_s3_access(requester_pays=True)
+    # _ = configure_s3_access(requester_pays=True, profile=get_env_var("AWS_PROFILE"), region_name=AWS_REGION)
+
+    collection_url_root = collection_url_root or get_collection_url_root(bucket, owner, sensor, GEOMAD_DATASET_ID)
 
     components = build_pipeline_components(
         tile_id_tuple,
@@ -199,6 +204,8 @@ def run(
         GEOMAD_DATASET_ID,
         SOURCE_COOP_PREFIX_GEOMAD if is_bucket_source_coop(bucket) else None,
         overwrite,
+        collection_url_root=collection_url_root,
+        s3_client=s3_client,
     )
     if components is None:
         return  # Task exists and overwrite is False, so skipping processing.

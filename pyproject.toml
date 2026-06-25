@@ -23,6 +23,8 @@ ldn = "ldn.cli:app"
 select = ["E", "F", "I"]
 [tool.ruff]
 line-length = 120
+[tool.ruff.lint.per-file-ignores]
+"ldn/cli.py" = ["E402", "I001"]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"

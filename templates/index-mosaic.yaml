@@ -47,6 +47,10 @@ spec:
           - name: index-to-stac-geoparquet
             template: index-to-stac-geoparquet
 
+          - name: make-geomad-collection
+            depends: index-to-stac-geoparquet.Succeeded
+            template: make-geomad-collection
+
           - name: make-mosaics
             depends: index-to-stac-geoparquet.Succeeded
             template: make-mosaics
@@ -68,6 +72,22 @@ spec:
           - "{{ workflow.parameters.dataset }}"
           - --region
           - "{{ workflow.parameters.region }}"
+
+      # Make the collection here because it depends on the index.
+    - name: make-geomad-collection
+      activeDeadlineSeconds: 900 # 15 mins
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        command: [ldn]
+        args:
+          - create-collection
+          - --dataset
+          - "{{ workflow.parameters.dataset }}"
+          - --stac-geoparquet-url # TODO: Get from index output
+          - "{{ tasks.index-to-stac-geoparquet.outputs.result }}"
+          - --single-region # TODO: Get from index output
+          - "{{ tasks.index-to-stac-geoparquet.outputs.result }}"
 
     - name: make-mosaics
       activeDeadlineSeconds: 900 # 15 mins

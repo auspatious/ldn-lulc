@@ -4,12 +4,13 @@ import re
 from typing import Literal
 
 from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
-from dotenv import load_dotenv
+from pystac import ItemCollection
+from rustac import read_sync
+from rustac import store as rustac_store
+
+from ldn.aws import aws_session, credential_provider
 
 logger = logging.getLogger(__name__)
-
-
-load_dotenv()
 
 
 # For BUCKET
@@ -107,7 +108,7 @@ ALL_COUNTRIES = {**SIDS_COUNTRIES_AND_CODES, **DEP_COUNTRIES_AND_CODES}
 # Get SIDS countries that are not in DEP for CI Grid use.
 NON_DEP_COUNTRIES = {k: v for k, v in SIDS_COUNTRIES_AND_CODES.items() if k not in DEP_COUNTRIES_AND_CODES}
 
-GEOMAD_VERSION = "0-3-0"
+GEOMAD_VERSION = "0-3-0"  # Will write 0-3-0 for DEP prod.
 LULC_VERSION = "0-0-9"
 MODEL_VERSION = "0-0-9"
 TRAINING_DATA_VERSION = "0-0-9"
@@ -118,7 +119,6 @@ NON_PACIFIC_OWNER = "ci"
 SENSOR = "ls"
 GEOMAD_DATASET_ID = "geomad"
 LULC_DATASET_ID = "lulc"
-AWS_REGION = "us-west-2"  # TODO: This should come from AWS SSO profile
 
 LS7_YEAR_THRESHOLD = 2012
 TRAINING_DATA_YEAR = "2020"
@@ -139,73 +139,68 @@ def owner_for_region(
     return PACIFIC_OWNER if region == "pacific" else NON_PACIFIC_OWNER
 
 
-def dataset_prefix(owner: str | None, dataset_id: str) -> str:
+def dataset_prefix(owner: str | None, sensor: str, dataset_id: str) -> str:
     """Build the full dataset prefix from owner, sensor, and dataset_id (owner optional).
 
     Args:
         owner: Short owner prefix (e.g. "dep" or "ci").
+        sensor: Sensor identifier (e.g. "ls").
         dataset_id: Dataset identifier (e.g. "geomad" or "lulc").
 
     Returns:
         Full prefix like "dep_ls_geomad" or "ci_ls_lulc" or "ls_geomad" if owner is None.
     """
     if owner:
-        return f"{owner}_{SENSOR}_{dataset_id}"
+        return f"{owner}_{sensor}_{dataset_id}"
     else:
-        return f"{SENSOR}_{dataset_id}"
+        return f"{sensor}_{dataset_id}"
 
 
 def get_stac_geoparquet_key(
-    dataset_id: str,
+    bucket: str,
+    product_owner: str | None,
+    sensor: str,
+    dataset: Literal["geomad", "lulc"],
     version: str,
-    source_coop_prefix: str | None,
-    single_prefix: bool,
 ) -> str:
     """Return the S3 key for the STAC-Geoparquet file (no bucket etc.).
 
     Args:
-        dataset_id: The dataset ID (e.g. 'geomad').
+        dataset: The dataset type (e.g. 'geomad' or 'lulc').
         version: Version string.
         source_coop_prefix: Source.Coop prefix if applicable, else None.
-        single_prefix: Whether to use the single region prefix
+        single_region: Whether to use the single region prefix
         (e.g. 'dep_ls_geomad') or the generic prefix (e.g. 'ls_geomad').
+        region: The region for which to build the prefix ('pacific' or 'non-pacific').
 
     Returns:
         S3 key string e.g. 'auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet'
         or 'ls_geomad/0-2-1/ls_geomad.parquet' for a standard bucket.
     """
-    prefix = dataset_prefix(None, dataset_id)
-    if single_prefix:
-        owner = owner_for_region("pacific")
-        prefix = dataset_prefix(owner, dataset_id)
-    key = f"{prefix}/{version}/{prefix}.parquet"
-    if source_coop_prefix:
-        return f"{source_coop_prefix}/{key}"
-    return key
+    filename = dataset_prefix(product_owner, sensor, dataset) + ".parquet"
+    prefix_with_sc = build_prefix(bucket, product_owner, sensor, dataset, version)
+
+    return f"{prefix_with_sc}/{filename}"
 
 
-def get_stac_geoparquet_url(
-    bucket: str, version: str, dataset: Literal["geomad", "lulc"], single_prefix: bool, just_key: bool = False
-) -> str:
+def get_write_url_base(bucket: str) -> str:
+    """Return the URL base for writing files to S3, which may differ for Source.Coop vs standard buckets."""
+    return f"https://s3.{aws_session.region_name}.amazonaws.com/{bucket}"
+
+
+def get_stac_geoparquet_url(bucket: str, key: str) -> str:
     """Return the URL to the GeoMAD STAC-Geoparquet file for use with rustac/DuckDB.
 
     Args:
         bucket: The S3 bucket name or custom domain.
-        version: GeoMAD version string.
-        dataset: The dataset type ("geomad" or "lulc").
-        single_prefix: Whether to use the single region prefix
-        (e.g. 'dep_ls_geomad') or the generic prefix (e.g. 'ls_geomad').
+        key: The S3 key for the STAC-Geoparquet file.
+
     Returns:
         URL to the STAC-Geoparquet file. e.g. https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet
     """
-    _is_bucket_source_coop = is_bucket_source_coop(bucket)
-    sc_prefix = source_coop_prefix(dataset) if _is_bucket_source_coop else None
-    key = get_stac_geoparquet_key(GEOMAD_DATASET_ID, version, sc_prefix, single_prefix)
-    if just_key:
-        return key
     # https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet
-    # https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ls_geomad/test/ls_geomad.parquet
-    return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}/{key}"
+    # https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ls_geomad/test-integration/ls_geomad.parquet
+    return f"{get_write_url_base(bucket)}/{key}"
 
 
 def get_analysis_epsg(
@@ -272,8 +267,8 @@ def parse_tile_id(tile_id: str) -> tuple[int, int]:
     return parts[0], parts[1]
 
 
-def get_public_https_prefix(bucket: str) -> str:
-    """Return the public HTTPS URL prefix for a given bucket.
+def get_public_https_base(bucket: str) -> str:
+    """Return the public HTTPS URL base for a given bucket.
 
     Used for STAC hrefs and other public HTTP contexts (e.g. geoparquet URLs).
 
@@ -287,7 +282,7 @@ def get_public_https_prefix(bucket: str) -> str:
         bucket: The S3 bucket name or custom domain.
 
     Returns:
-        A public HTTPS URL prefix string.
+        A public HTTPS URL base string.
     """
     _is_bucket_source_coop = is_bucket_source_coop(bucket)
     if _is_bucket_source_coop:
@@ -297,7 +292,7 @@ def get_public_https_prefix(bucket: str) -> str:
         # e.g. "data.ldn.auspatious.com"
         return f"https://{bucket}"
     # e.g. "dep-public-staging"
-    return f"https://s3.{AWS_REGION}.amazonaws.com/{bucket}"
+    return get_write_url_base(bucket)
 
 
 # TODO: We need to write a collection JSON. One for both regions together.
@@ -323,7 +318,8 @@ def get_collection_url_root(
     Returns:
         A public HTTPS URL string suitable for use as a STAC collection URL root.
     """
-    base = get_public_https_prefix(bucket)
+    base = get_public_https_base(bucket)
+    # TODO: Need to pass single_region to determine whether to use owner prefix or not.
     return f"{base}/#{owner}_{sensor}_{dataset_id}/"  # TODO: There should be one collection for both regions.
 
 
@@ -346,3 +342,42 @@ def get_full_path_prefix(bucket: str) -> str:
     if _is_bucket_source_coop:
         return SOURCE_COOP_URL
     return f"s3://{bucket}"
+
+
+def load_stac_geoparquet_features(bucket: str, prefix: str) -> ItemCollection:
+    """Load all STAC items from a STAC-geoparquet file.
+
+    Args:
+        bucket: The S3 bucket name or custom domain.
+        prefix: The prefix to the STAC-Geoparquet file e.g. 'dep_ls_geomad/0-3-0/dep_ls_geomad.parquet'
+        or 'auspatious/geomad-sids/ls_geomad/0-3-0/ls_geomad.parquet'.
+
+    Returns:
+        ItemCollection of STAC items.
+    """
+    store = rustac_store.S3Store(bucket, credential_provider=credential_provider)
+
+    feature_collection = read_sync(prefix, store=store)
+    features = feature_collection.get("features", [])
+    if not features:
+        raise LdnError("No items found.")
+    logger.info(f"Loaded {len(features)} features from {prefix}")
+    return ItemCollection(features)
+
+
+def build_prefix(
+    bucket: str, product_owner: str | None, sensor: str, dataset: Literal["geomad", "lulc"], version: str
+) -> str:
+    """Build the prefix for a dataset. Does not include the bucket or key (filename).
+
+    Args:
+    product_owner: The owner prefix (e.g. 'dep', 'ci' or 'example_override_value').
+
+    Returns:
+        e.g. "dep_ls_geomad/0-3-0" or "ls_geomad/0-3-0"
+    """
+    prefix = f"{dataset_prefix(product_owner, sensor, dataset)}/{version}"
+    if is_bucket_source_coop(bucket):
+        prefix = f"{source_coop_prefix(dataset)}/{prefix}"
+
+    return prefix
