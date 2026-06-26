@@ -1,6 +1,10 @@
+import json
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pystac import Item
+from pystac.link import Link
 from typer.testing import CliRunner
 
 from ldn.cli import app
@@ -39,18 +43,34 @@ def _make_feature(item_id: str, bbox: list[float], year: str = "2020") -> dict:
     }
 
 
+def _make_item(item_id: str, bbox: list[float], year: str = "2020") -> Item:
+    """Helper to create a STAC item object."""
+    minx, miny, maxx, maxy = bbox
+    item = Item(
+        id=item_id,
+        geometry={
+            "type": "Polygon",
+            "coordinates": [[[minx, miny], [maxx, miny], [maxx, maxy], [minx, maxy], [minx, miny]]],
+        },
+        bbox=[minx, miny, maxx, maxy],
+        datetime=datetime(int(year), 6, 1, tzinfo=UTC),
+        properties={},
+    )
+    item.add_link(Link(rel="self", target=f"https://example.com/items/{item_id}"))
+    return item
+
+
 # make_mosaics CLI command
 
 
 @patch("ldn.cli.s3_client.put_object")
-@patch("ldn.cli._build_mosaic_for_year")
-@patch("ldn.cli._extract_years")
 @patch("ldn.cli.load_stac_geoparquet_features")
-def test_make_mosaics_geomad_single_year(mock_load, mock_years, mock_build, mock_put):
-    features = [_make_feature("item-1", [103.6, 1.2, 104.0, 1.5])]
+def test_make_mosaics_geomad_single_year(mock_load, mock_put):
+    features = [
+        _make_item("item-1", [103.6, 1.2, 104.0, 1.5], "2020"),
+        _make_item("item-2", [104.1, 1.2, 104.4, 1.5], "2021"),
+    ]
     mock_load.return_value = features
-    mock_years.return_value = [2020]
-    mock_build.return_value = MagicMock()
 
     result = runner.invoke(
         app,
@@ -61,6 +81,8 @@ def test_make_mosaics_geomad_single_year(mock_load, mock_years, mock_build, mock
             "--single-region",
             "--product-owner",
             "dep",
+            "--years",
+            "2020",
             "--version-geomad",
             GEOMAD_VERSION,
             "--version-lulc",
@@ -69,10 +91,14 @@ def test_make_mosaics_geomad_single_year(mock_load, mock_years, mock_build, mock
     )
 
     assert result.exit_code == 0, result.output
-    mock_build.assert_called_once()
     mock_put.assert_called_once()
-    out_path = mock_put.call_args.kwargs["Key"]
+    call_kwargs = mock_put.call_args.kwargs
+    out_path = call_kwargs["Key"]
     assert "mosaics/2020/2020_mosaic.json" in out_path
+    body = json.loads(call_kwargs["Body"].decode("utf-8"))
+    body_json = json.dumps(body)
+    assert "item-1" in body_json
+    assert "item-2" not in body_json
 
 
 @patch("ldn.cli.s3_client.put_object")

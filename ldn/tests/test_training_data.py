@@ -307,13 +307,13 @@ class TestExtractGeomadDemIndicesValues:
 
 class TestGetGeomadItemId:
     def test_pacific(self):
-        item_id = make_geomad_item_id("058_043", "2020", "dep")
+        item_id = make_geomad_item_id("058_043", "ls", "2020", "dep")
         assert item_id == "dep_ls_geomad_058_043_2020"
 
     def test_non_pacific(self):
-        item_id = make_geomad_item_id("119_126", "2023", "ci")
+        item_id = make_geomad_item_id("119_126", "ls", "2023", "ci")
         assert item_id == "ci_ls_geomad_119_126_2023"
 
     def test_product_owner_override(self):
-        item_id = make_geomad_item_id("058_043", "2020", "ci")
+        item_id = make_geomad_item_id("058_043", "ls", "2020", "ci")
         assert item_id == "ci_ls_geomad_058_043_2020"

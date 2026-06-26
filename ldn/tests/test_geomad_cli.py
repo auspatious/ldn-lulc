@@ -69,6 +69,13 @@ def stub_geomad_processing(monkeypatch):
     monkeypatch.setattr("ldn.cli_geomad.Task.run", fake_run)
 
 
+@pytest.fixture(autouse=True)
+def stub_geomad_aws(monkeypatch, mock_s3):
+    """Ensure cli_geomad uses moto S3 client and never attempts real SSO refresh."""
+    monkeypatch.setattr("ldn.cli_geomad.s3_client", mock_s3)
+    monkeypatch.setattr("ldn.cli_geomad.configure_s3_access_profile", lambda: None)
+
+
 TILE_ID = "010_020"
 YEAR = "2025"
 VERSION = "integration-test"

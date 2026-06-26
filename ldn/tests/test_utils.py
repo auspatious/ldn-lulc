@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
+from ldn.aws import aws_session
 from ldn.utils import (
     GEOMAD_DATASET_ID,
     NON_PACIFIC_OWNER,
@@ -14,6 +15,7 @@ from ldn.utils import (
     get_collection_url_root,
     get_full_path_prefix,
     get_public_https_base,
+    get_stac_geoparquet_key,
     get_stac_geoparquet_url,
     owner_for_region,
     parse_tile_id,
@@ -51,7 +53,7 @@ class TestDatasetPrefix:
 MODULE = "ldn.utils"
 
 MOCK_BUCKET = "my-test-bucket"
-MOCK_REGION = "ap-southeast-2"
+MOCK_REGION = aws_session.region_name
 MOCK_VERSION = "0-0-1"
 MOCK_DATASET_ID = "geomad"
 
@@ -87,7 +89,14 @@ class TestGetGeomadStacGeoparquetUrl:
         ],
     )
     def test_bucket_styles(self, base_patches, bucket, expected):
-        url = get_stac_geoparquet_url(bucket=bucket, version=MOCK_VERSION, dataset="geomad", single_region=False)
+        key = get_stac_geoparquet_key(
+            bucket=bucket,
+            product_owner=None,
+            sensor="ls",
+            dataset="geomad",
+            version=MOCK_VERSION,
+        )
+        url = get_stac_geoparquet_url(bucket=bucket, key=key)
         assert url == expected
 
 

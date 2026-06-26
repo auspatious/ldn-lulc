@@ -567,7 +567,16 @@ def test_build_pipeline_components_itempath_prefix(
     """itempath.full_path_prefix should reflect the correct scheme for each bucket style."""
     with patch(f"{_RASTER_MOD}.get_full_path_prefix", return_value=expected_prefix_start):
         result = build_pipeline_components(
-            TILE, YEAR, VERSION, bucket, OWNER, "geomad", source_coop_prefix, overwrite=True
+            TILE,
+            YEAR,
+            VERSION,
+            bucket,
+            OWNER,
+            "geomad",
+            source_coop_prefix,
+            overwrite=True,
+            collection_url_root="https://example.com/#dep_ls_geomad/",
+            s3_client=MagicMock(),
         )
     assert result is not None
     itempath, *_ = result
@@ -584,7 +593,18 @@ def test_build_pipeline_components_itempath_prefix(
 )
 def test_build_pipeline_components_itempath_key_prefix(mock_aws, bucket, source_coop_prefix, expected_key_prefix):
     """key_prefix on itempath should only be set for Source.Coop."""
-    result = build_pipeline_components(TILE, YEAR, VERSION, bucket, OWNER, "geomad", source_coop_prefix, overwrite=True)
+    result = build_pipeline_components(
+        TILE,
+        YEAR,
+        VERSION,
+        bucket,
+        OWNER,
+        "geomad",
+        source_coop_prefix,
+        overwrite=True,
+        collection_url_root="https://example.com/#dep_ls_geomad/",
+        s3_client=MagicMock(),
+    )
     assert result is not None
     itempath, *_ = result
     assert itempath.key_prefix == expected_key_prefix
@@ -594,7 +614,16 @@ def test_build_pipeline_components_returns_none_when_exists(mock_aws):
     """Should return None and skip processing when item exists and overwrite=False."""
     with patch(f"{_RASTER_MOD}.object_exists", return_value=True):
         result = build_pipeline_components(
-            TILE, YEAR, VERSION, "dep-public-staging", OWNER, "geomad", None, overwrite=False
+            TILE,
+            YEAR,
+            VERSION,
+            "dep-public-staging",
+            OWNER,
+            "geomad",
+            None,
+            overwrite=False,
+            collection_url_root="https://example.com/#dep_ls_geomad/",
+            s3_client=MagicMock(),
         )
     assert result is None
 
@@ -603,13 +632,33 @@ def test_build_pipeline_components_proceeds_when_exists_and_overwrite(mock_aws):
     """overwrite=True should proceed even when item exists."""
     with patch(f"{_RASTER_MOD}.object_exists", return_value=True):
         result = build_pipeline_components(
-            TILE, YEAR, VERSION, "dep-public-staging", OWNER, "geomad", None, overwrite=True
+            TILE,
+            YEAR,
+            VERSION,
+            "dep-public-staging",
+            OWNER,
+            "geomad",
+            None,
+            overwrite=True,
+            collection_url_root="https://example.com/#dep_ls_geomad/",
+            s3_client=MagicMock(),
         )
     assert result is not None
 
 
 def test_build_pipeline_components_returns_three_components(mock_aws):
-    result = build_pipeline_components(TILE, YEAR, VERSION, "dep-public-staging", OWNER, "geomad", None, overwrite=True)
+    result = build_pipeline_components(
+        TILE,
+        YEAR,
+        VERSION,
+        "dep-public-staging",
+        OWNER,
+        "geomad",
+        None,
+        overwrite=True,
+        collection_url_root="https://example.com/#dep_ls_geomad/",
+        s3_client=MagicMock(),
+    )
     assert result is not None
     assert len(result) == 3
 
@@ -620,7 +669,16 @@ def test_build_pipeline_components_collection_url_root_correct(mock_aws):
         f"{_RASTER_MOD}.get_collection_url_root", return_value="https://data.ldn.auspatious.com/#dep_ls_geomad/"
     ):
         result = build_pipeline_components(
-            TILE, YEAR, VERSION, "data.ldn.auspatious.com", OWNER, "geomad", None, overwrite=True
+            TILE,
+            YEAR,
+            VERSION,
+            "data.ldn.auspatious.com",
+            OWNER,
+            "geomad",
+            None,
+            overwrite=True,
+            collection_url_root="https://data.ldn.auspatious.com/#dep_ls_geomad/",
+            s3_client=MagicMock(),
         )
     _, stac_creator, _ = result
     assert stac_creator._collection_url_root.startswith("https://")
