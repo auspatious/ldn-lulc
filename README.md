@@ -162,11 +162,24 @@ This will:
 https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
 
 
-## Source.Coop
+# Instances:
+## 1. Source.Coop
 
 Data product: https://source.coop/auspatious/geomad-sids
 
+2 regions.
+
 Info here: https://github.com/auspatious/ldn-lulc/Source.Coop_README.md
+
+
+## 2. Digital Earth Pacific
+
+Environments: Staging and Production.
+
+1 region.
+
+TODO: Detail DEP.
+
 
 ## Environment Variables
 

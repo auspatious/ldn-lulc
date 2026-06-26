@@ -721,7 +721,7 @@ def make_training_data(
         year: Year string (e.g. "2020").
         region: Either "pacific" or "non-pacific".
         training_data_version: Version string (e.g. "0-0-4").
-        geomad_version: GeoMAD version string (e.g. "0-2-1").
+        geomad_version: GeoMAD version string (e.g. "0-3-0").
         geomad_bucket: S3 bucket name for GeoMAD input.
         output_bucket: S3 bucket name for upload.
         country_of_interest: Dict mapping country name to ISO3 code.
@@ -953,7 +953,7 @@ def search_and_load_geomad_indices_dem(
         geopolygon: GeoDataFrame used to constrain the stac_load extent (the country geom).
         product_owner: Owner (e.g. "dep" or "ci", or override).
         bucket: S3 bucket name where the GeoMAD data is stored.
-        geomad_version: GeoMAD version string (e.g. "0-2-1").
+        geomad_version: GeoMAD version string (e.g. "0-3-0").
 
     Returns:
         Merged dataset with GeoMAD bands, spectral indices, elevation,

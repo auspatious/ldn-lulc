@@ -21,8 +21,8 @@ from ldn.utils import (
     LULC_VERSION,
     SENSOR,
     build_prefix,
+    get_collection_url_root,
     get_env_var,
-    get_public_https_base,
     load_stac_geoparquet_features,
     version_for_dataset,
 )
@@ -159,6 +159,12 @@ def create_collection(
     single_region: Annotated[
         bool, typer.Option(help="Whether to create a single-region collection (e.g. for Pacific only).")
     ],
+    collection_url_root: Annotated[
+        str | None,
+        typer.Option(
+            help="Optional collection URL root e.g. for a STAC API.",
+        ),
+    ],
     bucket: Annotated[
         str | None, typer.Option(help="S3 bucket to read the data from and write the collection JSON to.")
     ] = None,
@@ -183,19 +189,17 @@ def create_collection(
         raise ValueError("product_owner must be set if single_region is True.")
 
     version = version_for_dataset(dataset, geomad_version, lulc_version)
+    collection_url_root = collection_url_root or get_collection_url_root(
+        bucket, product_owner, sensor, dataset, version
+    )
+
     prefix = build_prefix(bucket, product_owner, sensor, dataset, version)
 
     item_collection = load_stac_geoparquet_features(bucket, f"{prefix}.parquet")
     extent = calc_stac_extent(item_collection)
     collection = _run_create_collection(dataset, extent, single_region)
 
-    # prefix = stac_geoparquet_url.split(bucket)[-1].lstrip("/").rsplit("/", 1)[0]
-    # # TODO: Use utils function to get prefix from bucket/url.
-    # bucket example: https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ls_geomad/test/ls_geomad.parquet
-    # prefix example: ls_geomad/test
-
-    public_url_root = get_public_https_base(bucket)
-    collection.normalize_hrefs(f"{public_url_root}/{prefix}")
+    collection.normalize_hrefs(collection_url_root)
 
     key = f"{prefix}/collection.json"
 
@@ -208,5 +212,4 @@ def create_collection(
         Body=json.dumps(collection_dict, indent=2).encode("utf-8"),
         ContentType="application/json",
     )
-
     print(f"Wrote collection to {key}")

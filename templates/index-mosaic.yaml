@@ -38,9 +38,23 @@ spec:
         # "geomad", or "lulc"
         value: "geomad"
         # value: "lulc"
-      - name: region
-        # "all", "pacific", or "non-pacific"
-        value: "all"
+      - name: geomad-version # Needed for both datasets because LULC depends on GeoMAD.
+        value: "0-3-0"
+      - name: lulc-version # Only needed for LULC dataset.
+        value: "0-0-4"
+      - name: bucket
+        value: "dep-public-data"
+      - name: single_region
+        value: "--single-region" # For single region products e.g. DEP.
+        # value: "--no-single-region" # For places with both regions e.g. Source Coop.
+      - name: product-owner
+        value: "dep" # required if single-region is true
+        # value: None # Leave as None for non-single-region products e.g. Source Coop.
+      - name: collection-url-root
+      # TODO: should this include the data version?
+        value: "https://stac.digitalearthpacific.org/collections/dep_ls_geomad" # DEP Prod
+        # value: "https://stac.staging.digitalearthpacific.io/collections/dep_ls_geomad" # DEP Staging
+        # value: None # For Source Coop, let collection-url-root default?
 
   templates:
     - name: workflow-entrypoint
@@ -72,8 +86,13 @@ spec:
           - index-to-stac-geoparquet
           - --dataset
           - "{{ workflow.parameters.dataset }}"
-          - --region
-          - "{{ workflow.parameters.region }}"
+          - --geomad-version
+          - "{{ workflow.parameters.geomad-version }}"
+          - --lulc-version
+          - "{{ workflow.parameters.lulc-version }}"
+          - "{{ workflow.parameters.single-region }}"
+          - "{{ workflow.parameters.product-owner }}"
+
 
       # Make the collection here because it depends on the index.
     - name: make-geomad-collection
@@ -81,15 +100,24 @@ spec:
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: 2Gi
+            cpu: 1
         command: [ldn]
         args:
           - create-collection
           - --dataset
           - "{{ workflow.parameters.dataset }}"
-          - --stac-geoparquet-url # TODO: Get from index output
-          - "{{ tasks.index-to-stac-geoparquet.outputs.result }}"
-          - --single-region # TODO: Get from index output
-          - "{{ tasks.index-to-stac-geoparquet.outputs.result }}"
+          - --geomad-version
+          - "{{ workflow.parameters.geomad-version }}"
+          - --lulc-version
+          - "{{ workflow.parameters.lulc-version }}"
+          - --product-owner
+          - "{{ workflow.parameters.product-owner }}"
+          - --collection-url-root
+          - "{{ workflow.parameters.collection-url-root }}"
+          - "{{ workflow.parameters.single-region }}"
 
     - name: make-mosaics
       activeDeadlineSeconds: 900 # 15 mins
@@ -106,3 +134,10 @@ spec:
           - make-mosaics
           - --dataset
           - "{{ workflow.parameters.dataset }}"
+          - --geomad-version
+          - "{{ workflow.parameters.geomad-version }}"
+          - --lulc-version
+          - "{{ workflow.parameters.lulc-version }}"
+          - --product-owner
+          - "{{ workflow.parameters.product-owner }}"
+          - "{{ workflow.parameters.single-region }}"

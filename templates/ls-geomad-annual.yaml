@@ -32,18 +32,29 @@ spec:
   arguments:
     parameters:
       - name: version
-        value: "0-2-1"
+        value: "0-3-0"
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc"
       - name: image-tag
         value: "latest"
+      - name: bucket
+        value: "dep-public-data"
       - name: region
         # Just run Pacific in DEP Argo instance.
         value: "pacific" # "all", "pacific", or "non-pacific"
+      - name: single-region
+        value: "--single-region" # For single region products e.g. DEP.
+        # value: "false" # For places with both regions e.g. Source Coop.
       - name: years
+        # Need to run in 8 years blocks because print-tasks output is too large.
         value: "2000-2008"
         # value: "2009-2016"
         # value: "2017-2025"
+      - name: collection-url-root
+      # TODO: should this include the data version?
+        value: "https://stac.digitalearthpacific.org/collections/dep_ls_geomad" # DEP Prod
+        # value: "https://stac.staging.digitalearthpacific.io/collections/dep_ls_geomad" # DEP Staging
+        # value: None # For Source Coop, let collection-url-root default?
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated
@@ -90,7 +101,14 @@ spec:
         command: [sh, -c]
         args:
           - |
-            ldn print-tasks --years "{{ workflow.parameters.years }}" --region "{{ workflow.parameters.region }}" --version-geomad "{{ workflow.parameters.version }}" --dataset geomad {{ workflow.parameters.overwrite }} > /tmp/tasks.json
+            ldn print-tasks \
+              --years "{{ workflow.parameters.years }}" \
+              --region "{{ workflow.parameters.region }}" \
+              --geomad-version "{{ workflow.parameters.version }}" \
+              --dataset geomad \
+              {{ workflow.parameters.overwrite }} \
+              --bucket "{{ workflow.parameters.bucket }}" \
+              > /tmp/tasks.json
       outputs:
         parameters:
           - name: tasks
@@ -136,12 +154,17 @@ spec:
           - run
           - --tile-id
           - "{{ inputs.parameters.tile-id }}"
+          - --bucket
+          - "{{ workflow.parameters.bucket }}"
           - --year
           - "{{ inputs.parameters.year }}"
           - --region
           - "{{ inputs.parameters.region }}"
+          - "{{ workflow.parameters.single-region }}"
           - --version
           - "{{ workflow.parameters.version }}"
+          - --collection-url-root
+          - "{{ workflow.parameters.collection-url-root }}"
           - --memory-limit
           - "{{= asInt(retries) == 0 ? '6GB' : '14GB'}}"
           - --n-workers

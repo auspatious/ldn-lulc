@@ -84,6 +84,10 @@ def run(
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
+    single_region: Annotated[
+        bool,
+        typer.Option(help="Whether to use the single region prefix for the collection_url_root (e.g. 'dep_ls_geomad')"),
+    ],
     bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
     product_owner: Annotated[str | None, typer.Option(help="Override the region-derived owner prefix.")] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
@@ -103,7 +107,13 @@ def run(
     threads_per_worker: Annotated[int, typer.Option()] = 16,
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
-    collection_url_root: Annotated[str | None, typer.Option(help="Override the default collection URL root.")] = None,
+    collection_url_root: Annotated[
+        str | None,
+        typer.Option(
+            help="Override the default collection URL root"
+            " e.g for a STAC API like 'https://stac.digitalearthpacific.org/collections/dep_ls_geomad'"
+        ),
+    ] = None,
     sensor: Annotated[str, typer.Option(help="Sensor name, e.g. 'ls'.")] = SENSOR,
 ) -> None:
     """Run GeoMAD processing on a single tile for a year.
@@ -170,7 +180,7 @@ def run(
 
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_id_tuple)
-
+    # This owner doesn't respect single_region because geomad always writes to an owner.
     owner = owner_for_region(region, product_owner)
 
     if decimated:
@@ -182,7 +192,7 @@ def run(
             "Integration test mode: using 5x5 pixel geobox and limiting to 3 items for very fast processing."
         )
         geobox = geobox[0:5, 0:5]
-        search_kwargs["max_items"] = 4
+        search_kwargs["max_items"] = 4  # Only need 3 but these get merged on solar day.
         n_workers = 1
         threads_per_worker = 1
         memory_limit = "1GB"
@@ -192,7 +202,10 @@ def run(
 
     configure_s3_access_profile()  # Access must be configured here for Dask.
 
-    collection_url_root = collection_url_root or get_collection_url_root(bucket, owner, sensor, GEOMAD_DATASET_ID)
+    collection_owner = owner if single_region else None
+    collection_url_root = collection_url_root or get_collection_url_root(
+        bucket, collection_owner, sensor, GEOMAD_DATASET_ID, version
+    )
 
     components = build_pipeline_components(
         tile_id_tuple,

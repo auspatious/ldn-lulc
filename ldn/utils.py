@@ -174,8 +174,8 @@ def get_stac_geoparquet_key(
         region: The region for which to build the prefix ('pacific' or 'non-pacific').
 
     Returns:
-        S3 key string e.g. 'auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet'
-        or 'ls_geomad/0-2-1/ls_geomad.parquet' for a standard bucket.
+        S3 key string e.g. 'auspatious/geomad-sids/ls_geomad/0-3-0/ls_geomad.parquet'
+        or 'ls_geomad/0-3-0/ls_geomad.parquet' for a standard bucket.
     """
     filename = dataset_prefix(product_owner, sensor, dataset) + ".parquet"
     prefix_with_sc = build_prefix(bucket, product_owner, sensor, dataset, version)
@@ -196,9 +196,9 @@ def get_stac_geoparquet_url(bucket: str, key: str) -> str:
         key: The S3 key for the STAC-Geoparquet file.
 
     Returns:
-        URL to the STAC-Geoparquet file. e.g. https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet
+        URL to the STAC-Geoparquet file. e.g. https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-3-0/ls_geomad.parquet
     """
-    # https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet
+    # https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-3-0/ls_geomad.parquet
     # https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ls_geomad/test-integration/ls_geomad.parquet
     return f"{get_write_url_base(bucket)}/{key}"
 
@@ -239,11 +239,11 @@ def source_coop_prefix(dataset_id: Literal["geomad", "lulc"]) -> str:
 
 def version_for_dataset(
     dataset: Literal["geomad", "lulc"],
-    version_geomad: str,
-    version_lulc: str,
+    geomad_version: str,
+    lulc_version: str,
 ) -> str:
     """Return the version string for the given dataset name."""
-    return version_geomad if dataset == GEOMAD_DATASET_ID else version_lulc
+    return geomad_version if dataset == GEOMAD_DATASET_ID else lulc_version
 
 
 def parse_tile_id(tile_id: str) -> tuple[int, int]:
@@ -295,12 +295,12 @@ def get_public_https_base(bucket: str) -> str:
     return get_write_url_base(bucket)
 
 
-# TODO: We need to write a collection JSON. One for both regions together.
 def get_collection_url_root(
     bucket: str,
-    owner: str,
+    owner: str | None,
     sensor: str,
-    dataset_id: str,
+    dataset: Literal["geomad", "lulc"],
+    version: str,
 ) -> str:
     """Return the collection URL root for STAC metadata.
 
@@ -313,14 +313,18 @@ def get_collection_url_root(
         bucket: The S3 bucket name or custom domain.
         owner: The owner prefix (e.g. 'dep', 'ci').
         sensor: The sensor string (e.g. 'ls').
-        dataset_id: The dataset ID (e.g. 'geomad').
+        dataset: The dataset ID (e.g. 'geomad').
+        version: The dataset version string (e.g. '0-3-0').
 
     Returns:
         A public HTTPS URL string suitable for use as a STAC collection URL root.
     """
-    base = get_public_https_base(bucket)
-    # TODO: Need to pass single_region to determine whether to use owner prefix or not.
-    return f"{base}/#{owner}_{sensor}_{dataset_id}/"  # TODO: There should be one collection for both regions.
+    public_url_root = get_public_https_base(bucket)
+
+    prefix = build_prefix(bucket, owner, sensor, dataset, version)
+
+    # TODO: Validate this. The default in DEP tools is https://stac.staging.digitalearthpacific.io/collections
+    return f"{public_url_root}/collections/{prefix}/"  # Version in root?
 
 
 def get_full_path_prefix(bucket: str) -> str:

@@ -11,9 +11,8 @@
 # 7. Run make-mosaic for geomad and LULC datasets
 # 8. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
-VERSION_GEOMAD := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)");
-VERSION_LULC := $(shell python3 -c "from ldn.utils import LULC_VERSION; print(LULC_VERSION)");
-VERSION_MODEL := $(shell python3 -c "from ldn.utils import MODEL_VERSION; print(MODEL_VERSION)");
+GEOMAD_VERSION := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)");
+LULC_VERSION := $(shell python3 -c "from ldn.utils import LULC_VERSION; print(LULC_VERSION)");
 
 PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.training_data import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))");
 
@@ -50,7 +49,7 @@ geomad-2-regions-decimated:
 			--tile-id $$tile_id \
 			--region $$region \
 			--year 2010 \
-			--version $(VERSION_GEOMAD) \
+			--version $(GEOMAD_VERSION) \
 			--decimated \
 			--overwrite; \
 	done;
@@ -66,7 +65,7 @@ geomad-2000-2025:
 				--tile-id $$tile_id \
 				--region $$region \
 				--year $$year \
-				--version $(VERSION_GEOMAD) \
+				--version $(GEOMAD_VERSION) \
 				--overwrite; \
 		done; \
 	done;
@@ -76,8 +75,8 @@ index-geomad:
 	ldn index-to-stac-geoparquet \
 	--dataset "geomad" \
 	--region "all" \
-	--version-geomad $(VERSION_GEOMAD) \
-	--version-lulc $(VERSION_LULC);
+	--geomad-version $(GEOMAD_VERSION) \
+	--lulc-version $(LULC_VERSION);
 
 
 #### Training Data
@@ -115,8 +114,8 @@ predict-lulc-test-tiles-2020:
 		ldn lulc run \
 			--tile-id $$tile_id \
 			--year 2020 \
-			--version $(VERSION_LULC) \
-			--version-geomad $(VERSION_GEOMAD) \
+			--version $(LULC_VERSION) \
+			--geomad-version $(GEOMAD_VERSION) \
 			--region $$region \
 			$(DECIMATED) \
 			--overwrite; \
@@ -129,8 +128,8 @@ lulc-2-regions-decimated:
 		ldn lulc run \
 			--tile-id $$tile_id \
 			--year 2010 \
-			--version $(VERSION_LULC) \
-			--version-geomad $(VERSION_GEOMAD) \
+			--version $(LULC_VERSION) \
+			--geomad-version $(GEOMAD_VERSION) \
 			--region $$region \
 			--decimated \
 			--overwrite; \
@@ -143,8 +142,8 @@ index-lulc:
 	ldn index-to-stac-geoparquet \
 	--dataset "lulc" \
 	--region "all" \
-	--version-geomad $(VERSION_GEOMAD) \
-	--version-lulc $(VERSION_LULC);
+	--geomad-version $(GEOMAD_VERSION) \
+	--lulc-version $(LULC_VERSION);
 
 
 # 4. Visualisation
@@ -189,19 +188,19 @@ test-geomad-ls7-source-coop:
 index-geomad-source-coop-test:
 	ldn index-to-stac-geoparquet \
 	--dataset "geomad" \
-	--version-geomad $(SOURCE_TEST_VERSION);
+	--geomad-version $(SOURCE_TEST_VERSION);
 
 mosaic-geomad-source-coop-test:
 	ldn make-mosaics \
 	--dataset geomad \
-	--version-geomad $(SOURCE_TEST_VERSION);
+	--geomad-version $(SOURCE_TEST_VERSION);
 
 lulc-source-coop-test:
 	ldn lulc run \
 		--tile-id $(SOURCE_TEST_TILE) \
 		--year 2025 \
 		--version $(SOURCE_TEST_VERSION_P) \
-		--version-geomad $(SOURCE_TEST_VERSION) \
+		--geomad-version $(SOURCE_TEST_VERSION) \
 		--region pacific \
 		--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 		--no-decimated \
@@ -210,14 +209,14 @@ lulc-source-coop-test:
 index-lulc-source-coop-test:
 	ldn index-to-stac-geoparquet \
 	--dataset "lulc" \
-	--version-geomad $(SOURCE_TEST_VERSION) \
-	--version-lulc $(SOURCE_TEST_VERSION_P);
+	--geomad-version $(SOURCE_TEST_VERSION) \
+	--lulc-version $(SOURCE_TEST_VERSION_P);
 
 mosaic-lulc-source-coop-test:
 	ldn make-mosaics \
 	--dataset lulc \
-	--version-geomad $(SOURCE_TEST_VERSION) \
-	--version-lulc $(SOURCE_TEST_VERSION_P);
+	--geomad-version $(SOURCE_TEST_VERSION) \
+	--lulc-version $(SOURCE_TEST_VERSION_P);
 
 
 # poetry run ldn geomad run --tile-id 10_20 --year 2025 --version test-integration --region pacific --integration-test --overwrite
@@ -245,10 +244,10 @@ geomad-count-9999-test-integration:
 # 	--country-code "PNG" \
 # 	--geomad-version 0-2-1;
 
-# poetry run ldn index-to-stac-geoparquet --dataset "geomad" --version-geomad test-integration --single-region --product-owner dep;
-# poetry run ldn index-to-stac-geoparquet --dataset "geomad" --version-geomad 0-3-0-test --single-region --product-owner dep;
-# poetry run ldn make-mosaics --dataset geomad --version-geomad test-integration --single-region --product-owner dep;
-# poetry run ldn make-mosaics --dataset geomad --version-geomad 0-3-0-test --single-region --product-owner dep;
+# poetry run ldn index-to-stac-geoparquet --dataset "geomad" --geomad-version test-integration --single-region --product-owner dep;
+# poetry run ldn index-to-stac-geoparquet --dataset "geomad" --geomad-version 0-3-0-test --single-region --product-owner dep;
+# poetry run ldn make-mosaics --dataset geomad --geomad-version test-integration --single-region --product-owner dep;
+# poetry run ldn make-mosaics --dataset geomad --geomad-version 0-3-0-test --single-region --product-owner dep;
 
 
 create-geomad-collection-single-region:

@@ -185,8 +185,8 @@ def print_tasks(
     years: Annotated[str, typer.Option()],
     region: Annotated[Literal["all", "pacific", "non-pacific"], typer.Option()] = "all",
     dataset: Annotated[Literal["geomad", "lulc"], typer.Option(help="Dataset name.")] = "geomad",
-    version_geomad: Annotated[str, typer.Option(help="Version string for GeoMAD dataset.")] = GEOMAD_VERSION,
-    version_lulc: Annotated[str, typer.Option(help="Version string for LULC dataset.")] = LULC_VERSION,
+    geomad_version: Annotated[str, typer.Option(help="Version string for GeoMAD dataset.")] = GEOMAD_VERSION,
+    lulc_version: Annotated[str, typer.Option(help="Version string for LULC dataset.")] = LULC_VERSION,
     bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
     product_owner: Annotated[str | None, typer.Option(help="Override the region-derived owner prefix.")] = None,
     overwrite: Annotated[bool, typer.Option(help="If true, skip filtering existing outputs.")] = False,
@@ -212,7 +212,7 @@ def print_tasks(
 
     # Filter out tasks whose output already exists in S3
     if not overwrite:
-        version = version_for_dataset(dataset, version_geomad, version_lulc)
+        version = version_for_dataset(dataset, geomad_version, lulc_version)
         existing = _find_existing_tasks(
             input_tasks,
             version,
@@ -266,11 +266,8 @@ def _load_stac_docs(bucket: str, keys: list[str]) -> list[dict]:
 @app.command()
 def index_to_stac_geoparquet(
     dataset: Literal["geomad", "lulc"] = typer.Option(..., help="Dataset type to index: 'geomad', or 'lulc'."),
-    # region: Literal["all", "pacific", "non-pacific"] = typer.Option(
-    #     "all", help="Region to index: 'all', 'pacific', or 'non-pacific'."
-    # ),
-    version_geomad: str = typer.Option(GEOMAD_VERSION, help="Version string for GeoMAD dataset."),
-    version_lulc: str = typer.Option(LULC_VERSION, help="Version string for LULC dataset."),
+    geomad_version: str = typer.Option(GEOMAD_VERSION, help="Version string for GeoMAD dataset."),
+    lulc_version: str = typer.Option(LULC_VERSION, help="Version string for LULC dataset."),
     bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
     product_owner: str | None = typer.Option(None, help="Required if single_region is True."),
     single_region: bool = typer.Option(
@@ -278,7 +275,7 @@ def index_to_stac_geoparquet(
         help="Whether to use the single region prefix (e.g. 'dep_ls_geomad') or the generic prefix (e.g. 'ls_geomad').",
     ),
     sensor: str = typer.Option(SENSOR, help="Sensor name, e.g. 'ls' for Landsat."),
-) -> str:
+) -> None:
     """Build STAC-Geoparquet indexes from STAC items for given dataset and region(s).
     Find all STAC items across all targets and write a single combined Geoparquet.
 
@@ -288,8 +285,8 @@ def index_to_stac_geoparquet(
     Args:
         dataset: Which dataset to index, e.g. 'geomad' or 'lulc'.
         region: Which region to index, e.g. 'pacific', 'non-pacific', or 'all'.
-        version_geomad: Version string for GeoMAD dataset (used in S3 key paths).
-        version_lulc: Version string for LULC dataset (used in S3 key paths).
+        geomad_version: Version string for GeoMAD dataset (used in S3 key paths).
+        lulc_version: Version string for LULC dataset (used in S3 key paths).
         bucket: S3 bucket to read from and write to. If not provided, uses BUCKET env var.
         product_owner: Optional override for the product owner prefix (derived from region if not set).
         single_region: Whether to use the single region prefix (e.g. 'dep_ls_geomad') or the generic many-region
@@ -299,7 +296,7 @@ def index_to_stac_geoparquet(
             The URL to the generated STAC-Geoparquet file.
     """
     bucket = bucket or get_env_var("BUCKET")  # Default
-    version = version_for_dataset(dataset, version_geomad, version_lulc)
+    version = version_for_dataset(dataset, geomad_version, lulc_version)
 
     prefixes_to_index: list[str] = []
     parquet_key: str = ""
@@ -348,7 +345,6 @@ def index_to_stac_geoparquet(
     logger.info(f"Writing combined STAC-Geoparquet ({len(all_docs)} items) to {geomad_stac_geoparquet_url}")
     write_sync(parquet_key, all_docs, store=store)
     logger.info(f"Done. Wrote {len(all_docs)} items to {geomad_stac_geoparquet_url}")
-    return geomad_stac_geoparquet_url
 
 
 def _stac_self_link(feature: dict) -> str:
@@ -440,11 +436,11 @@ def make_mosaics(
             help="Comma-separated years or range (e.g. '2020,2021' or '2010-2023'). Defaults to all years in the index."
         ),
     ] = None,
-    version_geomad: Annotated[
+    geomad_version: Annotated[
         str,
         typer.Option(help="Version string for GeoMAD dataset."),
     ] = GEOMAD_VERSION,
-    version_lulc: Annotated[
+    lulc_version: Annotated[
         str,
         typer.Option(help="Version string for LULC dataset."),
     ] = LULC_VERSION,
@@ -465,7 +461,7 @@ def make_mosaics(
     logger.info(f"Making mosaics for dataset '{dataset}'")
     bucket = bucket or get_env_var("BUCKET")  # Default
     requested_years: list[int] | None = parse_years(years) if years is not None else None
-    version = version_for_dataset(dataset, version_geomad, version_lulc)
+    version = version_for_dataset(dataset, geomad_version, lulc_version)
 
     if single_region and not product_owner:
         raise LdnError("product_owner must be provided when single_region is True.")

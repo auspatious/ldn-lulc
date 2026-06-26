@@ -38,7 +38,7 @@ spec:
       - name: lulc-version
         value: "0-0-4"
       - name: geomad-version
-        value: "0-2-1"
+        value: "0-3-0"
       - name: region
         # Just run Pacific in DEP Argo instance.
         value: "pacific" # "all", "pacific", or "non-pacific"
@@ -96,7 +96,7 @@ spec:
         command: [sh, -c]
         args:
           - |
-            ldn print-tasks --years "{{ workflow.parameters.years }}" --region "{{ workflow.parameters.region }}" --version-lulc "{{ workflow.parameters.lulc-version }}" --dataset lulc {{ workflow.parameters.overwrite }} > /tmp/tasks.json
+            ldn print-tasks --years "{{ workflow.parameters.years }}" --region "{{ workflow.parameters.region }}" --lulc-version "{{ workflow.parameters.lulc-version }}" --dataset lulc {{ workflow.parameters.overwrite }} > /tmp/tasks.json
       outputs:
         parameters:
           - name: tasks
@@ -133,7 +133,7 @@ spec:
           - "{{ inputs.parameters.region }}"
           - --version
           - "{{ workflow.parameters.lulc-version }}"
-          - --version-geomad
+          - --geomad-version
           - "{{ workflow.parameters.geomad-version }}"
           # Let model_path default
           # - --model-path

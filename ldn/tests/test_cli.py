@@ -220,8 +220,8 @@ class TestIndexToStacGeoparquet:
 
         index_to_stac_geoparquet(
             dataset="geomad",
-            version_geomad="0-0-1",
-            version_lulc="0-0-1",
+            geomad_version="0-0-1",
+            lulc_version="0-0-1",
             bucket="dep-public-staging",
             product_owner=None,
             single_region=False,
@@ -243,8 +243,8 @@ class TestIndexToStacGeoparquet:
         with pytest.raises(LdnError, match="No STAC items found"):
             index_to_stac_geoparquet(
                 dataset="geomad",
-                version_geomad="0-0-1",
-                version_lulc="0-0-1",
+                geomad_version="0-0-1",
+                lulc_version="0-0-1",
                 bucket="dep-public-staging",
                 product_owner=None,
                 single_region=False,
