@@ -12,10 +12,7 @@ s3_client = aws_session.client("s3", region_name=aws_session.region_name)
 
 credential_provider = Boto3CredentialProvider(aws_session)
 
-# Needed for Landsat access. Not sure if requester_pays blocks other access.
-_configure_s3_access = configure_s3_access(
-    requester_pays=True,
-    profile=profile,
-    region_name=aws_session.region_name,
-    aws_session=aws_session,
-)
+
+def configure_s3_access_profile():
+    """Needs to be a function to be run before Dask workers are started. Running at module doesn't work."""
+    configure_s3_access(requester_pays=True, profile=os.environ.get("AWS_PROFILE"))

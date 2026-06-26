@@ -221,7 +221,6 @@ mosaic-lulc-source-coop-test:
 
 
 # poetry run ldn geomad run --tile-id 10_20 --year 2025 --version test-integration --region pacific --integration-test --overwrite
-# Test 9999 count nodata on this tile https://stac.staging.digitalearthpacific.io/collections/dep_ls_geomad/items/dep_ls_geomad_046_020_2025
 geomad-count-9999-test:
 	poetry run ldn geomad run \
 		--tile-id 046_020 \

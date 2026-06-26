@@ -10,7 +10,7 @@ from dep_tools.loaders import OdcLoader
 from dep_tools.searchers import PystacSearcher
 from typing_extensions import Annotated
 
-from ldn.aws import s3_client
+from ldn.aws import configure_s3_access_profile, s3_client
 from ldn.geomad import (
     LANDSAT_BANDS,
     LANDSAT_OFFSET,
@@ -190,8 +190,7 @@ def run(
         # mask_clouds_kwargs["filters"] = None
         # geomad_options["maxiters"] = 1
 
-    # Configure for dask and reading data
-    # _ = configure_s3_access(requester_pays=True, profile=get_env_var("AWS_PROFILE"), region_name=AWS_REGION)
+    configure_s3_access_profile()  # Access must be configured here for Dask.
 
     collection_url_root = collection_url_root or get_collection_url_root(bucket, owner, sensor, GEOMAD_DATASET_ID)
 
@@ -239,7 +238,6 @@ def run(
         fail_on_error=False,  # We don't control the Landsat data so it may have issues. We load what we can.
     )
 
-    # TODO: Make count band use 255 as nodata, rather than 0.
     processor = GeoMADProcessor(
         geomad_options=dict(
             work_chunks=(100, 100),

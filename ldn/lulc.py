@@ -22,6 +22,7 @@ from rustac import search_sync
 from sklearn.ensemble import RandomForestClassifier
 from typing_extensions import Annotated
 
+from ldn.aws import configure_s3_access_profile
 from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
 from ldn.raster import (
@@ -458,8 +459,7 @@ def run_classify_task(
         threads_per_worker = 1
         memory_limit = "1GB"
 
-    # logger.info("Configuring S3 access")
-    # _ = configure_s3_access(requester_pays=True, profile=get_env_var("AWS_PROFILE"))
+    configure_s3_access_profile()  # Access must be configured here for Dask.
 
     logger.info("Loading model")
     loaded_model = _load_joblib_model(model_path)
