@@ -9,7 +9,6 @@ from ldn.cli import (
     _find_stac_items_s3,
     _load_stac_docs,
     _stac_self_link,
-    _write_mosaic,
     index_to_stac_geoparquet,
 )
 from ldn.tests.test_mosaic import _make_feature
@@ -192,34 +191,6 @@ class TestLoadStacDocs:
         mock_load_async.return_value = []
         mock_run.return_value = []
         assert _load_stac_docs("bucket", []) == []
-
-
-# _write_mosaic
-
-
-class TestWriteMosaic:
-    @patch("ldn.cli.s3_client")
-    def test_puts_to_correct_bucket_and_key(self, mock_s3_client):
-        mosaic = MagicMock()
-        mosaic.model_dump_json.return_value = '{"tiles": []}'
-
-        _write_mosaic(mosaic, "my-bucket", "path/to/mosaic.json")
-
-        call_kwargs = mock_s3_client.put_object.call_args.kwargs
-        assert call_kwargs["Bucket"] == "my-bucket"
-        assert call_kwargs["Key"] == "path/to/mosaic.json"
-        assert call_kwargs["ContentType"] == "application/json"
-
-    @patch("ldn.cli.s3_client")
-    def test_body_is_utf8_encoded_json(self, mock_s3_client):
-        mosaic = MagicMock()
-        mosaic.model_dump_json.return_value = '{"minzoom": 5}'
-
-        _write_mosaic(mosaic, "bucket", "key.json")
-
-        body = mock_s3_client.put_object.call_args.kwargs["Body"]
-        assert isinstance(body, bytes)
-        assert body.decode("utf-8") == '{"minzoom": 5}'
 
 
 class TestIndexToStacGeoparquet:

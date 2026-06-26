@@ -3,7 +3,6 @@ from unittest.mock import patch
 import pytest
 
 from ldn.utils import (
-    AWS_REGION,
     GEOMAD_DATASET_ID,
     NON_PACIFIC_OWNER,
     PACIFIC_OWNER,
@@ -63,7 +62,6 @@ WITH_SOURCE_COOP = (SOURCE_COOP_URL, SOURCE_COOP_PREFIX_GEOMAD, SOURCE_COOP_PREF
 @pytest.fixture
 def base_patches():
     with (
-        patch(f"{MODULE}.AWS_REGION", MOCK_REGION),
         patch(f"{MODULE}.GEOMAD_DATASET_ID", MOCK_DATASET_ID),
     ):
         yield
@@ -245,7 +243,7 @@ def test_get_full_path_prefix(bucket, is_source_coop_bucket, expected):
         (
             "dep-public-staging",
             False,
-            f"https://s3.{AWS_REGION}.amazonaws.com/dep-public-staging/#dep_ls_geomad/",
+            "https://s3.us-west-2.amazonaws.com/dep-public-staging/#dep_ls_geomad/",
         ),
     ],
 )
@@ -269,7 +267,7 @@ def test_get_collection_url_root(bucket, is_source_coop_bucket, expected):
         (
             "dep-public-staging",
             False,
-            f"https://s3.{AWS_REGION}.amazonaws.com/dep-public-staging",
+            "https://s3.us-west-2.amazonaws.com/dep-public-staging",
         ),
     ],
 )
