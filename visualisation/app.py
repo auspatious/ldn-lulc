@@ -25,7 +25,7 @@ from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
 
-GEOMAD_VERSION = "0-2-1"
+GEOMAD_VERSION = "0-3-0"
 PREDICTION_VERSION = "0-0-4-test"  # TODO: Update.
 
 GEOMAD_MOSAIC_BASE = f"https://source.coop/auspatious/geomad-sids/ls_geomad/{GEOMAD_VERSION}/mosaics"

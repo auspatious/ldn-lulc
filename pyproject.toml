@@ -23,6 +23,8 @@ ldn = "ldn.cli:app"
 select = ["E", "F", "I"]
 [tool.ruff]
 line-length = 120
+[tool.ruff.lint.per-file-ignores]
+"ldn/cli.py" = ["E402", "I001"]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
@@ -46,6 +48,7 @@ dask = {extras = ["distributed"], version = "^2026.3.0"}
 prometheus-client = "^0.24.1"
 joblib = "^1.5.3"
 requests = "^2.33.1"
+pystac = "^1.14.3"
 
 [tool.poetry.group.visualisation.dependencies]
 boto3 = ">=1.42.31,<2.0.0"

@@ -3,7 +3,7 @@ from typing import Literal
 
 import numpy as np
 import xarray as xr
-from dep_tools.aws import object_exists
+from dep_tools.aws import BaseClient, object_exists
 from dep_tools.namers import S3ItemPath
 from dep_tools.stac_utils import StacCreator
 from dep_tools.utils import bbox_across_180, join_path_or_url, search_across_180
@@ -22,8 +22,7 @@ from ldn.utils import (
     SENSOR,
     WGS84,
     LdnError,
-    get_collection_url_root,
-    get_full_path_prefix,
+    get_public_url_base,
 )
 
 logger = logging.getLogger(__name__)
@@ -307,12 +306,14 @@ def build_pipeline_components(
     dataset_id: Literal["geomad", "lulc"],
     source_coop_prefix: str | None,
     overwrite: bool,
+    collection_url_root: str,
+    s3_client: BaseClient,
 ) -> tuple[PrefixedS3ItemPath, StacCreator, AwsDsCogWriter] | None:
     """Build shared pipeline components for GeoMAD and classify tasks.
 
     Returns None if the item already exists and overwrite is False.
     """
-    full_path_prefix = get_full_path_prefix(bucket)
+    full_path_prefix = get_public_url_base(bucket)
 
     itempath = PrefixedS3ItemPath(
         key_prefix=source_coop_prefix,
@@ -334,13 +335,14 @@ def build_pipeline_components(
     logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
 
     stac_creator = StacCreator(
-        collection_url_root=get_collection_url_root(bucket, owner, SENSOR, dataset_id),
+        collection_url_root=collection_url_root,
         itempath=itempath,
         with_raster=True,
     )
     writer = AwsDsCogWriter(
         itempath,
         write_multithreaded=True,
+        client=s3_client,
     )
 
     return itempath, stac_creator, writer

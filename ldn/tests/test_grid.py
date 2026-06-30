@@ -1,68 +1,26 @@
+import pytest
+from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
+
 from ldn.cli_grid import list_countries
-
-ldn_countries = {
-    "American Samoa": "ASM",
-    "Anguilla": "AIA",
-    "Antigua and Barbuda": "ATG",
-    "Aruba": "ABW",
-    "Bahamas": "BHS",
-    "Barbados": "BRB",
-    "Belize": "BLZ",
-    "Bermuda": "BMU",
-    "British Virgin Islands": "VGB",
-    "Cabo Verde": "CPV",
-    "Cayman Islands": "CYM",
-    "Comoros": "COM",
-    "Cook Islands": "COK",
-    "Cuba": "CUB",
-    "Curaçao": "CUW",
-    "Dominica": "DMA",
-    "Dominican Republic": "DOM",
-    "Fiji": "FJI",
-    "French Polynesia": "PYF",
-    "Grenada": "GRD",
-    "Guadeloupe": "GLP",
-    "Guam": "GUM",
-    "Guinea-Bissau": "GNB",
-    "Guyana": "GUY",
-    "Haiti": "HTI",
-    "Jamaica": "JAM",
-    "Kiribati": "KIR",
-    "Maldives": "MDV",
-    "Marshall Islands": "MHL",
-    "Martinique": "MTQ",
-    "Mauritius": "MUS",
-    "Micronesia": "FSM",
-    "Montserrat": "MSR",
-    "Nauru": "NRU",
-    "New Caledonia": "NCL",
-    "Niue": "NIU",
-    "Northern Mariana Islands": "MNP",
-    "Palau": "PLW",
-    "Papua New Guinea": "PNG",
-    "Pitcairn Islands": "PCN",
-    "Puerto Rico": "PRI",
-    "Saint Kitts and Nevis": "KNA",
-    "Saint Lucia": "LCA",
-    "Saint Vincent and the Grenadines": "VCT",
-    "Samoa": "WSM",
-    "Seychelles": "SYC",
-    "Singapore": "SGP",
-    "Sint Maarten": "SXM",
-    "Solomon Islands": "SLB",
-    "Suriname": "SUR",
-    "São Tomé and Príncipe": "STP",
-    "Timor-Leste": "TLS",
-    "Tokelau": "TKL",
-    "Tonga": "TON",
-    "Trinidad and Tobago": "TTO",
-    "Turks and Caicos Islands": "TCA",
-    "Tuvalu": "TUV",
-    "Virgin Islands, U.S.": "VIR",
-    "Vanuatu": "VUT",
-    "Wallis and Futuna": "WLF",
-}
+from ldn.utils import ALL_COUNTRIES, NON_DEP_COUNTRIES, LdnError
 
 
-def test_list_countries() -> None:
-    assert list_countries() == ldn_countries
+@pytest.mark.parametrize(
+    "grids,expected_source",
+    [
+        ("all", ALL_COUNTRIES),
+        ("non-pacific", NON_DEP_COUNTRIES),
+        ("pacific", DEP_COUNTRIES_AND_CODES),
+    ],
+)
+def test_list_countries_returns_sorted_source_dict(grids, expected_source):
+    assert list_countries(grids) == dict(sorted(expected_source.items()))
+
+
+def test_list_countries_default_is_all():
+    assert list_countries() == dict(sorted(ALL_COUNTRIES.items()))
+
+
+def test_list_countries_invalid_grid_raises():
+    with pytest.raises(LdnError, match="Invalid grid option"):
+        list_countries(grids="invalid")  # type: ignore[arg-type]

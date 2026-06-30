@@ -17,12 +17,12 @@ from dep_tools.utils import _fix_geometry
 from geopandas import GeoDataFrame
 from joblib import load as joblib_load
 from odc.geo.geobox import GeoBox
-from odc.stac import configure_s3_access
 from pystac import Item, ItemCollection
 from rustac import search_sync
 from sklearn.ensemble import RandomForestClassifier
 from typing_extensions import Annotated
 
+from ldn.aws import configure_s3_access_profile
 from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
 from ldn.raster import (
@@ -379,7 +379,7 @@ def run_classify_task(
     tile_id: Annotated[str, typer.Option()],
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
-    version_geomad: Annotated[str, typer.Option()],
+    geomad_version: Annotated[str, typer.Option()],
     region: Literal["pacific", "non-pacific"],
     bucket: str,
     owner: str,
@@ -404,7 +404,7 @@ def run_classify_task(
         tile_id: Grid tile identifier (e.g. "136_142").
         year: Year string (e.g. "2020").
         version: Output version string (e.g. "0-0-1").
-        version_geomad: Version of the GeoMAD data to use (e.g. "0-0-1").
+        geomad_version: Version of the GeoMAD data to use (e.g. "0-0-1").
         region: Grid region, either "pacific" or "non-pacific".
         bucket: S3 bucket for output COGs, STAC metadata, and input GeoMAD source data.
         owner: Output prefix for paths (e.g. "dep" or "ci" or owner override).
@@ -425,16 +425,20 @@ def run_classify_task(
         f"memory_limit={memory_limit}, xy_chunk_size={xy_chunk_size}"
     )
 
-    if version_geomad != GEOMAD_VERSION:
+    if geomad_version != GEOMAD_VERSION:
         logger.info(
-            f"Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({version_geomad})."
+            f"Overriding the latest GeoMAD version ({GEOMAD_VERSION}) with the specified version ({geomad_version})."
         )
     if version != LULC_VERSION:
         logger.info(
             f"Overriding the latest LULC prediction version ({LULC_VERSION}) with the specified version ({version})."
         )
 
-    geomad_stac_geoparquet_url = get_stac_geoparquet_url(bucket, version_geomad, "geomad", single_region)
+    # geomad_stac_geoparquet_key = get_stac_geoparquet_key(
+    #     bucket, single_region, product_owner, sensor, "geomad", geomad_version
+    # )
+    geomad_stac_geoparquet_key = ""  # TODO: Fix this.
+    geomad_stac_geoparquet_url = get_stac_geoparquet_url(bucket, geomad_stac_geoparquet_key)
 
     tile_id_tuple = parse_tile_id(tile_id)
 
@@ -455,8 +459,7 @@ def run_classify_task(
         threads_per_worker = 1
         memory_limit = "1GB"
 
-    logger.info("Configuring S3 access")
-    configure_s3_access(cloud_defaults=True)
+    configure_s3_access_profile()  # Access must be configured here for Dask.
 
     logger.info("Loading model")
     loaded_model = _load_joblib_model(model_path)

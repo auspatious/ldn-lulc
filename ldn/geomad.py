@@ -255,9 +255,6 @@ def _to_reflectance(da: DataArray) -> DataArray:
 
 def mask_blue_white_cloud(
     ds: Dataset,
-    blue_band: str = "blue",
-    green_band: str = "green",
-    red_band: str = "red",
     nodata_value: int = 0,
 ) -> Dataset:
     """Mask hard white cloud missed by CFMask using spectral indices.
@@ -269,14 +266,13 @@ def mask_blue_white_cloud(
 
     Args:
         ds: Dataset with unscaled Collection 2 SR bands and QA bands.
-        blue_band: Name of blue band in ds.
-        green_band: Name of green band in ds.
-        red_band: Name of red band in ds.
-        nodata_value: Fill value for masked pixels (0 = C2 SR fill convention).
 
     Returns:
         New dataset. Masked spectral pixels set to nodata_value. QA unchanged.
     """
+    blue_band = "blue"
+    green_band = "green"
+    red_band = "red"
     spectral_bands = [b for b in ds.data_vars if b not in qa_bands]
 
     required = {blue_band, green_band, red_band}
@@ -379,6 +375,7 @@ class GeoMADProcessor(Processor):
 
 
 # This is a generic function used be geomad creation and lulc classification tasks.
+# TODO: Move it to raster.py
 class AwsStacTask(AreaTask):
     """Area task with search + STAC creation/writing for AWS workflows."""
 

@@ -8,9 +8,9 @@ from dask.distributed import KilledWorker
 from dep_tools.exceptions import EmptyCollectionError
 from dep_tools.loaders import OdcLoader
 from dep_tools.searchers import PystacSearcher
-from odc.stac import configure_s3_access
 from typing_extensions import Annotated
 
+from ldn.aws import configure_s3_access_profile, s3_client
 from ldn.geomad import (
     LANDSAT_BANDS,
     LANDSAT_OFFSET,
@@ -29,8 +29,10 @@ from ldn.utils import (
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     LS7_YEAR_THRESHOLD,
+    SENSOR,
     SOURCE_COOP_PREFIX_GEOMAD,
     get_env_var,
+    get_public_url_base,
     is_bucket_source_coop,
     owner_for_region,
     parse_tile_id,
@@ -83,6 +85,10 @@ def run(
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
+    single_region: Annotated[
+        bool,
+        typer.Option(help="Whether to use the single region prefix for the collection_url_root (e.g. 'dep_ls_geomad')"),
+    ],
     bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
     product_owner: Annotated[str | None, typer.Option(help="Override the region-derived owner prefix.")] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
@@ -102,6 +108,14 @@ def run(
     threads_per_worker: Annotated[int, typer.Option()] = 16,
     xy_chunk_size: Annotated[int, typer.Option()] = 2048,
     geomad_threads: Annotated[int, typer.Option()] = 10,
+    collection_url_root: Annotated[
+        str | None,
+        typer.Option(
+            help="Override the default collection URL root"
+            " e.g for a STAC API like 'https://stac.digitalearthpacific.org/collections/dep_ls_geomad'"
+        ),
+    ] = None,
+    sensor: Annotated[str, typer.Option(help="Sensor name, e.g. 'ls'.")] = SENSOR,
 ) -> None:
     """Run GeoMAD processing on a single tile for a year.
 
@@ -167,7 +181,7 @@ def run(
 
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_id_tuple)
-
+    # This owner doesn't respect single_region because geomad always writes to an owner.
     owner = owner_for_region(region, product_owner)
 
     if decimated:
@@ -187,21 +201,29 @@ def run(
         # mask_clouds_kwargs["filters"] = None
         # geomad_options["maxiters"] = 1
 
-    # Configure for dask and reading data
-    _ = configure_s3_access(requester_pays=True)
+    configure_s3_access_profile()  # Access must be configured here for Dask.
+
+    # TODO: Could this block be a function because it will be done in cli_collection.py?
+    _is_source_coop = is_bucket_source_coop(bucket)
+    public_url = get_public_url_base(bucket)
+    if _is_source_coop:
+        public_url = f"{public_url}/{SOURCE_COOP_PREFIX_GEOMAD}"
+    collection_url_root = collection_url_root or f"{public_url}/collections"
 
     components = build_pipeline_components(
         tile_id_tuple,
         year,
         version,
         bucket,
-        owner,
+        owner,  # This owner respects single_region because geomad always writes to an owner.
         GEOMAD_DATASET_ID,
-        SOURCE_COOP_PREFIX_GEOMAD if is_bucket_source_coop(bucket) else None,
+        SOURCE_COOP_PREFIX_GEOMAD if _is_source_coop else None,
         overwrite,
+        collection_url_root=collection_url_root,
+        s3_client=s3_client,
     )
     if components is None:
-        return  # Task exists and overwrite is False, so skipping processing.
+        return  # Skip due to no overwrite.
     itempath, stac_creator, writer = components
 
     # Searcher finds STAC Items
@@ -232,7 +254,6 @@ def run(
         fail_on_error=False,  # We don't control the Landsat data so it may have issues. We load what we can.
     )
 
-    # TODO: Make count band use 255 as nodata, rather than 0.
     processor = GeoMADProcessor(
         geomad_options=dict(
             work_chunks=(100, 100),

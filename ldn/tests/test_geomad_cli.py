@@ -7,7 +7,14 @@ from typer.testing import CliRunner
 
 from ldn.cli_geomad import geomad_app
 from ldn.raster import PrefixedS3ItemPath
-from ldn.utils import GEOMAD_DATASET_ID, SENSOR, SOURCE_COOP_PREFIX_GEOMAD, is_bucket_source_coop, parse_tile_id
+from ldn.utils import (
+    GEOMAD_DATASET_ID,
+    SENSOR,
+    SOURCE_COOP_PREFIX_GEOMAD,
+    get_public_url_base,
+    is_bucket_source_coop,
+    parse_tile_id,
+)
 
 SMOKE_CONFIGS = [
     {
@@ -69,6 +76,13 @@ def stub_geomad_processing(monkeypatch):
     monkeypatch.setattr("ldn.cli_geomad.Task.run", fake_run)
 
 
+@pytest.fixture(autouse=True)
+def stub_geomad_aws(monkeypatch, mock_s3):
+    """Ensure cli_geomad uses moto S3 client and never attempts real SSO refresh."""
+    monkeypatch.setattr("ldn.cli_geomad.s3_client", mock_s3)
+    monkeypatch.setattr("ldn.cli_geomad.configure_s3_access_profile", lambda: None)
+
+
 TILE_ID = "010_020"
 YEAR = "2025"
 VERSION = "integration-test"
@@ -95,7 +109,7 @@ def stac_key(bucket_env):
         dataset_id=GEOMAD_DATASET_ID,
         version=VERSION,
         time=YEAR,
-        full_path_prefix=SOURCE_COOP_PREFIX_GEOMAD if _is_source_coop else f"s3://{bucket}",
+        full_path_prefix=get_public_url_base(bucket),
     )
     return itempath.stac_path(tile_id_tuple, absolute=False)
 
@@ -118,6 +132,7 @@ def test_geomad_run_and_skip(bucket_env, mock_s3, runner, stac_key):
             "pacific",
             "--integration-test",
             "--overwrite",
+            "--no-single-region",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -140,6 +155,7 @@ def test_geomad_run_and_skip(bucket_env, mock_s3, runner, stac_key):
             "--region",
             "pacific",
             "--integration-test",
+            "--no-single-region",
         ],
     )
     assert result.exit_code == 0, result.output

@@ -5,7 +5,6 @@ import typer
 
 from ldn.lulc import run_classify_task
 from ldn.utils import (
-    AWS_REGION,
     GEOMAD_VERSION,
     LULC_VERSION,
     MODEL_VERSION,
@@ -26,7 +25,7 @@ def run(
         LULC_VERSION,
         help=f"Version of training data to output e.g. '{LULC_VERSION}'.",
     ),
-    version_geomad: str = typer.Option(
+    geomad_version: str = typer.Option(
         GEOMAD_VERSION,
         help=f"Version of the GeoMAD data to use e.g. '{GEOMAD_VERSION}'.",
     ),
@@ -37,7 +36,7 @@ def run(
     product_owner: str | None = typer.Option(None, help="Override the region-derived owner prefix."),
     model_path: str = typer.Option(
         # TODO: defaults to pacific. Later have per region/time period models.
-        f"https://s3.{AWS_REGION}.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/pacific/2020/lulc_random_forest_model_pacific_2020.joblib",
+        f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/pacific/2020/lulc_random_forest_model_pacific_2020.joblib",
         help="Model to use for LULC classification.",
     ),
     decimated: bool = typer.Option(
@@ -78,12 +77,13 @@ def run(
 
     bucket = bucket or get_env_var("BUCKET")  # Default
     owner = owner_for_region(region, product_owner)
+    # TODO: Use build_prefix() here?
 
     run_classify_task(
         tile_id,
         year=year,
         version=version,
-        version_geomad=version_geomad,
+        geomad_version=geomad_version,
         region=region,
         bucket=bucket,
         owner=owner,

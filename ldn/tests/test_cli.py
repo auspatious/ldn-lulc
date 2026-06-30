@@ -1,7 +1,11 @@
+import io
+import json
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from cogeo_mosaic.mosaic import MosaicJSON
+from typer.testing import CliRunner
 
 from ldn.cli import (
     _build_mosaic_for_year,
@@ -9,16 +13,18 @@ from ldn.cli import (
     _find_stac_items_s3,
     _load_stac_docs,
     _stac_self_link,
-    _write_mosaic,
+    app,
     index_to_stac_geoparquet,
 )
-from ldn.tests.test_mosaic import _make_feature
+from ldn.tests.test_mosaic import _make_feature, _make_item
+from ldn.utils import LdnError
 
 # Shared fixture
 
 
 BBOX = [100.0, 0.0, 101.0, 1.0]
 BBOX2 = [102.0, 0.0, 103.0, 1.0]
+runner = CliRunner()
 
 
 # _stac_self_link
@@ -57,22 +63,42 @@ class TestStacSelfLink:
             _stac_self_link(feat)
 
 
+def test_cli_help_works_without_aws_credentials():
+    """The CLI should import and render help without ambient AWS credentials."""
+    result = runner.invoke(app, ["--help"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_credential_provider_raises_when_used_without_aws_credentials(monkeypatch):
+    """get_credential_provider() should still fail when actually invoked with no
+    AWS credentials present - confirming the fix only defers the check, it doesn't
+    silently swallow missing credentials at the point they're actually needed."""
+    from ldn import aws as aws_module
+
+    monkeypatch.setattr(aws_module.aws_session, "get_credentials", lambda: None)
+    aws_module.get_credential_provider.cache_clear()
+
+    with pytest.raises(ValueError, match="Received None from session.get_credentials"):
+        aws_module.get_credential_provider()
+
+
 # _extract_years
 
 
 class TestExtractYears:
     def test_single_year(self):
-        assert _extract_years([_make_feature("t1", BBOX, year="2020")]) == [2020]
+        assert _extract_years([_make_item("t1", BBOX, year="2020")]) == [2020]
 
     def test_multiple_years_sorted(self):
-        features = [_make_feature(f"t{i}", BBOX, year=str(y)) for i, y in enumerate([2022, 2019, 2021])]
+        features = [_make_item(f"t{i}", BBOX, year=str(y)) for i, y in enumerate([2022, 2019, 2021])]
         assert _extract_years(features) == [2019, 2021, 2022]
 
     def test_deduplicates_years(self):
         features = [
-            _make_feature("t1", BBOX, year="2020"),
-            _make_feature("t2", BBOX2, year="2020"),
-            _make_feature("t3", BBOX, year="2021"),
+            _make_item("t1", BBOX, year="2020"),
+            _make_item("t2", BBOX2, year="2020"),
+            _make_item("t3", BBOX, year="2021"),
         ]
         assert _extract_years(features) == [2020, 2021]
 
@@ -80,17 +106,15 @@ class TestExtractYears:
         assert _extract_years([]) == []
 
     def test_skips_empty_datetime(self):
-        feat = _make_feature("t1", BBOX, year="2020")
-        feat["properties"]["datetime"] = ""
+        feat = SimpleNamespace(datetime=None)
         assert _extract_years([feat]) == []
 
     def test_skips_missing_properties(self):
-        feat = {"type": "Feature", "id": "x", "geometry": {}, "links": []}
+        feat = SimpleNamespace(datetime=None)
         assert _extract_years([feat]) == []
 
     def test_parses_full_iso_string(self):
-        feat = _make_feature("t1", BBOX, year="2018")
-        feat["properties"]["datetime"] = "2018-12-31T23:59:59Z"
+        feat = _make_item("t1", BBOX, year="2018")
         assert _extract_years([feat]) == [2018]
 
 
@@ -99,22 +123,25 @@ class TestExtractYears:
 
 class TestBuildMosaicForYear:
     def test_returns_mosaic_json_instance(self):
-        features = [_make_feature("t1", BBOX, year="2020"), _make_feature("t2", BBOX2, year="2020")]
+        features = [_make_item("t1", BBOX, year="2020"), _make_item("t2", BBOX2, year="2020")]
         assert isinstance(_build_mosaic_for_year(2020, features), MosaicJSON)
 
     def test_raises_for_year_with_no_features(self):
         with pytest.raises(Exception, match="2099"):
-            _build_mosaic_for_year(2099, [_make_feature("t1", BBOX, year="2020")])
+            _build_mosaic_for_year(2099, [_make_item("t1", BBOX, year="2020")])
 
     def test_filters_to_requested_year_only(self):
         features = [
-            _make_feature("t1", BBOX, year="2020"),
-            _make_feature("t2", BBOX2, year="2021"),
+            _make_item("t1", BBOX, year="2020"),
+            _make_item("t2", BBOX2, year="2021"),
         ]
-        assert _build_mosaic_for_year(2020, features) is not None
+        mosaic = _build_mosaic_for_year(2020, features)
+        tile_hrefs = [href for hrefs in mosaic.tiles.values() for href in hrefs]
+        assert all("/t1" in href for href in tile_hrefs)
+        assert all("/t2" not in href for href in tile_hrefs)
 
     def test_zoom_range(self):
-        mosaic = _build_mosaic_for_year(2020, [_make_feature("t1", BBOX, year="2020")])
+        mosaic = _build_mosaic_for_year(2020, [_make_item("t1", BBOX, year="2020")])
         assert mosaic.minzoom == 5
         assert mosaic.maxzoom == 12
 
@@ -147,11 +174,11 @@ class TestFindStacItemsS3:
         assert _find_stac_items_s3("my-bucket", "prefix/") == []
 
     @patch("ldn.cli.s3_client")
-    def test_custom_suffix(self, mock_s3_client):
+    def test_filters_stac_suffix_only(self, mock_s3_client):
         paginator = MagicMock()
         paginator.paginate.return_value = [{"Contents": [{"Key": "a.parquet"}, {"Key": "b.stac-item.json"}]}]
         mock_s3_client.get_paginator.return_value = paginator
-        assert _find_stac_items_s3("bucket", "prefix/", suffix=".parquet") == ["a.parquet"]
+        assert _find_stac_items_s3("bucket", "prefix/") == ["b.stac-item.json"]
 
     @patch("ldn.cli.s3_client")
     def test_handles_multiple_pages(self, mock_s3_client):
@@ -168,67 +195,47 @@ class TestFindStacItemsS3:
 
 
 class TestLoadStacDocs:
-    @patch("ldn.cli._load_stac_docs_async")
-    @patch("ldn.cli.asyncio.run")
-    def test_returns_parsed_dicts(self, mock_run, mock_load_async):
+    @patch("ldn.cli.s3_client.get_object")
+    def test_returns_parsed_dicts(self, mock_get_object):
         docs = [_make_feature("t0", BBOX, year="2020"), _make_feature("t1", BBOX2, year="2021")]
-        mock_load_async.return_value = docs
-        mock_run.return_value = docs
-        assert _load_stac_docs("bucket", ["0", "1"]) == docs
-        mock_run.assert_called_once()
 
-    @patch("ldn.cli._load_stac_docs_async")
-    @patch("ldn.cli.asyncio.run")
-    def test_preserves_order(self, mock_run, mock_load_async):
-        docs = [{"id": str(i)} for i in range(5)]
-        mock_load_async.return_value = docs
-        mock_run.return_value = docs
-        result = _load_stac_docs("bucket", [str(i) for i in range(5)])
+        payloads = {
+            "0": docs[0],
+            "1": docs[1],
+        }
+
+        def _fake_get_object(Bucket, Key):
+            return {"Body": io.BytesIO(json.dumps(payloads[Key]).encode("utf-8"))}
+
+        mock_get_object.side_effect = _fake_get_object
+        result = _load_stac_docs("bucket", ["0", "1"])
+
+        assert result == docs
+        assert mock_get_object.call_count == 2
+
+    @patch("ldn.cli.s3_client.get_object")
+    def test_preserves_order(self, mock_get_object):
+        def _fake_get_object(Bucket, Key):
+            return {"Body": io.BytesIO(json.dumps({"id": Key}).encode("utf-8"))}
+
+        mock_get_object.side_effect = _fake_get_object
+        keys = [str(i) for i in range(5)]
+        result = _load_stac_docs("bucket", keys)
         assert [d["id"] for d in result] == [str(i) for i in range(5)]
 
-    @patch("ldn.cli._load_stac_docs_async")
-    @patch("ldn.cli.asyncio.run")
-    def test_empty_keys_returns_empty(self, mock_run, mock_load_async):
-        mock_load_async.return_value = []
-        mock_run.return_value = []
+    @patch("ldn.cli.s3_client.get_object")
+    def test_empty_keys_returns_empty(self, mock_get_object):
         assert _load_stac_docs("bucket", []) == []
-
-
-# _write_mosaic
-
-
-class TestWriteMosaic:
-    @patch("ldn.cli.s3_client")
-    def test_puts_to_correct_bucket_and_key(self, mock_s3_client):
-        mosaic = MagicMock()
-        mosaic.model_dump_json.return_value = '{"tiles": []}'
-
-        _write_mosaic(mosaic, "my-bucket", "path/to/mosaic.json")
-
-        call_kwargs = mock_s3_client.put_object.call_args.kwargs
-        assert call_kwargs["Bucket"] == "my-bucket"
-        assert call_kwargs["Key"] == "path/to/mosaic.json"
-        assert call_kwargs["ContentType"] == "application/json"
-
-    @patch("ldn.cli.s3_client")
-    def test_body_is_utf8_encoded_json(self, mock_s3_client):
-        mosaic = MagicMock()
-        mosaic.model_dump_json.return_value = '{"minzoom": 5}'
-
-        _write_mosaic(mosaic, "bucket", "key.json")
-
-        body = mock_s3_client.put_object.call_args.kwargs["Body"]
-        assert isinstance(body, bytes)
-        assert body.decode("utf-8") == '{"minzoom": 5}'
+        mock_get_object.assert_not_called()
 
 
 class TestIndexToStacGeoparquet:
     @patch("ldn.cli.write_sync")
-    @patch("ldn.cli.Boto3CredentialProvider")
-    @patch("ldn.cli.obstore.store.S3Store")
+    @patch("ldn.cli.get_credential_provider", return_value=None)
+    @patch("ldn.cli.rustac.store.S3Store")
     @patch("ldn.cli._load_stac_docs")
     @patch("ldn.cli._find_stac_items_s3")
-    def test_writes_combined_parquet(self, mock_find, mock_load, mock_store, mock_credential_provider, mock_write):
+    def test_writes_combined_parquet(self, mock_find, mock_load, mock_store, mock_get_cred, mock_write):
         mock_find.side_effect = [["key1.stac-item.json"], ["key2.stac-item.json"]]
         mock_load.side_effect = [
             [_make_feature("t1", BBOX, year="2020")],
@@ -237,11 +244,12 @@ class TestIndexToStacGeoparquet:
 
         index_to_stac_geoparquet(
             dataset="geomad",
-            region="all",
-            version_geomad="0-0-1",
-            version_lulc="0-0-1",
+            geomad_version="0-0-1",
+            lulc_version="0-0-1",
             bucket="dep-public-staging",
             product_owner=None,
+            single_region=False,
+            sensor="ls",
         )
 
         assert mock_write.call_count == 1
@@ -254,15 +262,17 @@ class TestIndexToStacGeoparquet:
     @patch("ldn.cli.write_sync")
     @patch("ldn.cli._find_stac_items_s3")
     def test_skips_when_no_items_found(self, mock_find, mock_write):
-        mock_find.return_value = []
+        mock_find.side_effect = [[], []]
 
-        index_to_stac_geoparquet(
-            dataset="geomad",
-            region="all",
-            version_geomad="0-0-1",
-            version_lulc="0-0-1",
-            bucket="dep-public-staging",
-            product_owner=None,
-        )
+        with pytest.raises(LdnError, match="No STAC items found"):
+            index_to_stac_geoparquet(
+                dataset="geomad",
+                geomad_version="0-0-1",
+                lulc_version="0-0-1",
+                bucket="dep-public-staging",
+                product_owner=None,
+                single_region=False,
+                sensor="ls",
+            )
 
         mock_write.assert_not_called()

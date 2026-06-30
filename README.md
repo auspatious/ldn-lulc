@@ -107,6 +107,7 @@ To build the Docker image locally using [Buildx](https://docs.docker.com/buildx/
 
 ```bash
 docker buildx build . --tag ldn-lulc:latest
+docker run --rm ldn-lulc:latest ldn --help
 ```
 
 Once built, you can run any command in the container:
@@ -162,12 +163,29 @@ This will:
 https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
 
 
-## Source.Coop
+# Instances:
+## 1. Source.Coop
 
 Data product: https://source.coop/auspatious/geomad-sids
 
+2 regions.
+
 Info here: https://github.com/auspatious/ldn-lulc/Source.Coop_README.md
+
+
+## 2. Digital Earth Pacific
+
+Environments: Staging and Production.
+
+1 region.
+
+TODO: Detail DEP.
+
 
 ## Environment Variables
 
 See .env.example on how to set env vars. After cloning this repo you need to copy .env.example to .env
+
+`source .env`
+
+you need to set `AWS_PROFILE` using `export AWS_PROFILE=XXX`
