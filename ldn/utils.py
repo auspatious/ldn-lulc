@@ -117,11 +117,12 @@ WGS84 = "EPSG:4326"
 # 2. Custom-domain bucket (dotted name) (e.g. 'data.ldn.auspatious.com').
 # 3. Source.Coop buckets (e.g. 'us-west-2.opendata.source.coop') has public URL and extra prefix.
 
+## What is needed for each:
 # 1. Read and write direct S3: https://dep-public-staging.s3.us-west-2.amazonaws.com/{key}
 
 # 2. Read: https://data.ldn.auspatious.com/{key}
 # 2. Read and write direct S3: https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/{key}
-# 2. Virtual hosted style breaks. Need to use path style.
+# 2. Virtual hosted style breaks (for write?). Need to use path style.
 
 # 3. Read: https://data.source.coop/auspatious/geomad-sids/{key}
 # 3. Read and write direct S3: https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/{key}

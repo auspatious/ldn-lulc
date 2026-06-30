@@ -208,7 +208,6 @@ def create_collection(
         _dataset_prefix = f"{_dataset_prefix}/{source_coop_prefix(dataset)}"
     key = f"{_dataset_prefix}/collection.json"
 
-    # Serialize and upload
     collection_dict = collection.to_dict()
 
     s3_client.put_object(
@@ -217,4 +216,10 @@ def create_collection(
         Body=json.dumps(collection_dict, indent=2).encode("utf-8"),
         ContentType="application/json",
     )
-    print(f"Wrote collection to {public_url}/{key}")
+
+    if has_stac_api:
+        print(f"Wrote collection to {collection_url_root}")
+        # Writes: https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_geomad/collection.json
+        # TODO: update https://github.com/digitalearthpacific/dep-stac/blob/main/dep_collections/dep_ls_geomad.py
+    else:
+        print(f"Wrote collection to {public_url}/{key}")

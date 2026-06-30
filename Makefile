@@ -102,86 +102,86 @@ collection-geomad-test-dep-staging:
 	--has-stac-api;
 
 
-# TODO: Make mosaics for GeoMAD
-make-mosaics-geomad:
-	ldn make-mosaics \
-	--dataset geomad;
-# poetry run ldn make-mosaics --dataset geomad --geomad-version test-integration --single-region --product-owner dep;
-# poetry run ldn make-mosaics --dataset geomad --geomad-version 0-3-0-test --single-region --product-owner dep;
+# # TODO: Make mosaics for GeoMAD
+# make-mosaics-geomad:
+# 	ldn make-mosaics \
+# 	--dataset geomad;
+# # poetry run ldn make-mosaics --dataset geomad --geomad-version test-integration --single-region --product-owner dep;
+# # poetry run ldn make-mosaics --dataset geomad --geomad-version 0-3-0-test --single-region --product-owner dep;
 
 
 
 
-#### Training Data
-training-data-generate:
-	for site in $(PACIFIC_TRAINING_TILES); do \
-		tile_id=$$(echo $$site | cut -d: -f1); \
-		region=$$(echo $$site | cut -d: -f2); \
-		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
-		country_code=$$(echo $$site | cut -d: -f4); \
-		ldn training generate-training-data \
-			--tile-id $$tile_id \
-			--region $$region \
-			--country-name "$$country_name" \
-			--country-code "$$country_code"; \
-	done;
+# #### Training Data
+# training-data-generate:
+# 	for site in $(PACIFIC_TRAINING_TILES); do \
+# 		tile_id=$$(echo $$site | cut -d: -f1); \
+# 		region=$$(echo $$site | cut -d: -f2); \
+# 		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
+# 		country_code=$$(echo $$site | cut -d: -f4); \
+# 		ldn training generate-training-data \
+# 			--tile-id $$tile_id \
+# 			--region $$region \
+# 			--country-name "$$country_name" \
+# 			--country-code "$$country_code"; \
+# 	done;
 
-# poetry run ldn training generate-training-data \
-# 	--tile-id 028_030 \
-# 	--region pacific \
-# 	--country-name "Papua New Guinea" \
-# 	--country-code "PNG" \
-# 	--geomad-version 0-2-1;
-
-
+# # poetry run ldn training generate-training-data \
+# # 	--tile-id 028_030 \
+# # 	--region pacific \
+# # 	--country-name "Papua New Guinea" \
+# # 	--country-code "PNG" \
+# # 	--geomad-version 0-2-1;
 
 
-###### LULC Classification/Prediction
-
-# Predict LULC for the test tiles and one year (2025).
-
-# 1. Print tasks
-print-tasks-lulc-2020:
-	ldn print-tasks \
-	--years="2020" \
-	--region="pacific" \
-	--dataset="lulc";
 
 
-# 2. Classify
-predict-lulc-test-tiles-2020:
-	for site in $(TEST_TILES); do \
-		tile_id=$${site%%:*}; \
-		region=$${site#*:}; region=$${region%%:*}; \
-		ldn lulc run \
-			--tile-id $$tile_id \
-			--year 2020 \
-			--version $(LULC_VERSION) \
-			--geomad-version $(GEOMAD_VERSION) \
-			--region $$region \
-			$(DECIMATED) \
-			--overwrite; \
-	done;
+# ###### LULC Classification/Prediction
 
-lulc-2-regions-decimated:
-	for site in $(TEST_TILES_2_REGIONS); do \
-		tile_id=$${site%%:*}; \
-		region=$${site#*:}; region=$${region%%:*}; \
-		ldn lulc run \
-			--tile-id $$tile_id \
-			--year 2010 \
-			--version $(LULC_VERSION) \
-			--geomad-version $(GEOMAD_VERSION) \
-			--region $$region \
-			--decimated \
-			--overwrite; \
-	done;
+# # Predict LULC for the test tiles and one year (2025).
+
+# # 1. Print tasks
+# print-tasks-lulc-2020:
+# 	ldn print-tasks \
+# 	--years="2020" \
+# 	--region="pacific" \
+# 	--dataset="lulc";
 
 
-# 3. Update the STAC-Geoparquet index after all tiles/years have run.
-index-lulc:
-	ldn index-to-stac-geoparquet \
-	--dataset "lulc" \
-	--region "all" \
-	--geomad-version $(GEOMAD_VERSION) \
-	--lulc-version $(LULC_VERSION);
+# # 2. Classify
+# predict-lulc-test-tiles-2020:
+# 	for site in $(TEST_TILES); do \
+# 		tile_id=$${site%%:*}; \
+# 		region=$${site#*:}; region=$${region%%:*}; \
+# 		ldn lulc run \
+# 			--tile-id $$tile_id \
+# 			--year 2020 \
+# 			--version $(LULC_VERSION) \
+# 			--geomad-version $(GEOMAD_VERSION) \
+# 			--region $$region \
+# 			$(DECIMATED) \
+# 			--overwrite; \
+# 	done;
+
+# lulc-2-regions-decimated:
+# 	for site in $(TEST_TILES_2_REGIONS); do \
+# 		tile_id=$${site%%:*}; \
+# 		region=$${site#*:}; region=$${region%%:*}; \
+# 		ldn lulc run \
+# 			--tile-id $$tile_id \
+# 			--year 2010 \
+# 			--version $(LULC_VERSION) \
+# 			--geomad-version $(GEOMAD_VERSION) \
+# 			--region $$region \
+# 			--decimated \
+# 			--overwrite; \
+# 	done;
+
+
+# # 3. Update the STAC-Geoparquet index after all tiles/years have run.
+# index-lulc:
+# 	ldn index-to-stac-geoparquet \
+# 	--dataset "lulc" \
+# 	--region "all" \
+# 	--geomad-version $(GEOMAD_VERSION) \
+# 	--lulc-version $(LULC_VERSION);
