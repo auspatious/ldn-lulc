@@ -12,6 +12,7 @@ from ldn.utils import (
     SOURCE_COOP_URL,
     LdnError,
     dataset_prefix,
+    get_pathstyle_url_base,
     get_public_url_base,
     get_stac_geoparquet_key,
     get_stac_geoparquet_url,
@@ -59,14 +60,6 @@ NO_SOURCE_COOP = (None, None, None)
 WITH_SOURCE_COOP = (SOURCE_COOP_URL, SOURCE_COOP_PREFIX_GEOMAD, SOURCE_COOP_PREFIX_LULC)
 
 
-@pytest.fixture
-def base_patches():
-    with (
-        patch(f"{MODULE}.GEOMAD_DATASET_ID", MOCK_DATASET_ID),
-    ):
-        yield
-
-
 class TestGetGeomadStacGeoparquetUrl:
     @pytest.mark.parametrize(
         "bucket,expected",
@@ -86,7 +79,7 @@ class TestGetGeomadStacGeoparquetUrl:
             ),
         ],
     )
-    def test_bucket_styles(self, base_patches, bucket, expected):
+    def test_bucket_styles(self, bucket, expected):
         key = get_stac_geoparquet_key(
             bucket=bucket,
             product_owner=None,
@@ -219,16 +212,42 @@ def test_resolve_dataset_prefix_from_constants():
         ),
         (
             "data.ldn.auspatious.com",
-            f"https://s3.{MOCK_REGION}.amazonaws.com/data.ldn.auspatious.com",  # custom domain (dotted)
+            f"https://s3.{MOCK_REGION}.amazonaws.com/data.ldn.auspatious.com",  # path-style (dotted)
         ),
         (
             "dep-public-staging",
-            f"https://s3.{MOCK_REGION}.amazonaws.com/dep-public-staging",  # virtual-hosted (no dots)
+            f"https://s3.{MOCK_REGION}.amazonaws.com/dep-public-staging",  # path-style (plain)
         ),
     ],
 )
 def test_get_public_url_base(bucket, expected):
     assert get_public_url_base(bucket) == expected
+
+
+@pytest.mark.parametrize(
+    "bucket,expected",
+    [
+        (
+            "us-west-2.opendata.source.coop",
+            f"https://s3.{MOCK_REGION}.amazonaws.com/us-west-2.opendata.source.coop",  # path-style
+        ),
+        (
+            "data.ldn.auspatious.com",
+            f"https://s3.{MOCK_REGION}.amazonaws.com/data.ldn.auspatious.com",  # path-style (dotted)
+        ),
+        (
+            "dep-public-staging",
+            f"https://s3.{MOCK_REGION}.amazonaws.com/dep-public-staging",  # path-style (plain)
+        ),
+    ],
+)
+def test_get_pathstyle_url_base(bucket, expected):
+    assert get_pathstyle_url_base(bucket) == expected
+
+
+@pytest.mark.parametrize("bucket", ["dep-public-staging", "data.ldn.auspatious.com"])
+def test_public_url_base_matches_pathstyle_for_non_source_coop(bucket):
+    assert get_public_url_base(bucket) == get_pathstyle_url_base(bucket)
 
 
 def test_parse_years_reversed_range():

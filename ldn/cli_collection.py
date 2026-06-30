@@ -194,12 +194,8 @@ def create_collection(
     collection.remove_links("root")
     collection.remove_links("self")
     collection.set_self_href(f"{collection_url_root}")
-    # collection.add_link(Link(
-    #     rel="root",
-    #     target=public_url,
-    #     media_type="application/json"
-    # ))
     if has_stac_api:
+        collection.add_link(Link(rel="root", target=public_url, media_type="application/json"))
         collection.add_link(Link(rel="items", target=f"{collection_url_root}/items", media_type="application/geo+json"))
 
     collection.validate()

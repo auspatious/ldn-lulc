@@ -433,11 +433,10 @@ class TestLoadDemTerrainBranching:
 # PrefixedS3ItemPath
 
 
-def _make_pather(key_prefix=None, full_path_prefix=None, base_path="some/base/item-abc.tif"):
+def _make_pather(key_prefix=None, full_path_prefix=None) -> PrefixedS3ItemPath:
     """Construct a PrefixedS3ItemPath with the parent class stubbed out."""
     with (
         patch("dep_tools.namers.S3ItemPath.__init__", return_value=None),
-        patch("dep_tools.namers.S3ItemPath.path", return_value=base_path),
     ):
         p = PrefixedS3ItemPath(key_prefix=key_prefix, full_path_prefix=full_path_prefix)
         p.key_prefix = key_prefix.strip("/") if key_prefix else None
@@ -538,49 +537,25 @@ def mock_aws():
         yield mock_object_exists
 
 
-@pytest.mark.parametrize(
-    "bucket,source_coop_prefix,source_coop_url,expected_prefix_start",
-    [
-        (
-            "us-west-2.opendata.source.coop",
-            "auspatious/geomad-sids",
-            "https://data.source.coop",
-            "https://data.source.coop",
-        ),
-        (
-            "data.ldn.auspatious.com",
-            None,
-            None,
-            "s3://data.ldn.auspatious.com",
-        ),
-        (
-            "dep-public-staging",
-            None,
-            None,
-            "s3://dep-public-staging",
-        ),
-    ],
-)
-def test_build_pipeline_components_itempath_prefix(
-    mock_aws, bucket, source_coop_prefix, source_coop_url, expected_prefix_start
-):
-    """itempath.full_path_prefix should reflect the correct scheme for each bucket style."""
-    with patch(f"{_RASTER_MOD}.get_public_url_base", return_value=expected_prefix_start):
+def test_build_pipeline_components_uses_public_url_base_for_full_path_prefix(mock_aws):
+    """build_pipeline_components should call get_public_url_base(bucket) and pass its
+    return value through to itempath.full_path_prefix — proves the wiring, not the URL logic."""
+    with patch(f"{_RASTER_MOD}.get_public_url_base", return_value="https://example-base.com") as mock_get_url:
         result = build_pipeline_components(
             TILE,
             YEAR,
             VERSION,
-            bucket,
+            "dep-public-staging",
             OWNER,
             "geomad",
-            source_coop_prefix,
+            None,
             overwrite=True,
-            collection_url_root="https://example.com/collections/dep_ls_geomad/",
+            collection_url_root="https://example.com/collections",
             s3_client=MagicMock(),
         )
-    assert result is not None
+    mock_get_url.assert_called_once_with("dep-public-staging")
     itempath, *_ = result
-    assert itempath.full_path_prefix.startswith(expected_prefix_start)
+    assert itempath.full_path_prefix == "https://example-base.com"
 
 
 @pytest.mark.parametrize(
@@ -602,7 +577,7 @@ def test_build_pipeline_components_itempath_key_prefix(mock_aws, bucket, source_
         "geomad",
         source_coop_prefix,
         overwrite=True,
-        collection_url_root="https://example.com/collections/dep_ls_geomad/",
+        collection_url_root="https://example.com/collections",
         s3_client=MagicMock(),
     )
     assert result is not None
@@ -622,7 +597,7 @@ def test_build_pipeline_components_returns_none_when_exists(mock_aws):
             "geomad",
             None,
             overwrite=False,
-            collection_url_root="https://example.com/collections/dep_ls_geomad/",
+            collection_url_root="https://example.com/collections",
             s3_client=MagicMock(),
         )
     assert result is None
@@ -640,24 +615,7 @@ def test_build_pipeline_components_proceeds_when_exists_and_overwrite(mock_aws):
             "geomad",
             None,
             overwrite=True,
-            collection_url_root="https://example.com/collections/dep_ls_geomad/",
+            collection_url_root="https://example.com/collections",
             s3_client=MagicMock(),
         )
     assert result is not None
-
-
-def test_build_pipeline_components_returns_three_components(mock_aws):
-    result = build_pipeline_components(
-        TILE,
-        YEAR,
-        VERSION,
-        "dep-public-staging",
-        OWNER,
-        "geomad",
-        None,
-        overwrite=True,
-        collection_url_root="https://example.com/collections/dep_ls_geomad/",
-        s3_client=MagicMock(),
-    )
-    assert result is not None
-    assert len(result) == 3

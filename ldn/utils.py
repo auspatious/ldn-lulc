@@ -12,11 +12,6 @@ from ldn.aws import aws_session, credential_provider
 
 logger = logging.getLogger(__name__)
 
-# CLoudfront url in front of S3: just an example:
-# https://data.dea.ga.gov.au/?prefix=baseline/ga_ls9c_ard_3/091/078/2026/05/23/
-# https://data.dea.ga.gov.au/baseline/ga_ls9c_ard_3/091/078/2026/05/23/ga_ls9c_ard_3-2-1_091078_2026-05-23_final.stac-item.json
-# s3://dea-public-data/baseline/ga_ls9c_ard_3/091/078/2026/05/23/ga_ls9c_ard_3-2-1_091078_2026-05-23_final.stac-item.json
-
 
 # Our custom exception class for the project. Good for filtering errors in processing.
 class LdnError(Exception):
@@ -208,7 +203,6 @@ def get_stac_geoparquet_key(
     return f"{prefix_with_sc}/{filename}"
 
 
-# TODO: Does this need to be split for write vs. read?
 def get_stac_geoparquet_url(bucket: str, key: str) -> str:
     """Return the URL to the GeoMAD STAC-Geoparquet file for use with rustac/DuckDB.
 
@@ -221,7 +215,7 @@ def get_stac_geoparquet_url(bucket: str, key: str) -> str:
     """
     # https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-3-0/ls_geomad.parquet
     # https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ls_geomad/test-integration/ls_geomad.parquet
-    return f"{get_public_url_base(bucket)}/{key}"
+    return f"{get_pathstyle_url_base(bucket)}/{key}"
 
 
 def get_analysis_epsg(
@@ -288,6 +282,16 @@ def parse_tile_id(tile_id: str) -> tuple[int, int]:
     return parts[0], parts[1]
 
 
+def get_pathstyle_url_base(bucket: str) -> str:
+    """Path HTTPS base for STAC item links and user-facing URLs.
+
+    e.g. https://s3.us-west-2.amazonaws.com/dep-public-staging               (path-style, dotted name)
+         https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com          (path-style, dotted name)
+         https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop   (Source.Coop)
+    """
+    return f"https://s3.{aws_session.region_name}.amazonaws.com/{bucket}"
+
+
 def get_public_url_base(bucket: str) -> str:
     """Public HTTPS base for STAC item links and user-facing URLs.
 
@@ -297,7 +301,7 @@ def get_public_url_base(bucket: str) -> str:
     """
     if is_bucket_source_coop(bucket):
         return SOURCE_COOP_URL
-    return f"https://s3.{aws_session.region_name}.amazonaws.com/{bucket}"
+    return get_pathstyle_url_base(bucket)
 
 
 def load_stac_geoparquet_features(bucket: str, prefix: str) -> ItemCollection:

@@ -99,6 +99,3 @@ def test_set_stac_properties_datetime_three_year_span() -> None:
     assert props["end_datetime"] == "2000-12-31T23:59:59Z"
     assert props["ldn:observation_start"] == "1999-01-01T00:00:00Z"
     assert props["ldn:observation_end"] == "2001-12-31T23:59:59Z"
-
-
-# TODO: test count_scenes
