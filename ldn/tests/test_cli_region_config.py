@@ -107,6 +107,7 @@ class TestIndexToStacGeoparquetRegionConfig:
     BUCKET = "idx-bucket"
 
     @patch("ldn.cli.write_sync")
+    @patch("ldn.cli.get_credential_provider", return_value=None)
     @patch("ldn.cli.rustac.store.S3Store")
     @patch("ldn.cli._load_stac_docs")
     @patch("ldn.cli._find_stac_items_s3")
@@ -115,6 +116,7 @@ class TestIndexToStacGeoparquetRegionConfig:
         mock_find,
         mock_load,
         mock_store,
+        mock_get_cred,
         mock_write,
     ):
         """Custom bucket/owner should be used in listing and write target."""
@@ -144,6 +146,7 @@ class TestIndexToStacGeoparquetRegionConfig:
         assert mock_write.call_args[0][0] == f"custom_ls_geomad/{GEOMAD_VERSION}/custom_ls_geomad.parquet"
 
     @patch("ldn.cli.write_sync")
+    @patch("ldn.cli.get_credential_provider", return_value=None)
     @patch("ldn.cli.rustac.store.S3Store")
     @patch("ldn.cli._load_stac_docs")
     @patch("ldn.cli._find_stac_items_s3")
@@ -152,6 +155,7 @@ class TestIndexToStacGeoparquetRegionConfig:
         mock_find,
         mock_load,
         mock_store,
+        mock_get_cred,
         mock_write,
     ):
         """--product-owner overrides the region-derived owner."""

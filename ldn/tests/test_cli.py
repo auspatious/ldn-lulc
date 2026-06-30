@@ -231,10 +231,11 @@ class TestLoadStacDocs:
 
 class TestIndexToStacGeoparquet:
     @patch("ldn.cli.write_sync")
+    @patch("ldn.cli.get_credential_provider", return_value=None)
     @patch("ldn.cli.rustac.store.S3Store")
     @patch("ldn.cli._load_stac_docs")
     @patch("ldn.cli._find_stac_items_s3")
-    def test_writes_combined_parquet(self, mock_find, mock_load, mock_store, mock_write):
+    def test_writes_combined_parquet(self, mock_find, mock_load, mock_store, mock_get_cred, mock_write):
         mock_find.side_effect = [["key1.stac-item.json"], ["key2.stac-item.json"]]
         mock_load.side_effect = [
             [_make_feature("t1", BBOX, year="2020")],
