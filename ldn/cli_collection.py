@@ -8,6 +8,7 @@ from pystac import (
     Collection,
     Extent,
     ItemCollection,
+    Link,
     Provider,
     SpatialExtent,
     Summaries,
@@ -20,10 +21,14 @@ from ldn.utils import (
     GEOMAD_VERSION,
     LULC_VERSION,
     SENSOR,
-    build_prefix,
-    get_collection_url_root,
+    LdnError,
+    dataset_prefix,
     get_env_var,
+    get_public_url_base,
+    get_stac_geoparquet_key,
+    is_bucket_source_coop,
     load_stac_geoparquet_features,
+    source_coop_prefix,
     version_for_dataset,
 )
 
@@ -53,13 +58,9 @@ def _run_create_collection(dataset: Literal["geomad", "lulc"], extent: Extent, s
             extent=extent,
             license="CC-BY-4.0",
             keywords=["Landsat", "GeoMAD", "Pacific"],
-            # TODO: Is raster extension needed?
-            stac_extensions=[
-                "https://stac-extensions.github.io/eo/v2.0.0/schema.json",
-                "https://stac-extensions.github.io/raster/v2.0.0/schema.json",
-            ],
+            # stac_version="1.1.0", # Automatic from pystac.
             providers=[
-                # TODO: Update DEP provider for different buckets?
+                # TODO: Update DEP provider for different buckets? e.g. Source.Coop as host.
                 Provider(
                     name="Digital Earth Pacific",
                     roles=["processor", "host"],
@@ -75,25 +76,10 @@ def _run_create_collection(dataset: Literal["geomad", "lulc"], extent: Extent, s
             summaries=Summaries(
                 {
                     "gsd": [30],
-                    # TODO: should the min/max values be in raster:bands? e.g.:
-                    # "raster:bands": [
-                    #     {
-                    #         "name": "red",
-                    #         "nodata": 0,
-                    #         "statistics": {
-                    #         "minimum": 0,
-                    #         "maximum": 36000,
-                    #         "mean": 12345,
-                    #         "stddev": 4567
-                    #         },
-                    #         "data_type": "uint16"
-                    #     }
-                    # ],
-                    # https://github.com/stac-extensions/eo/blob/main/examples/collection.json
                     "eo:bands": [
                         dict(
                             name=band,
-                            common_name=band,  # TODO: Validate this against spec.
+                            common_name=band,
                             description=f"Median for {band} band",
                             min=0,
                             max=36_000,
@@ -104,7 +90,7 @@ def _run_create_collection(dataset: Literal["geomad", "lulc"], extent: Extent, s
                     + [
                         dict(
                             name=band[0],
-                            common_name=f"{band[1]} MAD",  # TODO: Validate this against spec.
+                            common_name=f"{band[1]} MAD",
                             description=f"{band[1]} median absolute deviations across all bands",
                             min=0,
                             max=36_000,
@@ -115,10 +101,10 @@ def _run_create_collection(dataset: Literal["geomad", "lulc"], extent: Extent, s
                     + [
                         dict(
                             name="count",
-                            common_name="Count clear",  # TODO: Validate this against spec.
+                            common_name="Count clear",
                             description="Count of clear observations",
                             min=0,
-                            max=9998,
+                            max=9999,
                             nodata=9999,
                         )
                     ],
@@ -155,16 +141,15 @@ def calc_stac_extent(item_collection: ItemCollection) -> Extent:
 @collection_app.command()
 def create_collection(
     dataset: Annotated[Literal["geomad", "lulc"], typer.Option(help="Dataset name, e.g. 'geomad' or 'lulc'.")],
-    # stac_geoparquet_url: Annotated[str, typer.Option(help="URL to the STAC Geoparquet to calculate extents from.")],
     single_region: Annotated[
         bool, typer.Option(help="Whether to create a single-region collection (e.g. for Pacific only).")
     ],
-    collection_url_root: Annotated[
+    url_root: Annotated[
         str | None,
         typer.Option(
-            help="Optional collection URL root e.g. for a STAC API.",
+            help="Optional URL root e.g. for a STAC API.",
         ),
-    ],
+    ] = None,
     bucket: Annotated[
         str | None, typer.Option(help="S3 bucket to read the data from and write the collection JSON to.")
     ] = None,
@@ -181,27 +166,47 @@ def create_collection(
             help="Must be set if single_region.",
         ),
     ] = None,
+    has_stac_api: Annotated[
+        bool, typer.Option(help="Whether the collection will be served via a STAC API (default: False).")
+    ] = False,
 ):
     """Create and write a STAC collection JSON for the specified dataset."""
     bucket = bucket or get_env_var("BUCKET")  # Default
 
     if single_region and not product_owner:
-        raise ValueError("product_owner must be set if single_region is True.")
+        raise LdnError("product_owner must be provided when single_region is True.")
 
     version = version_for_dataset(dataset, geomad_version, lulc_version)
-    collection_url_root = collection_url_root or get_collection_url_root(
-        bucket, product_owner, sensor, dataset, version
-    )
 
-    prefix = build_prefix(bucket, product_owner, sensor, dataset, version)
+    public_url = url_root or get_public_url_base(bucket)
+    _is_source_coop = is_bucket_source_coop(bucket)
+    if _is_source_coop:
+        public_url = f"{public_url}/{source_coop_prefix(dataset)}"
+    _dataset_prefix = dataset_prefix(product_owner, sensor, dataset)
+    collection_url_root = f"{public_url}/collections/{_dataset_prefix}"
 
-    item_collection = load_stac_geoparquet_features(bucket, f"{prefix}.parquet")
+    parquet_key = get_stac_geoparquet_key(bucket, product_owner, sensor, dataset, version)
+
+    item_collection = load_stac_geoparquet_features(bucket, parquet_key)
     extent = calc_stac_extent(item_collection)
     collection = _run_create_collection(dataset, extent, single_region)
 
-    collection.normalize_hrefs(collection_url_root)
+    collection.remove_links("root")
+    collection.remove_links("self")
+    collection.set_self_href(f"{collection_url_root}")
+    # collection.add_link(Link(
+    #     rel="root",
+    #     target=public_url,
+    #     media_type="application/json"
+    # ))
+    if has_stac_api:
+        collection.add_link(Link(rel="items", target=f"{collection_url_root}/items", media_type="application/geo+json"))
 
-    key = f"{prefix}/collection.json"
+    collection.validate()
+
+    if _is_source_coop:
+        _dataset_prefix = f"{_dataset_prefix}/{source_coop_prefix(dataset)}"
+    key = f"{_dataset_prefix}/collection.json"
 
     # Serialize and upload
     collection_dict = collection.to_dict()
@@ -212,4 +217,4 @@ def create_collection(
         Body=json.dumps(collection_dict, indent=2).encode("utf-8"),
         ContentType="application/json",
     )
-    print(f"Wrote collection to {key}")
+    print(f"Wrote collection to {public_url}/{key}")

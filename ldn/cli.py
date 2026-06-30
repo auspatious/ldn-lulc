@@ -33,7 +33,7 @@ from ldn.utils import (
     build_prefix,
     dataset_prefix,
     get_env_var,
-    get_full_path_prefix,
+    get_public_url_base,
     get_stac_geoparquet_key,
     get_stac_geoparquet_url,
     is_bucket_source_coop,
@@ -159,7 +159,7 @@ def _find_existing_tasks(
         tile_id_tuple = parse_tile_id(task["id"])
         r = task["region"]
         owner = owner_for_region(r, product_owner)
-        full_path_prefix = get_full_path_prefix(bucket)
+        full_path_prefix = get_public_url_base(bucket)
 
         itempath = PrefixedS3ItemPath(
             key_prefix=sc_prefix if _is_bucket_source_coop else None,

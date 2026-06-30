@@ -11,6 +11,16 @@
 # 7. Run make-mosaic for geomad and LULC datasets
 # 8. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
+
+-include .env
+export
+echo "Using AWS_PROFILE=$(AWS_PROFILE) and BUCKET=$(BUCKET)";
+
+aws-login:
+	unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN && \
+	aws sso login --profile $(AWS_PROFILE)
+
+
 GEOMAD_VERSION := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)");
 LULC_VERSION := $(shell python3 -c "from ldn.utils import LULC_VERSION; print(LULC_VERSION)");
 
@@ -38,45 +48,68 @@ print-tasks-2000-2025-all:
 print-tasks-2000-2025-pacific:
 	ldn print-tasks --years="2000-2025" --region="pacific";
 
+geomad-test-ausp:
+	ldn geomad run \
+		--tile-id 031_038 \
+		--region pacific \
+		--year 2000 \
+		--version 0-3-0-test \
+		--decimated \
+		--no-single-region \
+		--bucket data.ldn.auspatious.com \
+		--overwrite;
+geomad-test-dep-staging:
+	ldn geomad run \
+		--tile-id 031_038 \
+		--region pacific \
+		--year 2000 \
+		--version 0-3-0-test \
+		--collection-url-root="https://stac.staging.digitalearthpacific.io/collections" \
+		--decimated \
+		--single-region \
+		--bucket dep-public-staging \
+		--overwrite;
 
-TEST_TILES_2_REGIONS := 076_024:pacific 144_127:non-pacific
-
-geomad-2-regions-decimated:
-	for site in $(TEST_TILES_2_REGIONS); do \
-		tile_id=$${site%%:*}; \
-		region=$${site#*:}; region=$${region%%:*}; \
-		ldn geomad run \
-			--tile-id $$tile_id \
-			--region $$region \
-			--year 2010 \
-			--version $(GEOMAD_VERSION) \
-			--decimated \
-			--overwrite; \
-	done;
-
-
-# Run geomad for all test case sites for years 2000-2025.
-geomad-2000-2025:
-	for site in $(TEST_TILES); do \
-		tile_id=$${site%%:*}; \
-		region=$${site#*:}; region=$${region%%:*}; \
-		for year in $$(seq 2000 2025); do \
-			ldn geomad run \
-				--tile-id $$tile_id \
-				--region $$region \
-				--year $$year \
-				--version $(GEOMAD_VERSION) \
-				--overwrite; \
-		done; \
-	done;
-
-
-index-geomad:
+index-geomad-test-ausp:
 	ldn index-to-stac-geoparquet \
-	--dataset "geomad" \
-	--region "all" \
-	--geomad-version $(GEOMAD_VERSION) \
-	--lulc-version $(LULC_VERSION);
+	--dataset geomad \
+	--geomad-version 0-3-0-test \
+	--no-single-region \
+	--bucket data.ldn.auspatious.com;
+index-geomad-test-dep-staging:
+	ldn index-to-stac-geoparquet \
+	--dataset geomad \
+	--geomad-version 0-3-0-test \
+	--single-region \
+	--product-owner dep \
+	--bucket dep-public-staging;
+
+collection-geomad-test-ausp:
+	ldn collection create-collection \
+	--dataset geomad \
+	--geomad-version 0-3-0-test \
+	--no-single-region \
+	--bucket data.ldn.auspatious.com \
+	--no-has-stac-api;
+collection-geomad-test-dep-staging:
+	ldn collection create-collection \
+	--dataset geomad \
+	--geomad-version 0-3-0-test \
+	--url-root="https://stac.staging.digitalearthpacific.io" \
+	--single-region \
+	--product-owner dep \
+	--bucket dep-public-staging \
+	--has-stac-api;
+
+
+# TODO: Make mosaics for GeoMAD
+make-mosaics-geomad:
+	ldn make-mosaics \
+	--dataset geomad;
+# poetry run ldn make-mosaics --dataset geomad --geomad-version test-integration --single-region --product-owner dep;
+# poetry run ldn make-mosaics --dataset geomad --geomad-version 0-3-0-test --single-region --product-owner dep;
+
+
 
 
 #### Training Data
@@ -92,6 +125,15 @@ training-data-generate:
 			--country-name "$$country_name" \
 			--country-code "$$country_code"; \
 	done;
+
+# poetry run ldn training generate-training-data \
+# 	--tile-id 028_030 \
+# 	--region pacific \
+# 	--country-name "Papua New Guinea" \
+# 	--country-code "PNG" \
+# 	--geomad-version 0-2-1;
+
+
 
 
 ###### LULC Classification/Prediction
@@ -136,7 +178,6 @@ lulc-2-regions-decimated:
 	done;
 
 
-
 # 3. Update the STAC-Geoparquet index after all tiles/years have run.
 index-lulc:
 	ldn index-to-stac-geoparquet \
@@ -144,128 +185,3 @@ index-lulc:
 	--region "all" \
 	--geomad-version $(GEOMAD_VERSION) \
 	--lulc-version $(LULC_VERSION);
-
-
-# 4. Visualisation
-make-mosaics-geomad:
-	ldn make-mosaics \
-	--dataset geomad;
-
-make-mosaics-lulc:
-	ldn make-mosaics \
-	--dataset lulc;
-
-
-
-# Source.Coop testing:
-SOURCE_TEST_VERSION ?= 0-2-1-test
-SOURCE_TEST_VERSION_P ?= 0-0-4-test
-SOURCE_TEST_TILE ?= 028_030
-geomad-source-coop-test:
-	poetry run ldn geomad run \
-		--tile-id $(SOURCE_TEST_TILE) \
-    	--region pacific \
-    	--year 2025 \
-    	--version $(SOURCE_TEST_VERSION) \
-		--decimated;
-geomad-source-coop-test-np:
-	poetry run ldn geomad run \
-		--tile-id 334_092 \
-    	--region non-pacific \
-    	--year 2025 \
-    	--version $(SOURCE_TEST_VERSION) \
-		--decimated;
-
-# Test geomad works for LS7
-test-geomad-ls7-source-coop:
-	poetry run ldn geomad run \
-		--tile-id 050_015 \
-    	--region pacific \
-    	--year 2010 \
-    	--version 0-2-1-test \
-		--decimated;
-
-index-geomad-source-coop-test:
-	ldn index-to-stac-geoparquet \
-	--dataset "geomad" \
-	--geomad-version $(SOURCE_TEST_VERSION);
-
-mosaic-geomad-source-coop-test:
-	ldn make-mosaics \
-	--dataset geomad \
-	--geomad-version $(SOURCE_TEST_VERSION);
-
-lulc-source-coop-test:
-	ldn lulc run \
-		--tile-id $(SOURCE_TEST_TILE) \
-		--year 2025 \
-		--version $(SOURCE_TEST_VERSION_P) \
-		--geomad-version $(SOURCE_TEST_VERSION) \
-		--region pacific \
-		--model-path "/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-4/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
-		--no-decimated \
-		--overwrite; \
-
-index-lulc-source-coop-test:
-	ldn index-to-stac-geoparquet \
-	--dataset "lulc" \
-	--geomad-version $(SOURCE_TEST_VERSION) \
-	--lulc-version $(SOURCE_TEST_VERSION_P);
-
-mosaic-lulc-source-coop-test:
-	ldn make-mosaics \
-	--dataset lulc \
-	--geomad-version $(SOURCE_TEST_VERSION) \
-	--lulc-version $(SOURCE_TEST_VERSION_P);
-
-
-# poetry run ldn geomad run --tile-id 10_20 --year 2025 --version test-integration --region pacific --integration-test --overwrite
-geomad-count-9999-test:
-	poetry run ldn geomad run \
-		--tile-id 046_020 \
-		--region pacific \
-		--year 2012 \
-		--version 0-3-0-test \
-		--decimated \
-		--overwrite;
-geomad-count-9999-test-integration:
-	poetry run ldn geomad run \
-		--tile-id 036_028 \
-		--region pacific \
-		--year 2025 \
-		--version 0-3-0-test \
-		--integration-test;
-
-
-# poetry run ldn training generate-training-data \
-# 	--tile-id 028_030 \
-# 	--region pacific \
-# 	--country-name "Papua New Guinea" \
-# 	--country-code "PNG" \
-# 	--geomad-version 0-2-1;
-
-# poetry run ldn index-to-stac-geoparquet --dataset "geomad" --geomad-version test-integration --single-region --product-owner dep;
-# poetry run ldn index-to-stac-geoparquet --dataset "geomad" --geomad-version 0-3-0-test --single-region --product-owner dep;
-# poetry run ldn make-mosaics --dataset geomad --geomad-version test-integration --single-region --product-owner dep;
-# poetry run ldn make-mosaics --dataset geomad --geomad-version 0-3-0-test --single-region --product-owner dep;
-
-
-create-geomad-collection-single-region:
-	ldn collection create-collection \
- 		--dataset geomad \
-		--stac-geoparquet-url "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ls_geomad/test/ls_geomad.parquet" \
-		--single-region \
-		--product-owner dep;
-
-create-geomad-collection-multi-region:
-	ldn collection create-collection \
- 		--dataset geomad \
-		--stac-geoparquet-url "https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet" \
-		--no-single-region;
-
-# For DEP prod the links should go to:
-# https://stac.digitalearthpacific.org/collections/dep_ls_geomad
-
-aws-login:
-	unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN && \
-	aws sso login --profile $(AWS_PROFILE)

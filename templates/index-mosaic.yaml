@@ -43,7 +43,8 @@ spec:
       - name: lulc-version # Only needed for LULC dataset.
         value: "0-0-4"
       - name: bucket
-        value: "dep-public-data"
+        # value: "dep-public-staging" # DEP Staging
+        value: "dep-public-data" # DEP Prod
       - name: single_region
         value: "--single-region" # For single region products e.g. DEP.
         # value: "--no-single-region" # For places with both regions e.g. Source Coop.
@@ -52,8 +53,8 @@ spec:
         # value: None # Leave as None for non-single-region products e.g. Source Coop.
       - name: collection-url-root
       # TODO: should this include the data version?
-        value: "https://stac.digitalearthpacific.org/collections/dep_ls_geomad" # DEP Prod
-        # value: "https://stac.staging.digitalearthpacific.io/collections/dep_ls_geomad" # DEP Staging
+        value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
+        # value: "https://stac.staging.digitalearthpacific.io/collections" # DEP Staging
         # value: None # For Source Coop, let collection-url-root default?
 
   templates:
@@ -92,6 +93,8 @@ spec:
           - "{{ workflow.parameters.lulc-version }}"
           - "{{ workflow.parameters.single-region }}"
           - "{{ workflow.parameters.product-owner }}"
+          - --bucket
+          - "{{ workflow.parameters.bucket }}"
 
 
       # Make the collection here because it depends on the index.
@@ -118,6 +121,8 @@ spec:
           - --collection-url-root
           - "{{ workflow.parameters.collection-url-root }}"
           - "{{ workflow.parameters.single-region }}"
+          - --bucket
+          - "{{ workflow.parameters.bucket }}"
 
     - name: make-mosaics
       activeDeadlineSeconds: 900 # 15 mins
@@ -141,3 +146,5 @@ spec:
           - --product-owner
           - "{{ workflow.parameters.product-owner }}"
           - "{{ workflow.parameters.single-region }}"
+          - --bucket
+          - "{{ workflow.parameters.bucket }}"

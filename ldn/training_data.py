@@ -591,7 +591,7 @@ def _upload_dataframe_csv_to_s3(df, bucket: str, path: str) -> str:
         Body=csv_buffer.getvalue(),
         ContentType="text/csv",
     )
-    return f"s3://{bucket}/{key}"
+    return f"s3://{bucket}/{key}"  # TODO: Use utils functions for S3 URI formatting.
 
 
 # Dep tools utils have mask_to_gadm() which would be helpful, but I want to buffer gadm before masking.

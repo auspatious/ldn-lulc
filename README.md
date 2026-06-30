@@ -184,3 +184,6 @@ TODO: Detail DEP.
 ## Environment Variables
 
 See .env.example on how to set env vars. After cloning this repo you need to copy .env.example to .env
+
+
+`source .env`

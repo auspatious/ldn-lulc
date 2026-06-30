@@ -12,26 +12,10 @@ from ldn.aws import aws_session, credential_provider
 
 logger = logging.getLogger(__name__)
 
-
-# For BUCKET
-# Keep this bucket. It is important.
-def get_env_var(name: str) -> str:
-    """Return the value of the environment variable."""
-    value = os.environ.get(name)
-    if not value:
-        raise LdnError(f"Requested '{name}' environment variable is not set.")
-    logger.info(f"Got environment variable '{name}' = '{value}'")
-    return value
-
-
-def is_bucket_source_coop(bucket: str) -> bool:
-    """Determine if a bucket is a Source.Coop bucket based on its name."""
-    return bucket.endswith("source.coop")
-
-
-SOURCE_COOP_URL = "https://data.source.coop"  # Public URL. Just used for STAC metadata so users can read it easily.
-SOURCE_COOP_PREFIX_GEOMAD = "auspatious/geomad-sids"
-SOURCE_COOP_PREFIX_LULC = "auspatious/lulc-sids"
+# CLoudfront url in front of S3: just an example:
+# https://data.dea.ga.gov.au/?prefix=baseline/ga_ls9c_ard_3/091/078/2026/05/23/
+# https://data.dea.ga.gov.au/baseline/ga_ls9c_ard_3/091/078/2026/05/23/ga_ls9c_ard_3-2-1_091078_2026-05-23_final.stac-item.json
+# s3://dea-public-data/baseline/ga_ls9c_ard_3/091/078/2026/05/23/ga_ls9c_ard_3-2-1_091078_2026-05-23_final.stac-item.json
 
 
 # Our custom exception class for the project. Good for filtering errors in processing.
@@ -108,7 +92,8 @@ ALL_COUNTRIES = {**SIDS_COUNTRIES_AND_CODES, **DEP_COUNTRIES_AND_CODES}
 # Get SIDS countries that are not in DEP for CI Grid use.
 NON_DEP_COUNTRIES = {k: v for k, v in SIDS_COUNTRIES_AND_CODES.items() if k not in DEP_COUNTRIES_AND_CODES}
 
-GEOMAD_VERSION = "0-3-0"  # Will write 0-3-0 for DEP prod.
+
+GEOMAD_VERSION = "0-3-0"
 LULC_VERSION = "0-0-9"
 MODEL_VERSION = "0-0-9"
 TRAINING_DATA_VERSION = "0-0-9"
@@ -122,8 +107,47 @@ LULC_DATASET_ID = "lulc"
 
 LS7_YEAR_THRESHOLD = 2012
 TRAINING_DATA_YEAR = "2020"
-CLASS_ATTR = "lulc"  # For training data creation.
+CLASS_ATTR = "lulc"
 WGS84 = "EPSG:4326"
+
+
+##### 3 kinds of buckets:
+
+# 1. Plain (e.g. 'dep-public-staging').
+# 2. Custom-domain bucket (dotted name) (e.g. 'data.ldn.auspatious.com').
+# 3. Source.Coop buckets (e.g. 'us-west-2.opendata.source.coop') has public URL and extra prefix.
+
+# 1. Read and write direct S3: https://dep-public-staging.s3.us-west-2.amazonaws.com/{key}
+
+# 2. Read: https://data.ldn.auspatious.com/{key}
+# 2. Read and write direct S3: https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/{key}
+# 2. Virtual hosted style breaks. Need to use path style.
+
+# 3. Read: https://data.source.coop/auspatious/geomad-sids/{key}
+# 3. Read and write direct S3: https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/{key}
+
+
+# path style: https://s3.us-west-2.amazonaws.com/dep-public-staging/key
+# virtual hosted style: https://dep-public-staging.s3.us-west-2.amazonaws.com/key
+
+
+SOURCE_COOP_URL = "https://data.source.coop"  # Public URL. Just used for STAC metadata so users can read it easily.
+SOURCE_COOP_PREFIX_GEOMAD = "auspatious/geomad-sids"
+SOURCE_COOP_PREFIX_LULC = "auspatious/lulc-sids"
+
+
+def get_env_var(name: str) -> str:
+    """Return the value of the environment variable e.g. BUCKET."""
+    value = os.environ.get(name)
+    if not value:
+        raise LdnError(f"Requested '{name}' environment variable is not set.")
+    logger.info(f"Got environment variable '{name}' = '{value}'")
+    return value
+
+
+def is_bucket_source_coop(bucket: str) -> bool:
+    """Determine if a bucket is a Source.Coop bucket based on its name."""
+    return bucket.endswith("source.coop")
 
 
 def owner_for_region(
@@ -183,11 +207,7 @@ def get_stac_geoparquet_key(
     return f"{prefix_with_sc}/{filename}"
 
 
-def get_write_url_base(bucket: str) -> str:
-    """Return the URL base for writing files to S3, which may differ for Source.Coop vs standard buckets."""
-    return f"https://s3.{aws_session.region_name}.amazonaws.com/{bucket}"
-
-
+# TODO: Does this need to be split for write vs. read?
 def get_stac_geoparquet_url(bucket: str, key: str) -> str:
     """Return the URL to the GeoMAD STAC-Geoparquet file for use with rustac/DuckDB.
 
@@ -196,11 +216,11 @@ def get_stac_geoparquet_url(bucket: str, key: str) -> str:
         key: The S3 key for the STAC-Geoparquet file.
 
     Returns:
-        URL to the STAC-Geoparquet file. e.g. https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-3-0/ls_geomad.parquet
+        Path style URL to the STAC-Geoparquet file. e.g. https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-3-0/ls_geomad.parquet
     """
     # https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/auspatious/geomad-sids/ls_geomad/0-3-0/ls_geomad.parquet
     # https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/ls_geomad/test-integration/ls_geomad.parquet
-    return f"{get_write_url_base(bucket)}/{key}"
+    return f"{get_public_url_base(bucket)}/{key}"
 
 
 def get_analysis_epsg(
@@ -267,85 +287,16 @@ def parse_tile_id(tile_id: str) -> tuple[int, int]:
     return parts[0], parts[1]
 
 
-def get_public_https_base(bucket: str) -> str:
-    """Return the public HTTPS URL base for a given bucket.
+def get_public_url_base(bucket: str) -> str:
+    """Public HTTPS base for STAC item links and user-facing URLs.
 
-    Used for STAC hrefs and other public HTTP contexts (e.g. geoparquet URLs).
-
-    Supports three bucket styles:
-    - Source.Coop buckets (e.g. 'us-west-2.opendata.source.coop'): returns the public Source.Coop HTTPS URL
-    since files are publicly readable without auth.
-    - Custom-domain buckets (e.g. 'data.ldn.auspatious.com'): returns 'https://{bucket}'.
-    - Standard S3 buckets (e.g. 'dep-public-staging'): returns the regional S3 endpoint URL.
-
-    Args:
-        bucket: The S3 bucket name or custom domain.
-
-    Returns:
-        A public HTTPS URL base string.
+    e.g. https://s3.us-west-2.amazonaws.com/dep-public-staging      (path-style, dotted name)
+         https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com  (path-style, dotted name)
+         https://data.source.coop                                     (Source.Coop)
     """
-    _is_bucket_source_coop = is_bucket_source_coop(bucket)
-    if _is_bucket_source_coop:
-        # "https://data.source.coop"
+    if is_bucket_source_coop(bucket):
         return SOURCE_COOP_URL
-    if "." in bucket:
-        # e.g. "data.ldn.auspatious.com"
-        return f"https://{bucket}"
-    # e.g. "dep-public-staging"
-    return get_write_url_base(bucket)
-
-
-def get_collection_url_root(
-    bucket: str,
-    owner: str | None,
-    sensor: str,
-    dataset: Literal["geomad", "lulc"],
-    version: str,
-) -> str:
-    """Return the collection URL root for STAC metadata.
-
-    Handles three bucket styles:
-    - Source.Coop (e.g. 'us-west-2.opendata.source.coop'): uses the public Source.Coop HTTPS URL.
-    - Custom-domain bucket (e.g. 'data.ldn.auspatious.com'): uses 'https://{bucket}'.
-    - Standard S3 bucket (e.g. 'dep-public-staging'): uses the regional S3 endpoint URL.
-
-    Args:
-        bucket: The S3 bucket name or custom domain.
-        owner: The owner prefix (e.g. 'dep', 'ci').
-        sensor: The sensor string (e.g. 'ls').
-        dataset: The dataset ID (e.g. 'geomad').
-        version: The dataset version string (e.g. '0-3-0').
-
-    Returns:
-        A public HTTPS URL string suitable for use as a STAC collection URL root.
-    """
-    public_url_root = get_public_https_base(bucket)
-
-    prefix = build_prefix(bucket, owner, sensor, dataset, version)
-
-    # TODO: Validate this. The default in DEP tools is https://stac.staging.digitalearthpacific.io/collections
-    return f"{public_url_root}/collections/{prefix}/"  # Version in root?
-
-
-def get_full_path_prefix(bucket: str) -> str:
-    """Return the path prefix rasterio should use to read back written files.
-
-    Handles three bucket styles:
-    - Source.Coop (e.g. 'us-west-2.opendata.source.coop'): returns the public
-      Source.Coop HTTPS URL since files are publicly readable without auth.
-    - Custom-domain bucket (e.g. 'data.ldn.auspatious.com') and Standard S3 bucket (e.g. 'dep-public-staging'):
-     returns 's3://{bucket}' so rasterio uses boto3 credentials to authenticate.
-
-    Args:
-        bucket: The S3 bucket name or custom domain.
-
-    Returns:
-        A URL prefix string suitable for rasterio to open files.
-    """
-    _is_bucket_source_coop = is_bucket_source_coop(bucket)
-    if _is_bucket_source_coop:
-        return SOURCE_COOP_URL
-    return f"s3://{bucket}"
+    return f"https://s3.{aws_session.region_name}.amazonaws.com/{bucket}"
 
 
 def load_stac_geoparquet_features(bucket: str, prefix: str) -> ItemCollection:
@@ -372,16 +323,12 @@ def load_stac_geoparquet_features(bucket: str, prefix: str) -> ItemCollection:
 def build_prefix(
     bucket: str, product_owner: str | None, sensor: str, dataset: Literal["geomad", "lulc"], version: str
 ) -> str:
-    """Build the prefix for a dataset. Does not include the bucket or key (filename).
+    """S3 key prefix (no bucket, no filename).
 
-    Args:
-    product_owner: The owner prefix (e.g. 'dep', 'ci' or 'example_override_value').
-
-    Returns:
-        e.g. "dep_ls_geomad/0-3-0" or "ls_geomad/0-3-0"
+    e.g. dep_ls_geomad/0-3-0
+         auspatious/geomad-sids/ls_geomad/0-3-0   (Source.Coop)
     """
     prefix = f"{dataset_prefix(product_owner, sensor, dataset)}/{version}"
     if is_bucket_source_coop(bucket):
         prefix = f"{source_coop_prefix(dataset)}/{prefix}"
-
     return prefix

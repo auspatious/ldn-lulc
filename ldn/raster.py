@@ -22,8 +22,7 @@ from ldn.utils import (
     SENSOR,
     WGS84,
     LdnError,
-    get_collection_url_root,
-    get_full_path_prefix,
+    get_public_url_base,
 )
 
 logger = logging.getLogger(__name__)
@@ -314,7 +313,7 @@ def build_pipeline_components(
 
     Returns None if the item already exists and overwrite is False.
     """
-    full_path_prefix = get_full_path_prefix(bucket)
+    full_path_prefix = get_public_url_base(bucket)
 
     itempath = PrefixedS3ItemPath(
         key_prefix=source_coop_prefix,
@@ -347,16 +346,3 @@ def build_pipeline_components(
     )
 
     return itempath, stac_creator, writer
-
-
-# TODO: Make collection for geomad and lulc outputs.
-def collection_url_root(
-    collection_url_root: str | None, bucket: str, owner: str, dataset_id: Literal["geomad", "lulc"]
-) -> str:
-    """Make a STAC collection JSON for the dataset. Uses a default collection_url_root based on bucket/owner/dataset_id
-    but can be overridden e.g. for DEP prod's STAC API."""
-    collection_url_root = collection_url_root or get_collection_url_root(bucket, owner, SENSOR, dataset_id)
-
-    # Make it
-
-    return collection_url_root

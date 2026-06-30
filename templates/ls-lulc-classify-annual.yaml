@@ -39,6 +39,9 @@ spec:
         value: "0-0-4"
       - name: geomad-version
         value: "0-3-0"
+      - name: bucket
+        # value: "dep-public-staging" # DEP Staging
+        value: "dep-public-data" # DEP Prod
       - name: region
         # Just run Pacific in DEP Argo instance.
         value: "pacific" # "all", "pacific", or "non-pacific"

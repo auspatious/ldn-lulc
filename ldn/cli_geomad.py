@@ -24,7 +24,7 @@ from ldn.geomad import (
     AwsStacTask as Task,
 )
 from ldn.grids import get_gridspec
-from ldn.raster import build_pipeline_components, get_collection_url_root
+from ldn.raster import build_pipeline_components
 from ldn.utils import (
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
@@ -32,6 +32,7 @@ from ldn.utils import (
     SENSOR,
     SOURCE_COOP_PREFIX_GEOMAD,
     get_env_var,
+    get_public_url_base,
     is_bucket_source_coop,
     owner_for_region,
     parse_tile_id,
@@ -202,25 +203,27 @@ def run(
 
     configure_s3_access_profile()  # Access must be configured here for Dask.
 
-    collection_owner = owner if single_region else None
-    collection_url_root = collection_url_root or get_collection_url_root(
-        bucket, collection_owner, sensor, GEOMAD_DATASET_ID, version
-    )
+    # TODO: Could this block be a function because it will be done in cli_collection.py?
+    _is_source_coop = is_bucket_source_coop(bucket)
+    public_url = get_public_url_base(bucket)
+    if _is_source_coop:
+        public_url = f"{public_url}/{SOURCE_COOP_PREFIX_GEOMAD}"
+    collection_url_root = collection_url_root or f"{public_url}/collections"
 
     components = build_pipeline_components(
         tile_id_tuple,
         year,
         version,
         bucket,
-        owner,
+        owner,  # This owner respects single_region because geomad always writes to an owner.
         GEOMAD_DATASET_ID,
-        SOURCE_COOP_PREFIX_GEOMAD if is_bucket_source_coop(bucket) else None,
+        SOURCE_COOP_PREFIX_GEOMAD if _is_source_coop else None,
         overwrite,
         collection_url_root=collection_url_root,
         s3_client=s3_client,
     )
     if components is None:
-        return  # Task exists and overwrite is False, so skipping processing.
+        return  # Skip due to no overwrite.
     itempath, stac_creator, writer = components
 
     # Searcher finds STAC Items

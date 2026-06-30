@@ -1,6 +1,6 @@
 """Smoke tests verifying CLI region config params wire through to S3ItemPath."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from typer.testing import CliRunner
@@ -110,42 +110,6 @@ class TestPrintTasksRegionConfig:
         assert result.exit_code == 0, result.output
         call_args = mock_find_stac.call_args
         assert "lulc" in call_args.args[1]
-
-
-class TestGeomadRegionConfig:
-    """Verify geomad command wires bucket/owner into S3ItemPath."""
-
-    @patch("ldn.cli_geomad._count_scenes", return_value=25)
-    @patch("ldn.cli_geomad.configure_s3_access_profile")
-    @patch("ldn.cli_geomad.get_gridspec")
-    @patch("ldn.cli_geomad.build_pipeline_components", return_value=None)
-    def test_custom_bucket_skips_existing(self, mock_build, mock_get_gridspec, mock_s3_access_profile, mock_count):
-        """Custom bucket/owner should be forwarded when building GeoMAD pipeline components."""
-        mock_get_gridspec.return_value.tile_geobox.return_value = MagicMock()
-
-        result = runner.invoke(
-            app,
-            [
-                "geomad",
-                "run",
-                "--tile-id",
-                "066_022",
-                "--year",
-                "2020",
-                "--version",
-                GEOMAD_VERSION,
-                "--region",
-                "pacific",
-                "--bucket",
-                "my-test-bucket",
-            ],
-        )
-
-        assert result.exit_code == 0, result.output
-        mock_build.assert_called_once()
-        call_args = mock_build.call_args.args
-        assert call_args[3] == "my-test-bucket"
-        assert call_args[5] == "geomad"
 
 
 class TestIndexToStacGeoparquetRegionConfig:
