@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from cogeo_mosaic.mosaic import MosaicJSON
+from typer.testing import CliRunner
 
 from ldn.cli import (
     _build_mosaic_for_year,
@@ -12,6 +13,7 @@ from ldn.cli import (
     _find_stac_items_s3,
     _load_stac_docs,
     _stac_self_link,
+    app,
     index_to_stac_geoparquet,
 )
 from ldn.tests.test_mosaic import _make_feature, _make_item
@@ -22,6 +24,7 @@ from ldn.utils import LdnError
 
 BBOX = [100.0, 0.0, 101.0, 1.0]
 BBOX2 = [102.0, 0.0, 103.0, 1.0]
+runner = CliRunner()
 
 
 # _stac_self_link
@@ -58,6 +61,26 @@ class TestStacSelfLink:
         feat["links"] = [{"rel": "root", "href": "https://example.com/root"}]
         with pytest.raises(Exception):
             _stac_self_link(feat)
+
+
+def test_cli_help_works_without_aws_credentials():
+    """The CLI should import and render help without ambient AWS credentials."""
+    result = runner.invoke(app, ["--help"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_credential_provider_raises_when_used_without_aws_credentials(monkeypatch):
+    """get_credential_provider() should still fail when actually invoked with no
+    AWS credentials present - confirming the fix only defers the check, it doesn't
+    silently swallow missing credentials at the point they're actually needed."""
+    from ldn import aws as aws_module
+
+    monkeypatch.setattr(aws_module.aws_session, "get_credentials", lambda: None)
+    aws_module.get_credential_provider.cache_clear()
+
+    with pytest.raises(ValueError, match="Received None from session.get_credentials"):
+        aws_module.get_credential_provider()
 
 
 # _extract_years

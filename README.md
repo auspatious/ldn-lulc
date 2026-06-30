@@ -107,6 +107,7 @@ To build the Docker image locally using [Buildx](https://docs.docker.com/buildx/
 
 ```bash
 docker buildx build . --tag ldn-lulc:latest
+docker run --rm ldn-lulc:latest ldn --help
 ```
 
 Once built, you can run any command in the container:
@@ -185,5 +186,6 @@ TODO: Detail DEP.
 
 See .env.example on how to set env vars. After cloning this repo you need to copy .env.example to .env
 
-
 `source .env`
+
+you need to set `AWS_PROFILE` using `export AWS_PROFILE=XXX`

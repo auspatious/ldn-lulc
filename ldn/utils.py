@@ -8,7 +8,7 @@ from pystac import ItemCollection
 from rustac import read_sync
 from rustac import store as rustac_store
 
-from ldn.aws import aws_session, credential_provider
+from ldn.aws import aws_session, get_credential_provider
 
 logger = logging.getLogger(__name__)
 
@@ -315,7 +315,7 @@ def load_stac_geoparquet_features(bucket: str, prefix: str) -> ItemCollection:
     Returns:
         ItemCollection of STAC items.
     """
-    store = rustac_store.S3Store(bucket, credential_provider=credential_provider)
+    store = rustac_store.S3Store(bucket, credential_provider=get_credential_provider())
 
     feature_collection = read_sync(prefix, store=store)
     features = feature_collection.get("features", [])

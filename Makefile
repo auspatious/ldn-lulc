@@ -11,7 +11,7 @@
 # 7. Run make-mosaic for geomad and LULC datasets
 # 8. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
-
+# You need to manually set AWS_PROFILE first.
 -include .env
 export
 echo "Using AWS_PROFILE=$(AWS_PROFILE) and BUCKET=$(BUCKET)";

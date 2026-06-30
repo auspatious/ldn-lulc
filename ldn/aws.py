@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 
 import boto3
 from obstore.auth.boto3 import Boto3CredentialProvider
@@ -10,7 +11,17 @@ profile = os.environ.get("AWS_PROFILE")
 aws_session = boto3.Session(profile_name=profile) if profile else boto3.Session()
 s3_client = aws_session.client("s3", region_name=aws_session.region_name)
 
-credential_provider = Boto3CredentialProvider(aws_session)
+
+@lru_cache(maxsize=1)
+def get_credential_provider() -> Boto3CredentialProvider:
+    """Lazily build the obstore credential provider.
+
+    Deferred (not module-level) so importing ldn.aws doesn't require AWS
+    credentials to be present - needed for contexts like the Docker build
+    smoketest where no AWS identity exists yet. Cached since it's expensive
+    to construct repeatedly and the session/credentials don't change at runtime.
+    """
+    return Boto3CredentialProvider(aws_session)
 
 
 def configure_s3_access_profile():

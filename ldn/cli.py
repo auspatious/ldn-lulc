@@ -14,10 +14,10 @@ from rustac import write_sync
 from shapely.geometry import mapping, shape
 from typing_extensions import Annotated
 
-load_dotenv()  # Load AWS credentials from .env file (for local dev). Do this before imports.
+load_dotenv()  # Load AWS credentials from .env file (for local dev). Do this before aws import.
 
 from ldn import get_version
-from ldn.aws import s3_client, credential_provider
+from ldn.aws import get_credential_provider, s3_client
 from ldn.cli_collection import collection_app
 from ldn.cli_geomad import geomad_app
 from ldn.cli_grid import cli_grid_app
@@ -340,7 +340,9 @@ def index_to_stac_geoparquet(
 
     all_docs = [doc for docs in docs_per_prefix.values() for doc in docs]
 
-    store = rustac.store.S3Store(bucket, credential_provider=credential_provider)  # TODO: Fix type of rustac.store
+    store = rustac.store.S3Store(
+        bucket, credential_provider=get_credential_provider()
+    )  # TODO: Fix type of rustac.store
     geomad_stac_geoparquet_url = get_stac_geoparquet_url(bucket, parquet_key)
     logger.info(f"Writing combined STAC-Geoparquet ({len(all_docs)} items) to {geomad_stac_geoparquet_url}")
     write_sync(parquet_key, all_docs, store=store)
