@@ -5,8 +5,8 @@ metadata:
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
-  serviceAccountName: public-bucket-writer # DEP Staging
-  # serviceAccountName: open-data-bucket-writer # DEP Prod
+  # serviceAccountName: public-bucket-writer # DEP Staging
+  serviceAccountName: open-data-bucket-writer # DEP Prod
   ttlStrategy:
     secondsAfterCompletion: 300
   podGC:
@@ -21,26 +21,25 @@ spec:
   # TODO: Need to disactivate all dep-specific tags to run non-Pacific processes in another Argo instance.
   nodeSelector:
     karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-processing nodepool can only pick spot instances
-    dep/workload: data-processing # DEP Staging
-    # dep/workload: data-processing-public # DEP Prod
+    # dep/workload: data-processing # DEP Staging
+    dep/workload: data-processing-public # DEP Prod
   tolerations:
     - key: dep/workload
       operator: Equal
-      value: data-processing # DEP Staging
-      # value: data-processing-public # DEP Prod
+      # value: data-processing # DEP Staging
+      value: data-processing-public # DEP Prod
       effect: NoSchedule
   arguments:
     parameters:
       - name: version
-        # value: "0-3-0"
-        value: "0-3-0-test" # TODO: Remove Testing
+        value: "0-3-0"
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc"
       - name: image-tag
         value: "latest"
       - name: bucket
-        value: "dep-public-staging" # DEP Staging
-        # value: "dep-public-data" # DEP Prod
+        # value: "dep-public-staging" # DEP Staging
+        value: "dep-public-data" # DEP Prod
       - name: region
         # Just run Pacific in DEP Argo instance.
         value: "pacific" # "all", "pacific", or "non-pacific"
@@ -49,14 +48,12 @@ spec:
         # value: "false" # For places with both regions e.g. Source Coop.
       - name: years
         # Need to run in 8 years blocks because print-tasks output is too large.
-        value: "2000" # TODO: Remove Testing
-        # value: "2000-2008"
+        value: "2000-2008"
         # value: "2009-2016"
         # value: "2017-2025"
       - name: collection-url-root
-      # TODO: should this include the data version?
-        # value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
-        value: "https://stac.staging.digitalearthpacific.io/collections" # DEP Staging
+        # value: "https://stac.staging.digitalearthpacific.io/collections" # DEP Staging
+        value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
         # value: None # For Source Coop, let collection-url-root default.
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
@@ -80,9 +77,10 @@ spec:
                   value: "{{item.year}}"
                 - name: region
                   value: "{{item.region}}"
-            # withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}" # TODO: Reenable after testing.
+            # TODO: Reenable after testing.
+            withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
              # TODO: Remove Testing
-            withParam: '[{"id":"115_14","year":"2000","region":"pacific"}, {"id":"115_14","year":"2025","region":"pacific"}]'
+            # withParam: '[{"id":"115_14","year":"2025","region":"pacific"}]'
 
 
     - name: print-tasks

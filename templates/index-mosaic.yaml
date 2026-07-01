@@ -5,8 +5,8 @@ metadata:
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
-  serviceAccountName: public-bucket-writer # DEP Staging
-  # serviceAccountName: open-data-bucket-writer # DEP Prod
+  # serviceAccountName: public-bucket-writer # DEP Staging
+  serviceAccountName: open-data-bucket-writer # DEP Prod
   ttlStrategy:
     secondsAfterCompletion: 300
   podGC:
@@ -20,13 +20,13 @@ spec:
   # TODO: Need to disactivate all dep-specific tags to run non-Pacific processes in another Argo instance.
   nodeSelector:
     karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-processing nodepool can only pick spot instances
-    dep/workload: data-processing # DEP Staging
-    # dep/workload: data-processing-public # DEP Prod
+    # dep/workload: data-processing # DEP Staging
+    dep/workload: data-processing-public # DEP Prod
   tolerations:
     - key: dep/workload
       operator: Equal
-      value: data-processing # DEP Staging
-      # value: data-processing-public # DEP Prod
+      # value: data-processing # DEP Staging
+      value: data-processing-public # DEP Prod
       effect: NoSchedule
   arguments:
     parameters:
@@ -39,13 +39,12 @@ spec:
         value: "geomad"
         # value: "lulc"
       - name: geomad-version # Needed for both datasets because LULC depends on GeoMAD.
-        # value: "0-3-0"
-        value: "0-3-0-test" # TODO: Remove Testing
+        value: "0-3-0"
       - name: lulc-version # Only needed for LULC dataset.
         value: "0-0-4"
       - name: bucket
-        value: "dep-public-staging" # DEP Staging
-        # value: "dep-public-data" # DEP Prod
+        # value: "dep-public-staging" # DEP Staging
+        value: "dep-public-data" # DEP Prod
       - name: single-region
         value: "--single-region" # For single region products e.g. DEP.
         # value: "--no-single-region" # For places with both regions e.g. Source Coop.
@@ -53,9 +52,8 @@ spec:
         value: "dep" # required if single-region is true
         # value: None # Leave as None for non-single-region products e.g. Source Coop.
       - name: collection-url-root
-      # TODO: should this include the data version?
-        value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
         # value: "https://stac.staging.digitalearthpacific.io/collections" # DEP Staging
+        value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
         # value: None # For Source Coop, let collection-url-root default.
 
   templates:
