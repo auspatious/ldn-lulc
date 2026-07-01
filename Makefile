@@ -42,11 +42,14 @@ grid-list-countries-pacific:
 grid-list-countries-non-pacific:
 	ldn grid list-countries --grids="non-pacific";
 
-print-tasks-2000-2025-all:
-	ldn print-tasks --years="2000-2025" --region="all";
-
-print-tasks-2000-2025-pacific:
-	ldn print-tasks --years="2000-2025" --region="pacific";
+print-tasks-test-dep-staging:
+	ldn print-tasks \
+		--years="2000" \
+		--region="pacific" \
+		--geomad-version 0-3-0-test \
+		--dataset geomad \
+		--no-overwrite \
+		--bucket dep-public-staging;
 
 geomad-test-ausp:
 	ldn geomad run \

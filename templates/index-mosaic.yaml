@@ -5,8 +5,8 @@ metadata:
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
-  # serviceAccountName: public-bucket-writer # DEP Staging
-  serviceAccountName: open-data-bucket-writer # DEP Prod
+  serviceAccountName: public-bucket-writer # DEP Staging
+  # serviceAccountName: open-data-bucket-writer # DEP Prod
   ttlStrategy:
     secondsAfterCompletion: 300
   podGC:
@@ -20,13 +20,13 @@ spec:
   # TODO: Need to disactivate all dep-specific tags to run non-Pacific processes in another Argo instance.
   nodeSelector:
     karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-processing nodepool can only pick spot instances
-    # dep/workload: data-processing # DEP Staging
-    dep/workload: data-processing-public # DEP Prod
+    dep/workload: data-processing # DEP Staging
+    # dep/workload: data-processing-public # DEP Prod
   tolerations:
     - key: dep/workload
       operator: Equal
-      # value: data-processing # DEP Staging
-      value: data-processing-public # DEP Prod
+      value: data-processing # DEP Staging
+      # value: data-processing-public # DEP Prod
       effect: NoSchedule
   arguments:
     parameters:
@@ -39,13 +39,14 @@ spec:
         value: "geomad"
         # value: "lulc"
       - name: geomad-version # Needed for both datasets because LULC depends on GeoMAD.
-        value: "0-3-0"
+        # value: "0-3-0"
+        value: "0-3-0-test" # TODO: Remove Testing
       - name: lulc-version # Only needed for LULC dataset.
         value: "0-0-4"
       - name: bucket
-        # value: "dep-public-staging" # DEP Staging
-        value: "dep-public-data" # DEP Prod
-      - name: single_region
+        value: "dep-public-staging" # DEP Staging
+        # value: "dep-public-data" # DEP Prod
+      - name: single-region
         value: "--single-region" # For single region products e.g. DEP.
         # value: "--no-single-region" # For places with both regions e.g. Source Coop.
       - name: product-owner
@@ -55,7 +56,7 @@ spec:
       # TODO: should this include the data version?
         value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
         # value: "https://stac.staging.digitalearthpacific.io/collections" # DEP Staging
-        # value: None # For Source Coop, let collection-url-root default?
+        # value: None # For Source Coop, let collection-url-root default.
 
   templates:
     - name: workflow-entrypoint
@@ -64,13 +65,13 @@ spec:
           - name: index-to-stac-geoparquet
             template: index-to-stac-geoparquet
 
-          - name: make-geomad-collection
-            depends: index-to-stac-geoparquet.Succeeded
-            template: make-geomad-collection
+          # - name: make-geomad-collection
+          #   depends: index-to-stac-geoparquet.Succeeded
+          #   template: make-geomad-collection
 
-          - name: make-mosaics
-            depends: index-to-stac-geoparquet.Succeeded
-            template: make-mosaics
+          # - name: make-mosaics
+          #   depends: index-to-stac-geoparquet.Succeeded
+          #   template: make-mosaics
 
     - name: index-to-stac-geoparquet
       activeDeadlineSeconds: 900 # 15 mins
@@ -92,59 +93,61 @@ spec:
           - --lulc-version
           - "{{ workflow.parameters.lulc-version }}"
           - "{{ workflow.parameters.single-region }}"
-          - "{{ workflow.parameters.product-owner }}"
-          - --bucket
-          - "{{ workflow.parameters.bucket }}"
-
-
-      # Make the collection here because it depends on the index.
-    - name: make-geomad-collection
-      activeDeadlineSeconds: 900 # 15 mins
-      container:
-        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
-        imagePullPolicy: IfNotPresent
-        resources:
-          requests:
-            memory: 2Gi
-            cpu: 1
-        command: [ldn]
-        args:
-          - create-collection
-          - --dataset
-          - "{{ workflow.parameters.dataset }}"
-          - --geomad-version
-          - "{{ workflow.parameters.geomad-version }}"
-          - --lulc-version
-          - "{{ workflow.parameters.lulc-version }}"
           - --product-owner
           - "{{ workflow.parameters.product-owner }}"
-          - --collection-url-root
-          - "{{ workflow.parameters.collection-url-root }}"
-          - "{{ workflow.parameters.single-region }}"
           - --bucket
           - "{{ workflow.parameters.bucket }}"
 
-    - name: make-mosaics
-      activeDeadlineSeconds: 900 # 15 mins
-      container:
-        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
-        imagePullPolicy: Always
-        # imagePullPolicy: IfNotPresent
-        resources:
-          requests:
-            memory: 2Gi
-            cpu: 1
-        command: [ldn]
-        args:
-          - make-mosaics
-          - --dataset
-          - "{{ workflow.parameters.dataset }}"
-          - --geomad-version
-          - "{{ workflow.parameters.geomad-version }}"
-          - --lulc-version
-          - "{{ workflow.parameters.lulc-version }}"
-          - --product-owner
-          - "{{ workflow.parameters.product-owner }}"
-          - "{{ workflow.parameters.single-region }}"
-          - --bucket
-          - "{{ workflow.parameters.bucket }}"
+    # Collection already exists for DEP prod so don't need to make it here.
+    # Mosaics just needed for our visualisation app that already points to Source.Coop version with both regions.
+
+    # - name: make-geomad-collection
+    #   activeDeadlineSeconds: 900 # 15 mins
+    #   container:
+    #     image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+    #     imagePullPolicy: IfNotPresent
+    #     resources:
+    #       requests:
+    #         memory: 2Gi
+    #         cpu: 1
+    #     command: [ldn]
+    #     args:
+    #       - create-collection
+    #       - --dataset
+    #       - "{{ workflow.parameters.dataset }}"
+    #       - --geomad-version
+    #       - "{{ workflow.parameters.geomad-version }}"
+    #       - --lulc-version
+    #       - "{{ workflow.parameters.lulc-version }}"
+    #       - --product-owner
+    #       - "{{ workflow.parameters.product-owner }}"
+    #       - --collection-url-root
+    #       - "{{ workflow.parameters.collection-url-root }}"
+    #       - "{{ workflow.parameters.single-region }}"
+    #       - --bucket
+    #       - "{{ workflow.parameters.bucket }}"
+
+    # - name: make-mosaics
+    #   activeDeadlineSeconds: 900 # 15 mins
+    #   container:
+    #     image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+    #     imagePullPolicy: Always
+    #     # imagePullPolicy: IfNotPresent
+    #     resources:
+    #       requests:
+    #         memory: 2Gi
+    #         cpu: 1
+    #     command: [ldn]
+    #     args:
+    #       - make-mosaics
+    #       - --dataset
+    #       - "{{ workflow.parameters.dataset }}"
+    #       - --geomad-version
+    #       - "{{ workflow.parameters.geomad-version }}"
+    #       - --lulc-version
+    #       - "{{ workflow.parameters.lulc-version }}"
+    #       - --product-owner
+    #       - "{{ workflow.parameters.product-owner }}"
+    #       - "{{ workflow.parameters.single-region }}"
+    #       - --bucket
+    #       - "{{ workflow.parameters.bucket }}"

@@ -33,7 +33,7 @@ spec:
     parameters:
       - name: version
         # value: "0-3-0"
-        value: "0-3-0-test"
+        value: "0-3-0-test" # TODO: Remove Testing
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc"
       - name: image-tag
@@ -45,18 +45,19 @@ spec:
         # Just run Pacific in DEP Argo instance.
         value: "pacific" # "all", "pacific", or "non-pacific"
       - name: single-region
-        value: "--single-region" # For single region products e.g. DEP.
+        value: "--single-region" # For single region products e.g. DEP (staging and prod).
         # value: "false" # For places with both regions e.g. Source Coop.
       - name: years
         # Need to run in 8 years blocks because print-tasks output is too large.
-        value: "2000-2008"
+        value: "2000" # TODO: Remove Testing
+        # value: "2000-2008"
         # value: "2009-2016"
         # value: "2017-2025"
       - name: collection-url-root
       # TODO: should this include the data version?
         # value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
         value: "https://stac.staging.digitalearthpacific.io/collections" # DEP Staging
-        # value: None # For Source Coop, let collection-url-root default?
+        # value: None # For Source Coop, let collection-url-root default.
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated
@@ -80,6 +81,7 @@ spec:
                 - name: region
                   value: "{{item.region}}"
             # withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}" # TODO: Reenable after testing.
+             # TODO: Remove Testing
             withParam: '[{"id":"115_14","year":"2000","region":"pacific"}, {"id":"115_14","year":"2025","region":"pacific"}]'
 
 
@@ -88,8 +90,8 @@ spec:
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         # TODO: Reenable IfNotPresent once image is stable
-        # imagePullPolicy: Always
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
+        # imagePullPolicy: IfNotPresent
         resources:
           requests:
             # Requesting a lot of resources for this simple task
@@ -147,8 +149,8 @@ spec:
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         # TODO: Reenable IfNotPresent once image is stable
-        # imagePullPolicy: Always
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
+        # imagePullPolicy: IfNotPresent
         command: [ldn]
         args:
           - geomad
