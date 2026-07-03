@@ -12,7 +12,7 @@ spec:
   podGC:
     strategy: OnWorkflowCompletion
     deleteDelayDuration: 600s
-  parallelism: 50
+  parallelism: 100
   podMetadata:
     labels:
       app: ls-geomad
@@ -48,9 +48,11 @@ spec:
         # value: "false" # For places with both regions e.g. Source Coop.
       - name: years
         # Need to run in 8 years blocks because print-tasks output is too large.
-        value: "2000-2008"
+        # value: "2000-2008"
         # value: "2009-2016"
         # value: "2017-2025"
+        # Make sure all ran
+        value: "2000-2025"
       - name: collection-url-root
         # value: "https://stac.staging.digitalearthpacific.io/collections" # DEP Staging
         value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
@@ -137,11 +139,11 @@ spec:
           - name: main
             resources:
               requests:
-                memory: "{{= (asInt(retries) == 0 ? 16 : 32)}}Gi"
-                cpu: "{{= (asInt(retries) == 0 ? 10 : 18)}}"
+                memory: "{{= asInt(retries) == 0 ? 10 : 20}}Gi"
+                cpu: "{{= asInt(retries) == 0 ? 3 : 6}}"
               limits:
-                memory: "{{= (asInt(retries) == 0 ? 24 : 48)}}Gi"
-                cpu: "{{= (asInt(retries) == 0 ? 12 : 24)}}"
+                memory: "{{= asInt(retries) == 0 ? 20 : 32}}Gi"
+                cpu: "{{= asInt(retries) == 0 ? 6 : 12}}"
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
@@ -163,12 +165,12 @@ spec:
           - --collection-url-root
           - "{{ workflow.parameters.collection-url-root }}"
           - --memory-limit
-          - "{{= asInt(retries) == 0 ? '6GB' : '14GB'}}"
+          - "{{= asInt(retries) == 0 ? '7GB' : '12GB'}}"
           - --n-workers
           - "2"
           - --threads-per-worker
-          - "{{= asInt(retries) == 0 ? '4' : '8'}}"
+          - "8"
           - --xy-chunk-size
-          - "{{= asInt(retries) == 0 ? '800' : '1600'}}"
+          - "1600"
           - "{{ workflow.parameters.overwrite }}"
           - "{{ workflow.parameters.decimated }}"
