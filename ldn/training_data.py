@@ -50,6 +50,7 @@ from ldn.utils import (
     dataset_prefix,
     get_analysis_epsg,
     get_env_var,
+    get_stac_geoparquet_key,
     get_stac_geoparquet_url,
     is_bucket_source_coop,
     owner_for_region,
@@ -638,13 +639,11 @@ def get_buffered_country(
 def get_tile_year_geomad_dem_indices(
     tile_id: str,
     year: str,
-    region: Literal["pacific", "non-pacific"],
     country_wgs84_buffered: gpd.GeoDataFrame,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     product_owner: str,
     bucket: str,
     geomad_version: str,
-    single_region: bool,
     sensor: str,
 ) -> xr.Dataset:
     """Load GeoMAD + DEM features for a tile, clipped to buffered country.
@@ -669,13 +668,11 @@ def get_tile_year_geomad_dem_indices(
     merged = search_and_load_geomad_indices_dem(
         tile_id=tile_id,
         year=year,
-        region=region,
         analysis_crs=analysis_crs,
         geopolygon=country_wgs84_buffered,
         product_owner=product_owner,
         geomad_version=geomad_version,
         bucket=bucket,
-        single_region=single_region,
         sensor=sensor,
     )
 
@@ -769,13 +766,11 @@ def make_training_data(
     geomad_dem_indices = get_tile_year_geomad_dem_indices(
         tile_id,
         year,
-        region=region,
         country_wgs84_buffered=country_wgs84_buffered,
         analysis_crs=analysis_crs,
         product_owner=owner,
         bucket=geomad_bucket,
         geomad_version=geomad_version,
-        single_region=single_region,
         sensor=sensor,
     )
     geobox = geomad_dem_indices.odc.geobox
@@ -835,6 +830,7 @@ def generate_training_data(
     n: int = typer.Option(2100, help="Total number of sample points"),
     min_sample_per_class_n: int = typer.Option(300, help="Minimum samples per class"),
     overwrite: bool = typer.Option(False, help="Whether to overwrite existing data in S3"),
+    # TODO: product_owner and single_region need to be seperate for geomad and output buckets.
     product_owner: str | None = typer.Option(None, help="Override the default product owner"),
     single_region: bool = typer.Option(
         ...,
@@ -933,13 +929,11 @@ def make_geomad_item_id(
 def search_and_load_geomad_indices_dem(
     tile_id: str,
     year: str,
-    region: Literal["pacific", "non-pacific"],
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     geopolygon: gpd.GeoDataFrame,
     product_owner: str,
     bucket: str,
     geomad_version: str,
-    single_region: bool,
     sensor: str,
 ) -> xr.Dataset:
     """Search, load, scale, and merge GeoMAD bands, spectral indices, and DEM terrain for a tile.
@@ -959,12 +953,11 @@ def search_and_load_geomad_indices_dem(
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
-    # geomad_stac_geoparquet_key = get_stac_geoparquet_key(
-    #     bucket, single_region, product_owner, sensor, "geomad", geomad_version
-    # )
-    geomad_stac_geoparquet_key = ""  # TODO: Fix this.
+    geomad_stac_geoparquet_key = get_stac_geoparquet_key(
+        bucket, product_owner, sensor, GEOMAD_DATASET_ID, geomad_version
+    )
     geomad_stac_geoparquet_url = get_stac_geoparquet_url(bucket, geomad_stac_geoparquet_key)
-    item_id = make_geomad_item_id(tile_id, sensor, year, product_owner=product_owner)
+    item_id = make_geomad_item_id(tile_id, sensor, year, product_owner)
 
     logger.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}.")
     if GEOMAD_VERSION != geomad_version:
@@ -975,6 +968,7 @@ def search_and_load_geomad_indices_dem(
     geomad_items = search_sync(
         geomad_stac_geoparquet_url,
         ids=item_id,
+        # max_items=1
     )
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
     geomad_items_n = len(geomad_items)

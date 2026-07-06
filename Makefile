@@ -115,19 +115,26 @@ collection-geomad-test-dep-staging:
 
 
 
-# #### Training Data
-# training-data-generate:
-# 	for site in $(PACIFIC_TRAINING_TILES); do \
-# 		tile_id=$$(echo $$site | cut -d: -f1); \
-# 		region=$$(echo $$site | cut -d: -f2); \
-# 		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
-# 		country_code=$$(echo $$site | cut -d: -f4); \
-# 		ldn training generate-training-data \
-# 			--tile-id $$tile_id \
-# 			--region $$region \
-# 			--country-name "$$country_name" \
-# 			--country-code "$$country_code"; \
-# 	done;
+#### Training Data
+# Geomad version: 0-2-1 in DEP staging, 0-3-0 in DEP public.
+training-data-generate:
+	for site in $(PACIFIC_TRAINING_TILES) do \
+		tile_id=$$(echo $$site | cut -d: -f1); \
+		region=$$(echo $$site | cut -d: -f2); \
+		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
+		country_code=$$(echo $$site | cut -d: -f4); \
+		ldn training generate-training-data \
+			--tile-id $$tile_id \
+			--region $$region \
+			--country-name "$$country_name" \
+			--country-code "$$country_code" \
+			--geomad-version 0-2-1 \
+			--geomad-bucket dep-public-staging \
+			--output-bucket dep-public-staging \
+			--single-region \
+			--product-owner dep \
+			--no-overwrite; \
+	done;
 
 # # poetry run ldn training generate-training-data \
 # # 	--tile-id 028_030 \
@@ -136,6 +143,7 @@ collection-geomad-test-dep-staging:
 # # 	--country-code "PNG" \
 # # 	--geomad-version 0-2-1;
 
+#### Make the model using ldn-lulc/notebooks/1_Train_Model.ipynb
 
 
 
