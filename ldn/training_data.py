@@ -42,6 +42,7 @@ from ldn.utils import (
     CLASS_ATTR,
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
+    LULC_DATASET_ID,
     SENSOR,
     TRAINING_DATA_VERSION,
     TRAINING_DATA_YEAR,
@@ -50,6 +51,7 @@ from ldn.utils import (
     dataset_prefix,
     get_analysis_epsg,
     get_env_var,
+    get_public_url_base,
     get_stac_geoparquet_key,
     get_stac_geoparquet_url,
     is_bucket_source_coop,
@@ -571,13 +573,13 @@ def filter_outliers(samples: gpd.GeoDataFrame, cap: float = 0.05) -> gpd.GeoData
     return samples
 
 
-def _upload_dataframe_csv_to_s3(df, bucket: str, path: str) -> str:
+def _upload_dataframe_csv_to_s3(df, bucket: str, key: str):
     """Upload a dataframe as CSV to S3 and return the S3 URI.
 
     Args:
         df: DataFrame to upload.
         bucket: S3 bucket name.
-        path: Key path within the bucket.
+        key: Key path within the bucket.
 
     Returns:
         S3 URI of the uploaded file.
@@ -585,14 +587,13 @@ def _upload_dataframe_csv_to_s3(df, bucket: str, path: str) -> str:
     csv_buffer = io.StringIO()
     df.to_csv(csv_buffer, index=False)
 
-    key = f"{path}"
     s3_client.put_object(
         Bucket=bucket,
         Key=key,
         Body=csv_buffer.getvalue(),
         ContentType="text/csv",
     )
-    return f"s3://{bucket}/{key}"  # TODO: Use utils functions for S3 URI formatting.
+    logger.info(f"Uploaded CSV to {get_public_url_base(bucket)}/{key}")
 
 
 # Dep tools utils have mask_to_gadm() which would be helpful, but I want to buffer gadm before masking.
@@ -703,7 +704,6 @@ def make_training_data(
     file_prefix: str,
     n: int,
     min_sample_per_class_n: int,
-    single_region: bool,
     sensor: str,
 ):
     """Generate training data for a single tile and upload to S3 as CSV.
@@ -762,7 +762,6 @@ def make_training_data(
 
     logger.info("Loading GeoMAD, DEM, and indices")
     owner = owner_for_region(region, product_owner)
-    # TODO: Use build_prefix() here.
     geomad_dem_indices = get_tile_year_geomad_dem_indices(
         tile_id,
         year,
@@ -802,8 +801,8 @@ def make_training_data(
     samples.to_csv(f"{out_fname_local}.csv", index=False)
     logger.info(f"Saved training data to {out_fname_local}")
 
-    s3_uri = _upload_dataframe_csv_to_s3(samples, output_bucket, f"{file_prefix}.csv")
-    logger.info(f"Uploaded training data to {s3_uri}")
+    out_fname_s3 = f"{dataset_prefix(owner, sensor, LULC_DATASET_ID)}/{file_prefix}.csv"
+    _upload_dataframe_csv_to_s3(samples, output_bucket, f"{out_fname_s3}")
 
 
 @cli_training_app.command()
@@ -900,7 +899,6 @@ def generate_training_data(
         file_prefix,
         n,
         min_sample_per_class_n,
-        single_region,
         sensor,
     )
 
