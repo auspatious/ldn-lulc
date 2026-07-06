@@ -58,7 +58,6 @@ geomad-test-ausp:
 		--year 2000 \
 		--version 0-3-0-test \
 		--decimated \
-		--no-single-region \
 		--bucket data.ldn.auspatious.com \
 		--overwrite;
 geomad-test-dep-staging:
@@ -69,7 +68,6 @@ geomad-test-dep-staging:
 		--version 0-3-0-test \
 		--collection-url-root="https://stac.staging.digitalearthpacific.io/collections" \
 		--decimated \
-		--single-region \
 		--bucket dep-public-staging \
 		--overwrite;
 
@@ -161,7 +159,6 @@ lulc-predict-test:
 		--version 0-0-9 \
 		--geomad-version 0-2-1 \
 		--bucket dep-public-staging \
-		--single-region \
 		--product-owner dep \
 		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 		--no-overwrite;
@@ -180,7 +177,6 @@ lulc-predict-test-2:
 			--version 0-0-9 \
 			--geomad-version 0-2-1 \
 			--bucket dep-public-staging \
-			--single-region \
 			--product-owner dep \
 			--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 			--no-overwrite;

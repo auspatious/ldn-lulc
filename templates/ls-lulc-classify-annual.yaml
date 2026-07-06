@@ -5,8 +5,8 @@ metadata:
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
-  # serviceAccountName: public-bucket-writer # DEP Staging
-  serviceAccountName: open-data-bucket-writer # DEP Prod
+  serviceAccountName: public-bucket-writer # DEP Staging
+  # serviceAccountName: open-data-bucket-writer # DEP Prod
   ttlStrategy:
     secondsAfterCompletion: 300
   podGC:
@@ -21,13 +21,13 @@ spec:
   # TODO: Need to disactivate all dep-specific tags to run non-Pacific processes in another Argo instance.
   nodeSelector:
     karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-processing nodepool can only pick spot instances
-    # dep/workload: data-processing # DEP Staging
-    dep/workload: data-processing-public # DEP Prod
+    dep/workload: data-processing # DEP Staging
+    # dep/workload: data-processing-public # DEP Prod
   tolerations:
     - key: dep/workload
       operator: Equal
-      # value: data-processing # DEP Staging
-      value: data-processing-public # DEP Prod
+      value: data-processing # DEP Staging
+      # value: data-processing-public # DEP Prod
       effect: NoSchedule
   arguments:
     parameters:
@@ -36,27 +36,29 @@ spec:
       - name: image-tag
         value: "latest"
       - name: lulc-version
-        value: "0-0-4"
+        value: "0-0-9"
       - name: geomad-version
-        value: "0-3-0"
+        value: "0-2-1"
       - name: bucket
-        # value: "dep-public-staging" # DEP Staging
-        value: "dep-public-data" # DEP Prod
+        value: "dep-public-staging" # DEP Staging
+        # value: "dep-public-data" # DEP Prod
       - name: region
         # Just run Pacific in DEP Argo instance.
         value: "pacific" # "all", "pacific", or "non-pacific"
       - name: years
-      # TODO: Remove workaround of year subset blocks once the JSON issue is resolved.
-        # value: "2000-2008"
-        # value: "2009-2016"
-        # value: "2017-2025"
-        # value: "2000-2025"
-        value: "2025" # Training data is 2020 but predicting on 2025 because there are less gaps than 2020.
+        value: "2000,2025"
+        # Training data is 2020 but predicting on 2025 because there are less gaps than 2020.
+      - name: model-path
+        value: "https://dep-public-staging.s3.us-west-2.amazonaws.com/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib"
+      - name: collection-url-root
+        value: "https://stac.staging.digitalearthpacific.io/collections" # DEP Staging
+        # value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
+        # value: None # For Source Coop, let collection-url-root default
       - name: overwrite
-        # value: "--overwrite" # Can be "--overwrite" or "--no-overwrite"
-        value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
+        # value: "--overwrite"
+        value: "--no-overwrite"
       - name: decimated
-        value: "--no-decimated" # Can be "--decimated" or "--no-decimated"
+        value: "--no-decimated"
   templates:
     - name: workflow-entrypoint
       dag:
@@ -92,14 +94,19 @@ spec:
           # of waiting between tasks.
           requests:
             memory: 8Gi
-            cpu: 4
-          limits:
-            memory: 12Gi
-            cpu: 6
+            cpu: 3
         command: [sh, -c]
         args:
           - |
-            ldn print-tasks --years "{{ workflow.parameters.years }}" --region "{{ workflow.parameters.region }}" --lulc-version "{{ workflow.parameters.lulc-version }}" --dataset lulc {{ workflow.parameters.overwrite }} > /tmp/tasks.json
+            ldn print-tasks \
+              --years "{{ workflow.parameters.years }}" \
+              --region "{{ workflow.parameters.region }}" \
+              --lulc-version "{{ workflow.parameters.lulc-version }}" \
+              --geomad-version "{{ workflow.parameters.geomad-version }}" \
+              --dataset lulc \
+              {{ workflow.parameters.overwrite }} \
+              --bucket "{{ workflow.parameters.bucket }}" \
+              > /tmp/tasks.json
       outputs:
         parameters:
           - name: tasks
@@ -120,10 +127,10 @@ spec:
         resources:
           requests:
             memory: 8Gi
-            cpu: 4
+            cpu: 3
           limits:
             memory: 12Gi
-            cpu: 6
+            cpu: 4
         command: [ldn]
         args:
           - lulc
@@ -138,16 +145,19 @@ spec:
           - "{{ workflow.parameters.lulc-version }}"
           - --geomad-version
           - "{{ workflow.parameters.geomad-version }}"
-          # Let model_path default
-          # - --model-path
-          # - "https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/0-0-4/pacific/2020/lulc_random_forest_model_pacific_2020.joblib"
-          - "{{ workflow.parameters.decimated }}"
-          - "{{ workflow.parameters.overwrite }}"
+          - --model-path
+          - "{{ workflow.parameters.model-path }}"
+          - --bucket
+          - "{{ workflow.parameters.bucket }}"
+          - --collection-url-root
+          - "{{ workflow.parameters.collection-url-root }}"
           - --memory-limit
-          - "10GB"
+          - "6GB"
           - --n-workers
           - "2"
           - --threads-per-worker
           - "4"
           - --xy-chunk-size
           - "1024"
+          - "{{ workflow.parameters.decimated }}"
+          - "{{ workflow.parameters.overwrite }}"
