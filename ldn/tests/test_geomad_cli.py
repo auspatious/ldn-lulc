@@ -132,7 +132,6 @@ def test_geomad_run_and_skip(bucket_env, mock_s3, runner, stac_key):
             "pacific",
             "--integration-test",
             "--overwrite",
-            "--no-single-region",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -155,7 +154,6 @@ def test_geomad_run_and_skip(bucket_env, mock_s3, runner, stac_key):
             "--region",
             "pacific",
             "--integration-test",
-            "--no-single-region",
         ],
     )
     assert result.exit_code == 0, result.output
