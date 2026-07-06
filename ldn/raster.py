@@ -19,7 +19,6 @@ from scipy.ndimage import sobel
 from shapely.geometry import box
 
 from ldn.utils import (
-    SENSOR,
     WGS84,
     LdnError,
     get_public_url_base,
@@ -308,6 +307,7 @@ def build_pipeline_components(
     overwrite: bool,
     collection_url_root: str,
     s3_client: BaseClient,
+    sensor: str,
 ) -> tuple[PrefixedS3ItemPath, StacCreator, AwsDsCogWriter] | None:
     """Build shared pipeline components for GeoMAD and classify tasks.
 
@@ -319,7 +319,7 @@ def build_pipeline_components(
         key_prefix=source_coop_prefix,
         prefix=owner,
         bucket=bucket,
-        sensor=SENSOR,
+        sensor=sensor,
         dataset_id=dataset_id,
         version=version,
         time=year,

@@ -8,9 +8,9 @@ from ldn.utils import (
     GEOMAD_VERSION,
     LULC_VERSION,
     MODEL_VERSION,
+    SENSOR,
     LdnError,
     get_env_var,
-    owner_for_region,
 )
 
 classify_app = typer.Typer()
@@ -66,18 +66,19 @@ def run(
             help="Chunk size in pixels for x and y dimensions. Larger chunk sizes may be faster but use more memory."
         ),
     ] = 1024,
-    single_region: bool = typer.Option(
-        ...,
-        help="Whether to use the single region prefix (e.g. 'dep_ls_geomad') "
-        "or the generic prefix (e.g. 'ls_geomad') when accessing GeoMAD data.",
-    ),
+    sensor: str = typer.Option(SENSOR, help="Sensor to use for LULC classification. Defaults to 'ls'."),
+    collection_url_root: Annotated[
+        str | None,
+        typer.Option(
+            help="Override the default collection URL root"
+            " e.g for a STAC API like 'https://stac.digitalearthpacific.org/collections'"
+        ),
+    ] = None,
 ) -> None:
     if int(year) < 2000 or int(year) > 2025:
         raise LdnError("Year must be between 2000 and 2025.")
 
     bucket = bucket or get_env_var("BUCKET")  # Default
-    owner = owner_for_region(region, product_owner)
-    # TODO: Use build_prefix() here?
 
     run_classify_task(
         tile_id,
@@ -86,7 +87,7 @@ def run(
         geomad_version=geomad_version,
         region=region,
         bucket=bucket,
-        owner=owner,
+        product_owner=product_owner,
         model_path=model_path,
         xy_chunk_size=xy_chunk_size,
         decimated=decimated,
@@ -97,5 +98,6 @@ def run(
         memory_limit=memory_limit,
         n_workers=n_workers,
         threads_per_worker=threads_per_worker,
-        single_region=single_region,
+        sensor=sensor,
+        collection_url_root=collection_url_root,
     )
