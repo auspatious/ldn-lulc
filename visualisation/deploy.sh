@@ -2,9 +2,22 @@
 # Exit if any command fails, if any variable is unset.
 set -euo pipefail
 
-# You need to have set up env vars or run `aws configure` for this to work.
+# You need to have run:
+#   export AWS_PROFILE=<profile_name>
+#   aws sso login --profile <profile_name>
+# for this to work.
 
 AWS_REGION=${AWS_REGION:-us-west-2}
+AWS_PROFILE=${AWS_PROFILE:-default}
+
+echo "==> Using AWS profile: ${AWS_PROFILE}"
+
+# Export the current SSO session as plain env-var credentials. This sidesteps a
+# known Terraform S3-backend bug where it can't resolve the sso_session format
+# (only the older flat sso_start_url/sso_region-on-profile style), without
+# needing to duplicate config in ~/.aws/config.
+eval "$(aws configure export-credentials --profile "${AWS_PROFILE}" --format env)"
+
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 echo "==> Creating ECR repository..."
@@ -16,6 +29,10 @@ FUNCTION_NAME=$(terraform -chdir=visualisation/infra output -raw function_name)
 echo "==> Function name: ${FUNCTION_NAME}"
 
 poetry check --lock || { echo "poetry.lock is out of date. Run 'poetry lock' first."; exit 1; }
+
+echo "==> Copying SIDS tiles GeoJSON..."
+# Copy and minify GeoJSON.
+python -c "import json; import sys; json.dump(json.load(open('ldn/sids_all_tiles.geojson')), open('visualisation/static/sids_all_tiles.geojson','w'), separators=(',',':'))"
 
 echo "==> Building Docker image..."
 docker build --platform=linux/arm64 --provenance=false -f visualisation/Dockerfile -t ${FUNCTION_NAME} .

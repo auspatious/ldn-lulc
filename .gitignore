@@ -230,3 +230,5 @@ tasks.json
 
 # Model files
 *.joblib
+
+visualisation/static/sids_all_tiles.geojson
