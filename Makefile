@@ -103,14 +103,14 @@ collection-geomad-test-dep-staging:
 	--has-stac-api;
 
 
-# # TODO: Make mosaics for GeoMAD
-# make-mosaics-geomad:
-# 	ldn make-mosaics \
-# 	--dataset geomad;
-# # poetry run ldn make-mosaics --dataset geomad --geomad-version test-integration --single-region --product-owner dep;
-# # poetry run ldn make-mosaics --dataset geomad --geomad-version 0-3-0-test --single-region --product-owner dep;
-
-
+make-mosaics-geomad:
+	ldn make-mosaics \
+	--dataset geomad \
+	--geomad-version 0-3-0 \
+	--lulc-version 0-0-9 \
+	--single-region \
+	--product-owner dep \
+	--bucket dep-public-staging;
 
 
 #### Training Data
@@ -185,6 +185,15 @@ index-lulc-test-dep-staging:
 	ldn index-to-stac-geoparquet \
 	--dataset lulc \
  	--geomad-version 0-2-1 \
+	--lulc-version 0-0-9 \
+	--single-region \
+	--product-owner dep \
+	--bucket dep-public-staging;
+
+make-mosaics-lulc:
+	ldn make-mosaics \
+	--dataset lulc \
+	--geomad-version 0-2-1 \
 	--lulc-version 0-0-9 \
 	--single-region \
 	--product-owner dep \
