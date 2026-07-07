@@ -7,7 +7,6 @@ from ldn.lulc import run_classify_task
 from ldn.utils import (
     GEOMAD_VERSION,
     LULC_VERSION,
-    MODEL_VERSION,
     SENSOR,
     LdnError,
     get_env_var,
@@ -36,7 +35,7 @@ def run(
     product_owner: str | None = typer.Option(None, help="Override the region-derived owner prefix."),
     model_path: str = typer.Option(
         # TODO: defaults to pacific. Later have per region/time period models.
-        f"https://s3.us-west-2.amazonaws.com/data.ldn.auspatious.com/models/{MODEL_VERSION}/pacific/2020/lulc_random_forest_model_pacific_2020.joblib",
+        "https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib",
         help="Model to use for LULC classification.",
     ),
     decimated: bool = typer.Option(

@@ -163,7 +163,7 @@ lulc-predict-test:
 		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 		--no-overwrite;
 
-# 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+# 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 
 # TODO: For year in 2000 2025
 lulc-predict-test-2:
