@@ -165,22 +165,22 @@ lulc-predict-test:
 
 # 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 
-# TODO: For year in 2000 2025
 lulc-predict-test-2:
 	for site in $(PACIFIC_TRAINING_TILES) do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
 		region=$$(echo $$site | cut -d: -f2); \
-		ldn lulc run \
-			--tile-id $$tile_id \
-			--year 2000 \
-			--region $$region \
-			--version 0-0-9 \
-			--geomad-version 0-2-1 \
-			--bucket dep-public-staging \
-			--product-owner dep \
-			--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
-			--no-overwrite;
-
+		for year in 2000 2025; do \
+			ldn lulc run \
+				--tile-id $$tile_id \
+				--year $$year \
+				--region $$region \
+				--version 0-0-9 \
+				--geomad-version 0-2-1 \
+				--bucket dep-public-staging \
+				--product-owner dep \
+				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+				--no-overwrite;
+		done;
 	done;
 # # Update the STAC-Geoparquet index after all tiles/years have run.
 # index-lulc:
