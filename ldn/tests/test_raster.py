@@ -552,6 +552,7 @@ def test_build_pipeline_components_uses_public_url_base_for_full_path_prefix(moc
             overwrite=True,
             collection_url_root="https://example.com/collections",
             s3_client=MagicMock(),
+            sensor="ls",
         )
     mock_get_url.assert_called_once_with("dep-public-staging")
     itempath, *_ = result
@@ -579,6 +580,7 @@ def test_build_pipeline_components_itempath_key_prefix(mock_aws, bucket, source_
         overwrite=True,
         collection_url_root="https://example.com/collections",
         s3_client=MagicMock(),
+        sensor="ls",
     )
     assert result is not None
     itempath, *_ = result
@@ -599,6 +601,7 @@ def test_build_pipeline_components_returns_none_when_exists(mock_aws):
             overwrite=False,
             collection_url_root="https://example.com/collections",
             s3_client=MagicMock(),
+            sensor="ls",
         )
     assert result is None
 
@@ -617,5 +620,6 @@ def test_build_pipeline_components_proceeds_when_exists_and_overwrite(mock_aws):
             overwrite=True,
             collection_url_root="https://example.com/collections",
             s3_client=MagicMock(),
+            sensor="ls",
         )
     assert result is not None

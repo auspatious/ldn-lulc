@@ -42,6 +42,7 @@ from ldn.utils import (
     CLASS_ATTR,
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
+    LULC_DATASET_ID,
     SENSOR,
     TRAINING_DATA_VERSION,
     TRAINING_DATA_YEAR,
@@ -50,6 +51,8 @@ from ldn.utils import (
     dataset_prefix,
     get_analysis_epsg,
     get_env_var,
+    get_public_url_base,
+    get_stac_geoparquet_key,
     get_stac_geoparquet_url,
     is_bucket_source_coop,
     owner_for_region,
@@ -570,13 +573,13 @@ def filter_outliers(samples: gpd.GeoDataFrame, cap: float = 0.05) -> gpd.GeoData
     return samples
 
 
-def _upload_dataframe_csv_to_s3(df, bucket: str, path: str) -> str:
+def _upload_dataframe_csv_to_s3(df, bucket: str, key: str):
     """Upload a dataframe as CSV to S3 and return the S3 URI.
 
     Args:
         df: DataFrame to upload.
         bucket: S3 bucket name.
-        path: Key path within the bucket.
+        key: Key path within the bucket.
 
     Returns:
         S3 URI of the uploaded file.
@@ -584,14 +587,13 @@ def _upload_dataframe_csv_to_s3(df, bucket: str, path: str) -> str:
     csv_buffer = io.StringIO()
     df.to_csv(csv_buffer, index=False)
 
-    key = f"{path}"
     s3_client.put_object(
         Bucket=bucket,
         Key=key,
         Body=csv_buffer.getvalue(),
         ContentType="text/csv",
     )
-    return f"s3://{bucket}/{key}"  # TODO: Use utils functions for S3 URI formatting.
+    logger.info(f"Uploaded CSV to {get_public_url_base(bucket)}/{key}")
 
 
 # Dep tools utils have mask_to_gadm() which would be helpful, but I want to buffer gadm before masking.
@@ -638,13 +640,11 @@ def get_buffered_country(
 def get_tile_year_geomad_dem_indices(
     tile_id: str,
     year: str,
-    region: Literal["pacific", "non-pacific"],
     country_wgs84_buffered: gpd.GeoDataFrame,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     product_owner: str,
     bucket: str,
     geomad_version: str,
-    single_region: bool,
     sensor: str,
 ) -> xr.Dataset:
     """Load GeoMAD + DEM features for a tile, clipped to buffered country.
@@ -669,13 +669,11 @@ def get_tile_year_geomad_dem_indices(
     merged = search_and_load_geomad_indices_dem(
         tile_id=tile_id,
         year=year,
-        region=region,
         analysis_crs=analysis_crs,
         geopolygon=country_wgs84_buffered,
         product_owner=product_owner,
         geomad_version=geomad_version,
         bucket=bucket,
-        single_region=single_region,
         sensor=sensor,
     )
 
@@ -706,7 +704,6 @@ def make_training_data(
     file_prefix: str,
     n: int,
     min_sample_per_class_n: int,
-    single_region: bool,
     sensor: str,
 ):
     """Generate training data for a single tile and upload to S3 as CSV.
@@ -765,17 +762,14 @@ def make_training_data(
 
     logger.info("Loading GeoMAD, DEM, and indices")
     owner = owner_for_region(region, product_owner)
-    # TODO: Use build_prefix() here.
     geomad_dem_indices = get_tile_year_geomad_dem_indices(
         tile_id,
         year,
-        region=region,
         country_wgs84_buffered=country_wgs84_buffered,
         analysis_crs=analysis_crs,
         product_owner=owner,
         bucket=geomad_bucket,
         geomad_version=geomad_version,
-        single_region=single_region,
         sensor=sensor,
     )
     geobox = geomad_dem_indices.odc.geobox
@@ -807,8 +801,8 @@ def make_training_data(
     samples.to_csv(f"{out_fname_local}.csv", index=False)
     logger.info(f"Saved training data to {out_fname_local}")
 
-    s3_uri = _upload_dataframe_csv_to_s3(samples, output_bucket, f"{file_prefix}.csv")
-    logger.info(f"Uploaded training data to {s3_uri}")
+    out_fname_s3 = f"{dataset_prefix(owner, sensor, LULC_DATASET_ID)}/{file_prefix}.csv"
+    _upload_dataframe_csv_to_s3(samples, output_bucket, f"{out_fname_s3}")
 
 
 @cli_training_app.command()
@@ -835,6 +829,7 @@ def generate_training_data(
     n: int = typer.Option(2100, help="Total number of sample points"),
     min_sample_per_class_n: int = typer.Option(300, help="Minimum samples per class"),
     overwrite: bool = typer.Option(False, help="Whether to overwrite existing data in S3"),
+    # TODO: product_owner and single_region need to be seperate for geomad and output buckets.
     product_owner: str | None = typer.Option(None, help="Override the default product owner"),
     single_region: bool = typer.Option(
         ...,
@@ -904,7 +899,6 @@ def generate_training_data(
         file_prefix,
         n,
         min_sample_per_class_n,
-        single_region,
         sensor,
     )
 
@@ -933,13 +927,11 @@ def make_geomad_item_id(
 def search_and_load_geomad_indices_dem(
     tile_id: str,
     year: str,
-    region: Literal["pacific", "non-pacific"],
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     geopolygon: gpd.GeoDataFrame,
     product_owner: str,
     bucket: str,
     geomad_version: str,
-    single_region: bool,
     sensor: str,
 ) -> xr.Dataset:
     """Search, load, scale, and merge GeoMAD bands, spectral indices, and DEM terrain for a tile.
@@ -959,12 +951,11 @@ def search_and_load_geomad_indices_dem(
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
-    # geomad_stac_geoparquet_key = get_stac_geoparquet_key(
-    #     bucket, single_region, product_owner, sensor, "geomad", geomad_version
-    # )
-    geomad_stac_geoparquet_key = ""  # TODO: Fix this.
+    geomad_stac_geoparquet_key = get_stac_geoparquet_key(
+        bucket, product_owner, sensor, GEOMAD_DATASET_ID, geomad_version
+    )
     geomad_stac_geoparquet_url = get_stac_geoparquet_url(bucket, geomad_stac_geoparquet_key)
-    item_id = make_geomad_item_id(tile_id, sensor, year, product_owner=product_owner)
+    item_id = make_geomad_item_id(tile_id, sensor, year, product_owner)
 
     logger.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}.")
     if GEOMAD_VERSION != geomad_version:
@@ -975,6 +966,7 @@ def search_and_load_geomad_indices_dem(
     geomad_items = search_sync(
         geomad_stac_geoparquet_url,
         ids=item_id,
+        # max_items=1
     )
     geomad_items = [Item.from_dict(doc) for doc in geomad_items]
     geomad_items_n = len(geomad_items)

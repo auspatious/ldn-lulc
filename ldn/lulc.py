@@ -22,7 +22,7 @@ from rustac import search_sync
 from sklearn.ensemble import RandomForestClassifier
 from typing_extensions import Annotated
 
-from ldn.aws import configure_s3_access_profile
+from ldn.aws import configure_s3_access_profile, s3_client
 from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
 from ldn.raster import (
@@ -33,6 +33,7 @@ from ldn.raster import (
     scale_offset_landsat,
 )
 from ldn.utils import (
+    GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     LULC_DATASET_ID,
     LULC_VERSION,
@@ -40,8 +41,11 @@ from ldn.utils import (
     WGS84,
     LdnError,
     get_analysis_epsg,
+    get_public_url_base,
+    get_stac_geoparquet_key,
     get_stac_geoparquet_url,
     is_bucket_source_coop,
+    owner_for_region,
     parse_tile_id,
 )
 
@@ -206,7 +210,13 @@ def do_prediction(
     nodata_mask = stacked.isnull().any(dim="variable")
 
     # Build observation table: fill NaN with nodata_value (masked pixels are excluded below).
-    obs = stacked.squeeze().fillna(nodata_value).transpose().to_dataframe()
+    obs = (
+        stacked.squeeze()
+        .fillna(nodata_value)
+        .transpose()
+        .to_dataset(dim="variable")  # pivot "variable" into named columns
+        .to_dataframe()
+    )
 
     # Validate that all model features are present before reindexing.
     missing = set(model.feature_names_in_) - set(obs.columns)
@@ -382,7 +392,7 @@ def run_classify_task(
     geomad_version: Annotated[str, typer.Option()],
     region: Literal["pacific", "non-pacific"],
     bucket: str,
-    owner: str,
+    product_owner: str | None,
     model_path: str,
     xy_chunk_size: int,
     decimated: bool,
@@ -393,7 +403,8 @@ def run_classify_task(
     memory_limit: str,
     n_workers: int,
     threads_per_worker: int,
-    single_region: bool,
+    sensor: str,
+    collection_url_root: str | None,
 ) -> None:
     """Run LULC prediction for a single tile and year, writing results to S3.
 
@@ -407,7 +418,7 @@ def run_classify_task(
         geomad_version: Version of the GeoMAD data to use (e.g. "0-0-1").
         region: Grid region, either "pacific" or "non-pacific".
         bucket: S3 bucket for output COGs, STAC metadata, and input GeoMAD source data.
-        owner: Output prefix for paths (e.g. "dep" or "ci" or owner override).
+        product_owner: Override the region-derived owner prefix.
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
         decimated: If True, use 10x lower resolution (for testing).
@@ -418,6 +429,9 @@ def run_classify_task(
         memory_limit: Per-worker Dask memory limit.
         n_workers: Number of Dask workers.
         threads_per_worker: Number of threads per Dask worker.
+        single_region: If True, use the single region prefix (e.g. 'dep_ls_geomad') for GeoMAD data.
+        sensor: Sensor to use for LULC classification e.g. 'ls'.
+        collection_url_root: Override the default collection URL root for STAC metadata.
     """
     logger.info(f"Starting processing. Tile ID: {tile_id}, Year: {year}, Region: {region}, Version: {version}.")
     logger.info(
@@ -433,11 +447,11 @@ def run_classify_task(
         logger.info(
             f"Overriding the latest LULC prediction version ({LULC_VERSION}) with the specified version ({version})."
         )
+    owner = owner_for_region(region, product_owner)
 
-    # geomad_stac_geoparquet_key = get_stac_geoparquet_key(
-    #     bucket, single_region, product_owner, sensor, "geomad", geomad_version
-    # )
-    geomad_stac_geoparquet_key = ""  # TODO: Fix this.
+    geomad_stac_geoparquet_key = get_stac_geoparquet_key(
+        bucket, product_owner, sensor, GEOMAD_DATASET_ID, geomad_version
+    )
     geomad_stac_geoparquet_url = get_stac_geoparquet_url(bucket, geomad_stac_geoparquet_key)
 
     tile_id_tuple = parse_tile_id(tile_id)
@@ -464,18 +478,30 @@ def run_classify_task(
     logger.info("Loading model")
     loaded_model = _load_joblib_model(model_path)
 
+    # TODO: Could this block be a function because it will be done in cli_collection.py?
+    _is_source_coop = is_bucket_source_coop(bucket)
+    public_url = get_public_url_base(bucket)
+    if _is_source_coop:
+        public_url = f"{public_url}/{SOURCE_COOP_PREFIX_LULC}"
+    collection_url_root = collection_url_root or f"{public_url}/collections"
+
+    owner = owner_for_region(region, product_owner)
+
     components = build_pipeline_components(
         tile_id_tuple,
         year,
         version,
         bucket,
-        owner,
+        owner,  # This owner respects single_region because geomad always writes to an owner.
         LULC_DATASET_ID,
-        SOURCE_COOP_PREFIX_LULC if is_bucket_source_coop(bucket) else None,
+        SOURCE_COOP_PREFIX_LULC if _is_source_coop else None,
         overwrite,
+        collection_url_root=collection_url_root,
+        s3_client=s3_client,
+        sensor=sensor,
     )
     if components is None:
-        return  # Task exists and overwrite is False, so skipping processing.
+        return  # Skip due to no overwrite.
     itempath, stac_creator, writer = components
 
     searcher = StacGeoparquetSearcher(

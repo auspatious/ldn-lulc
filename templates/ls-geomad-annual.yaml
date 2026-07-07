@@ -43,9 +43,6 @@ spec:
       - name: region
         # Just run Pacific in DEP Argo instance.
         value: "pacific" # "all", "pacific", or "non-pacific"
-      - name: single-region
-        value: "--single-region" # For single region products e.g. DEP (staging and prod).
-        # value: "false" # For places with both regions e.g. Source Coop.
       - name: years
         # Need to run in 8 years blocks because print-tasks output is too large.
         # value: "2000-2008"
@@ -97,8 +94,8 @@ spec:
             # provision a small node first (c6.xlarge/large), then process geomad can't fit
             # and has to wait for another node to come up. Not critical, just saves a few minutes
             # of waiting between tasks.
-            memory: 16Gi
-            cpu: 10
+            memory: 10Gi
+            cpu: 3
         command: [sh, -c]
         args:
           - |
@@ -159,7 +156,6 @@ spec:
           - "{{ inputs.parameters.year }}"
           - --region
           - "{{ inputs.parameters.region }}"
-          - "{{ workflow.parameters.single-region }}"
           - --version
           - "{{ workflow.parameters.version }}"
           - --collection-url-root

@@ -58,7 +58,6 @@ geomad-test-ausp:
 		--year 2000 \
 		--version 0-3-0-test \
 		--decimated \
-		--no-single-region \
 		--bucket data.ldn.auspatious.com \
 		--overwrite;
 geomad-test-dep-staging:
@@ -69,7 +68,6 @@ geomad-test-dep-staging:
 		--version 0-3-0-test \
 		--collection-url-root="https://stac.staging.digitalearthpacific.io/collections" \
 		--decimated \
-		--single-region \
 		--bucket dep-public-staging \
 		--overwrite;
 
@@ -115,27 +113,28 @@ collection-geomad-test-dep-staging:
 
 
 
-# #### Training Data
-# training-data-generate:
-# 	for site in $(PACIFIC_TRAINING_TILES); do \
-# 		tile_id=$$(echo $$site | cut -d: -f1); \
-# 		region=$$(echo $$site | cut -d: -f2); \
-# 		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
-# 		country_code=$$(echo $$site | cut -d: -f4); \
-# 		ldn training generate-training-data \
-# 			--tile-id $$tile_id \
-# 			--region $$region \
-# 			--country-name "$$country_name" \
-# 			--country-code "$$country_code"; \
-# 	done;
+#### Training Data
+# Geomad version: 0-2-1 in DEP staging, 0-3-0 in DEP public.
+training-data-generate:
+	for site in $(PACIFIC_TRAINING_TILES) do \
+		tile_id=$$(echo $$site | cut -d: -f1); \
+		region=$$(echo $$site | cut -d: -f2); \
+		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
+		country_code=$$(echo $$site | cut -d: -f4); \
+		ldn training generate-training-data \
+			--tile-id $$tile_id \
+			--region $$region \
+			--country-name "$$country_name" \
+			--country-code "$$country_code" \
+			--geomad-version 0-2-1 \
+			--geomad-bucket dep-public-staging \
+			--output-bucket dep-public-staging \
+			--single-region \
+			--product-owner dep \
+			--no-overwrite; \
+	done;
 
-# # poetry run ldn training generate-training-data \
-# # 	--tile-id 028_030 \
-# # 	--region pacific \
-# # 	--country-name "Papua New Guinea" \
-# # 	--country-code "PNG" \
-# # 	--geomad-version 0-2-1;
-
+#### Make the model using ldn-lulc/notebooks/1_Train_Model.ipynb
 
 
 
@@ -143,7 +142,7 @@ collection-geomad-test-dep-staging:
 
 # # Predict LULC for the test tiles and one year (2025).
 
-# # 1. Print tasks
+# # Print tasks
 # print-tasks-lulc-2020:
 # 	ldn print-tasks \
 # 	--years="2020" \
@@ -151,37 +150,39 @@ collection-geomad-test-dep-staging:
 # 	--dataset="lulc";
 
 
-# # 2. Classify
-# predict-lulc-test-tiles-2020:
-# 	for site in $(TEST_TILES); do \
-# 		tile_id=$${site%%:*}; \
-# 		region=$${site#*:}; region=$${region%%:*}; \
-# 		ldn lulc run \
-# 			--tile-id $$tile_id \
-# 			--year 2020 \
-# 			--version $(LULC_VERSION) \
-# 			--geomad-version $(GEOMAD_VERSION) \
-# 			--region $$region \
-# 			$(DECIMATED) \
-# 			--overwrite; \
-# 	done;
+# # Classify
+lulc-predict-test:
+	ldn lulc run \
+		--tile-id 028_030 \
+		--year 2000 \
+		--region pacific \
+		--version 0-0-9 \
+		--geomad-version 0-2-1 \
+		--bucket dep-public-staging \
+		--product-owner dep \
+		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+		--no-overwrite;
 
-# lulc-2-regions-decimated:
-# 	for site in $(TEST_TILES_2_REGIONS); do \
-# 		tile_id=$${site%%:*}; \
-# 		region=$${site#*:}; region=$${region%%:*}; \
-# 		ldn lulc run \
-# 			--tile-id $$tile_id \
-# 			--year 2010 \
-# 			--version $(LULC_VERSION) \
-# 			--geomad-version $(GEOMAD_VERSION) \
-# 			--region $$region \
-# 			--decimated \
-# 			--overwrite; \
-# 	done;
+# 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 
-
-# # 3. Update the STAC-Geoparquet index after all tiles/years have run.
+lulc-predict-test-2:
+	for site in $(PACIFIC_TRAINING_TILES) do \
+		tile_id=$$(echo $$site | cut -d: -f1); \
+		region=$$(echo $$site | cut -d: -f2); \
+		for year in 2000 2025; do \
+			ldn lulc run \
+				--tile-id $$tile_id \
+				--year $$year \
+				--region $$region \
+				--version 0-0-9 \
+				--geomad-version 0-2-1 \
+				--bucket dep-public-staging \
+				--product-owner dep \
+				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+				--no-overwrite;
+		done;
+	done;
+# # Update the STAC-Geoparquet index after all tiles/years have run.
 # index-lulc:
 # 	ldn index-to-stac-geoparquet \
 # 	--dataset "lulc" \

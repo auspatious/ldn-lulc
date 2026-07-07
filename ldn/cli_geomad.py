@@ -85,10 +85,6 @@ def run(
     year: Annotated[str, typer.Option()],
     version: Annotated[str, typer.Option()],
     region: Annotated[Literal["pacific", "non-pacific"], typer.Option()],
-    single_region: Annotated[
-        bool,
-        typer.Option(help="Whether to use the single region prefix for the collection_url_root (e.g. 'dep_ls_geomad')"),
-    ],
     bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
     product_owner: Annotated[str | None, typer.Option(help="Override the region-derived owner prefix.")] = None,
     overwrite: Annotated[bool, typer.Option()] = False,
@@ -112,7 +108,7 @@ def run(
         str | None,
         typer.Option(
             help="Override the default collection URL root"
-            " e.g for a STAC API like 'https://stac.digitalearthpacific.org/collections/dep_ls_geomad'"
+            " e.g for a STAC API like 'https://stac.digitalearthpacific.org/collections'"
         ),
     ] = None,
     sensor: Annotated[str, typer.Option(help="Sensor name, e.g. 'ls'.")] = SENSOR,
@@ -221,6 +217,7 @@ def run(
         overwrite,
         collection_url_root=collection_url_root,
         s3_client=s3_client,
+        sensor=sensor,
     )
     if components is None:
         return  # Skip due to no overwrite.
