@@ -159,7 +159,6 @@ lulc-predict-test:
 		--version 0-0-9 \
 		--geomad-version 0-2-1 \
 		--bucket dep-public-staging \
-		--product-owner dep \
 		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 		--no-overwrite;
 
@@ -177,15 +176,16 @@ lulc-predict-test-2:
 				--version 0-0-9 \
 				--geomad-version 0-2-1 \
 				--bucket dep-public-staging \
-				--product-owner dep \
 				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 				--no-overwrite;
 		done;
 	done;
-# # Update the STAC-Geoparquet index after all tiles/years have run.
-# index-lulc:
-# 	ldn index-to-stac-geoparquet \
-# 	--dataset "lulc" \
-# 	--region "all" \
-# 	--geomad-version $(GEOMAD_VERSION) \
-# 	--lulc-version $(LULC_VERSION);
+
+index-lulc-test-dep-staging:
+	ldn index-to-stac-geoparquet \
+	--dataset lulc \
+ 	--geomad-version 0-2-1 \
+	--lulc-version 0-0-9 \
+	--single-region \
+	--product-owner dep \
+	--bucket dep-public-staging;
