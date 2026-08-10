@@ -15,8 +15,7 @@ WORKDIR /var/task
 
 COPY pyproject.toml uv.lock ./
 # --only-group excludes the project itself AND default groups (dev),
-# giving you just the visualisation group — same as the old
-# `poetry install --no-root --only visualisation`.
+# giving you just the visualisation group
 RUN uv sync --frozen --only-group visualisation
 
 COPY visualisation/app.py ./
