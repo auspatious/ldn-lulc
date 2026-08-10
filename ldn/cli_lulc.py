@@ -31,7 +31,8 @@ def run(
     region: Literal["pacific", "non-pacific"] = typer.Option(
         ..., help="Region tile belongs to. Can be 'pacific' or 'non-pacific'."
     ),
-    bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
+    geomad_bucket: Annotated[str | None, typer.Option(help="S3 bucket for GeoMAD data.")] = None,
+    output_bucket: Annotated[str | None, typer.Option(help="S3 bucket to write LULC data to.")] = None,
     product_owner: str | None = typer.Option(None, help="Override the region-derived owner prefix."),
     model_path: str = typer.Option(
         # TODO: defaults to pacific. Later have per region/time period models.
@@ -77,7 +78,8 @@ def run(
     if int(year) < 2000 or int(year) > 2025:
         raise LdnError("Year must be between 2000 and 2025.")
 
-    bucket = bucket or get_env_var("BUCKET")  # Default
+    geomad_bucket = geomad_bucket or get_env_var("GEOMAD_BUCKET")  # Default
+    output_bucket = output_bucket or get_env_var("OUTPUT_BUCKET")  # Default
 
     run_classify_task(
         tile_id,
@@ -85,7 +87,8 @@ def run(
         version=version,
         geomad_version=geomad_version,
         region=region,
-        bucket=bucket,
+        geomad_bucket=geomad_bucket,
+        output_bucket=output_bucket,
         product_owner=product_owner,
         model_path=model_path,
         xy_chunk_size=xy_chunk_size,

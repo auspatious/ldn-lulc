@@ -142,27 +142,28 @@ training-data-generate:
 
 # # Predict LULC for the test tiles and one year (2025).
 
-# # Print tasks
-# print-tasks-lulc-2020:
-# 	ldn print-tasks \
-# 	--years="2020" \
-# 	--region="pacific" \
-# 	--dataset="lulc";
+print-tasks-lulc-2000-non-pacific:
+	ldn print-tasks \
+		--years="2000" \
+		--region="non-pacific" \
+		--geomad-version 0-2-1 \
+		--dataset lulc \
+		--no-overwrite \
+		--bucket dep-public-staging;
 
 
 # # Classify
-lulc-predict-test:
+lulc-predict-test-pacific:
 	ldn lulc run \
 		--tile-id 028_030 \
 		--year 2000 \
 		--region pacific \
 		--version 0-0-9 \
 		--geomad-version 0-2-1 \
-		--bucket dep-public-staging \
+		--geomad-bucket dep-public-staging \
+		--output-bucket dep-public-staging \
 		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 		--no-overwrite;
-
-# 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 
 lulc-predict-test-2:
 	for site in $(PACIFIC_TRAINING_TILES) do \
@@ -175,11 +176,28 @@ lulc-predict-test-2:
 				--region $$region \
 				--version 0-0-9 \
 				--geomad-version 0-2-1 \
-				--bucket dep-public-staging \
+				--geomad-bucket dep-public-staging \
+				--output-bucket dep-public-staging \
 				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 				--no-overwrite;
 		done;
 	done;
+
+# TODO: Use Pacific model?
+# TODO: Read from Source Coop.
+lulc-predict-test-non-pacific:
+	ldn lulc run \
+		--tile-id 312_106 \
+		--year 2000 \
+		--region non-pacific \
+		--version 0-0-9 \
+		--geomad-version 0-2-1 \
+		--geomad-bucket us-west-2.opendata.source.coop \
+		--output-bucket dep-public-staging \
+		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+		--no-overwrite;
+# 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+
 
 index-lulc-test-dep-staging:
 	ldn index-to-stac-geoparquet \
@@ -190,11 +208,31 @@ index-lulc-test-dep-staging:
 	--product-owner dep \
 	--bucket dep-public-staging;
 
-make-mosaics-lulc:
+
+index-lulc-test-ci-staging:
+	ldn index-to-stac-geoparquet \
+	--dataset lulc \
+ 	--geomad-version 0-2-1 \
+	--lulc-version 0-0-9 \
+	--single-region \
+	--product-owner ci \
+	--bucket dep-public-staging;
+
+
+make-mosaics-lulc-dep:
 	ldn make-mosaics \
 	--dataset lulc \
 	--geomad-version 0-2-1 \
 	--lulc-version 0-0-9 \
 	--single-region \
 	--product-owner dep \
+	--bucket dep-public-staging;
+
+make-mosaics-lulc-ci:
+	ldn make-mosaics \
+	--dataset lulc \
+	--geomad-version 0-2-1 \
+	--lulc-version 0-0-9 \
+	--single-region \
+	--product-owner ci \
 	--bucket dep-public-staging;

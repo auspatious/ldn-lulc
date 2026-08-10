@@ -391,7 +391,8 @@ def run_classify_task(
     version: Annotated[str, typer.Option()],
     geomad_version: Annotated[str, typer.Option()],
     region: Literal["pacific", "non-pacific"],
-    bucket: str,
+    geomad_bucket: str,
+    output_bucket: str,
     product_owner: str | None,
     model_path: str,
     xy_chunk_size: int,
@@ -417,7 +418,8 @@ def run_classify_task(
         version: Output version string (e.g. "0-0-1").
         geomad_version: Version of the GeoMAD data to use (e.g. "0-0-1").
         region: Grid region, either "pacific" or "non-pacific".
-        bucket: S3 bucket for output COGs, STAC metadata, and input GeoMAD source data.
+        geomad_bucket: S3 bucket for input GeoMAD source data.
+        output_bucket: S3 bucket for output COGs and STAC metadata.
         product_owner: Override the region-derived owner prefix.
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
@@ -450,9 +452,9 @@ def run_classify_task(
     owner = owner_for_region(region, product_owner)
 
     geomad_stac_geoparquet_key = get_stac_geoparquet_key(
-        bucket, product_owner, sensor, GEOMAD_DATASET_ID, geomad_version
+        geomad_bucket, product_owner, sensor, GEOMAD_DATASET_ID, geomad_version
     )
-    geomad_stac_geoparquet_url = get_stac_geoparquet_url(bucket, geomad_stac_geoparquet_key)
+    geomad_stac_geoparquet_url = get_stac_geoparquet_url(geomad_bucket, geomad_stac_geoparquet_key)
 
     tile_id_tuple = parse_tile_id(tile_id)
 
@@ -479,8 +481,8 @@ def run_classify_task(
     loaded_model = _load_joblib_model(model_path)
 
     # TODO: Could this block be a function because it will be done in cli_collection.py?
-    _is_source_coop = is_bucket_source_coop(bucket)
-    public_url = get_public_url_base(bucket)
+    _is_source_coop = is_bucket_source_coop(output_bucket)
+    public_url = get_public_url_base(output_bucket)
     if _is_source_coop:
         public_url = f"{public_url}/{SOURCE_COOP_PREFIX_LULC}"
     collection_url_root = collection_url_root or f"{public_url}/collections"
@@ -491,7 +493,7 @@ def run_classify_task(
         tile_id_tuple,
         year,
         version,
-        bucket,
+        output_bucket,
         owner,  # This owner respects single_region because geomad always writes to an owner.
         LULC_DATASET_ID,
         SOURCE_COOP_PREFIX_LULC if _is_source_coop else None,
