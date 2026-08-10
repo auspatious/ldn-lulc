@@ -45,7 +45,7 @@ LULC_REGION = "us-west-2"
 # keep treating "lulc" as one seamless dataset.
 LULC_REGIONAL_PREFIXES = {
     "pacific": "dep_ls_lulc",
-    "caribbean": "ci_ls_lulc",
+    "non-pacific": "ci_ls_lulc",
 }
 
 
