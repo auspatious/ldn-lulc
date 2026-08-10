@@ -39,12 +39,14 @@ spec:
         value: "0-0-9"
       - name: geomad-version
         value: "0-2-1"
-      - name: bucket
+      - name: geomad-bucket
+        value: "us-west-2.opendata.source.coop"
+      - name: output-bucket
         value: "dep-public-staging" # DEP Staging
         # value: "dep-public-data" # DEP Prod
       - name: region
         # Just run Pacific in DEP Argo instance.
-        value: "pacific" # "all", "pacific", or "non-pacific"
+        value: "non-pacific" # "all", "pacific", or "non-pacific"
       - name: years
         value: "2000,2025"
         # Training data is 2020 but predicting on 2025 because there are less gaps than 2020.
@@ -55,7 +57,8 @@ spec:
         # value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
         # value: None # For Source Coop, let collection-url-root default
       - name: product-owner
-        value: "dep" # Needed for DEP
+        # value: "dep" # Needed for DEP
+        value: "ci" # Needed for DEP
         # value: None # For Source Coop.
       - name: overwrite
         # value: "--overwrite"
@@ -112,7 +115,7 @@ spec:
               --geomad-version "{{ workflow.parameters.geomad-version }}" \
               --dataset lulc \
               {{ workflow.parameters.overwrite }} \
-              --bucket "{{ workflow.parameters.bucket }}" \
+              --bucket "{{ workflow.parameters.output-bucket }}" \
               > /tmp/tasks.json
       outputs:
         parameters:
@@ -154,8 +157,10 @@ spec:
           - "{{ workflow.parameters.geomad-version }}"
           - --model-path
           - "{{ workflow.parameters.model-path }}"
-          - --bucket
-          - "{{ workflow.parameters.bucket }}"
+          - --geomad-bucket
+          - "{{ workflow.parameters.geomad-bucket }}"
+          - --output-bucket
+          - "{{ workflow.parameters.output-bucket }}"
           - --product-owner
           - "{{ workflow.parameters.product-owner }}"
           - --collection-url-root
