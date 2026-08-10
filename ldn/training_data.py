@@ -57,8 +57,8 @@ from ldn.utils import (
     is_bucket_source_coop,
     owner_for_region,
     parse_tile_id,
+    standardise_class,
 )
-from notebooks.src.Compare_LULC_func import standardise_class
 
 logger = logging.getLogger(__name__)
 

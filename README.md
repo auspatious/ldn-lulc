@@ -21,39 +21,36 @@ rustup-init
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
+3. Install uv if you don't have it already:
 ```bash
-poetry lock --no-update
-poetry export -f requirements.txt --output requirements.txt --with dev --with visualisation --without-hashes
-uv pip install -r requirements.txt
-uv run ldn --help
+  brew install uv
+```
+or
+```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-3. Install Poetry if you don't have it already:
+4. Sync dependencies. uv will create a `.venv` automatically using the Python version pinned by `requires-python` in `pyproject.toml` (installing it if needed).
+
+This installs the main dependency group plus the `dev` group (synced by default). Deps like `cogeo-mosaic` and `boto3` are in both the main group and the `visualisation` group.
 ```bash
-  pip install poetry
+  uv sync
 ```
 
-4. Create and activate a Poetry virtual environment pointing at Homebrew's Python 3.12 and install dependencies:
-This installs main group. Deps like `cogeo-mosaic` and `boto3` are in both main and visualisation group.
+  For main dependencies only (no dev tools):
 ```bash
-  poetry env use $(brew --prefix python@3.12)/bin/python3.12
-  poetry install
+   uv sync --no-dev
 ```
 
-  For development dependencies:
+  For visualisation dependencies only (no project, no dev group):
 ```bash
-   poetry install --with dev
-```
-
-  For visualisation dependencies:
-```bash
-   poetry install --no-root --only visualisation
+   uv sync --only-group visualisation
 ```
 
 5. Run the CLI tool:
 ```bash
-   poetry run ldn --help
-   poetry run make {command from Makefile}
+   uv run ldn --help
+   uv run make {command from Makefile}
 ```
 
 ## AWS
@@ -66,15 +63,17 @@ Docs on AWS SSO here: https://github.com/digitalearthpacific/internal-documentat
 
 ### To add a dependency
 
-Run: `poetry add --dev pytest`
+Run: `uv add --group dev pytest`
 
 Others:
-poetry add "dep-tools@git+https://github.com/digitalearthpacific/dep-tools.git"
-poetry add "datacube-compute@git+https://github.com/auspatious/datacube-compute.git"
+```bash
+uv add "dep-tools @ git+https://github.com/digitalearthpacific/dep-tools.git"
+uv add "datacube-compute @ git+https://github.com/auspatious/datacube-compute.git"
+```
 
 ### To run tests
 
-Simply run: `poetry run pytest` or for a specific file: `poetry run pytest ldn/tests/test_mosaic.py`
+Simply run: `uv run pytest` or for a specific file: `uv run pytest ldn/tests/test_mosaic.py`
 
 
 ### Pre-commit hooks
@@ -84,18 +83,18 @@ Formats Python, YAML, and JSON.
 To use pre-commit to automatically run ruff, and other checks on each commit, make sure the development dependencies are installed and then run:
 
 ```bash
-poetry run pre-commit install
+uv run pre-commit install
 ```
 
-Note that you will need to run `poetry run pre-commit run --all-files` if any of the hooks in `.pre-commit-config.yaml` change.
+Note that you will need to run `uv run pre-commit run --all-files` if any of the hooks in `.pre-commit-config.yaml` change.
 
 
 ## Running Commands
 
 You can run these:
-- `poetry run ldn --help`
-- `poetry run ldn version`
-- `poetry run ldn grid list-countries` or `make grid-list-countries`
+- `uv run ldn --help`
+- `uv run ldn version`
+- `uv run ldn grid list-countries` or `make grid-list-countries`
 
 Future commands could look like:
 - Get a class: `ldn grid <class_name>` e.g. forest or grassland
@@ -140,16 +139,16 @@ A tile server for viewing GeoMedian/GeoMAD and predicted LULC mosaics, built wit
 ### Run locally
 
 ```bash
-poetry install --with visualisation
-poetry run uvicorn visualisation.app:app --host 0.0.0.0 --port 8081 --reload
+uv sync --group visualisation
+uv run uvicorn visualisation.app:app --host 0.0.0.0 --port 8081 --reload
 ```
 
 ### Deploy
 
 From the project root:
 ```bash
-poetry install --with visualisation # Needed for ldn make-mosaics command.
-poetry run bash visualisation/deploy.sh
+uv sync --group visualisation # Needed for ldn make-mosaics command.
+uv run bash visualisation/deploy.sh
 ```
 
 This will:

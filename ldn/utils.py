@@ -4,9 +4,11 @@ import re
 from typing import Literal
 
 from dep_tools.grids import COUNTRIES_AND_CODES as DEP_COUNTRIES_AND_CODES
+from numpy import nan
 from pystac import ItemCollection
 from rustac import read_sync
 from rustac import store as rustac_store
+from xarray import full_like
 
 from ldn.aws import aws_session, get_credential_provider
 
@@ -337,3 +339,14 @@ def build_prefix(
     if is_bucket_source_coop(bucket):
         prefix = f"{source_coop_prefix(dataset)}/{prefix}"
     return prefix
+
+
+# project the current land cover classes to UNCCD, based on the given mapping directory
+def standardise_class(DataArray, mapping):
+    # Create a copy to preserve original metadata
+    remapped = full_like(DataArray, fill_value=nan)
+
+    for original, new in mapping.items():
+        remapped = remapped.where(DataArray != original, new)
+
+    return remapped
