@@ -1,6 +1,5 @@
 # package for comparing LULC products
 import numpy as np
-import xarray as xr
 from matplotlib.colors import BoundaryNorm, ListedColormap
 
 from ldn.typology import classes_flipped as standard_legend
@@ -31,17 +30,6 @@ def get_standard_cmap():
 def get_standard_norm():
     ids = get_class_ids()
     return BoundaryNorm(ids + [max(ids) + 1], len(ids))
-
-
-# project the current land cover classes to UNCCD, based on the given mapping directory
-def standardise_class(DataArray, mapping):
-    # Create a copy to preserve original metadata
-    remapped = xr.full_like(DataArray, fill_value=np.nan)
-
-    for original, new in mapping.items():
-        remapped = remapped.where(DataArray != original, new)
-
-    return remapped
 
 
 # Given the source and target data, generate the parameters for sankey diagrams

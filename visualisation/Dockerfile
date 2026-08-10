@@ -1,5 +1,4 @@
-# FROM public.ecr.aws/lambda/python:3.12 # Could use this image but then GDAL is hard.
-FROM ghcr.io/osgeo/gdal:ubuntu-small-3.12.3
+FROM ghcr.io/osgeo/gdal:ubuntu-small-3.13.1
 
 RUN apt-get update && apt-get install -y \
     python3-pip \
@@ -8,16 +7,17 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/{apt,dpkg,cache,log}
 
-RUN pip install --break-system-packages poetry
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+ENV UV_PROJECT_ENVIRONMENT=/var/task/.venv \
+    UV_LINK_MODE=copy
 
 WORKDIR /var/task
 
-COPY pyproject.toml poetry.lock ./
-RUN poetry config virtualenvs.in-project true && \
-    poetry install --no-root --only visualisation
-RUN .venv/bin/pip install awslambdaric
+COPY pyproject.toml uv.lock ./
+# --only-group excludes the project itself AND default groups (dev),
+# giving you just the visualisation group
+RUN uv sync --frozen --only-group visualisation
 
-# Copy app.py and static folder.
 COPY visualisation/app.py ./
 COPY visualisation/static/ ./static/
 

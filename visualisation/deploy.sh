@@ -28,7 +28,7 @@ terraform -chdir=visualisation/infra apply \
 FUNCTION_NAME=$(terraform -chdir=visualisation/infra output -raw function_name)
 echo "==> Function name: ${FUNCTION_NAME}"
 
-poetry check --lock || { echo "poetry.lock is out of date. Run 'poetry lock' first."; exit 1; }
+uv lock --check || { echo "uv.lock is out of date. Run 'uv lock' first."; exit 1; }
 
 echo "==> Copying SIDS tiles GeoJSON..."
 # Copy and minify GeoJSON.
