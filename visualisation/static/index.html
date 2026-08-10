@@ -176,15 +176,15 @@
       <h3>Layers</h3>
 
       <div class="layer-group">
-        <p class="layer-group-title">Classification (<span id="lbl-prediction-version">v…</span>)</p>
-        <label><input type="checkbox" id="chk-class" checked/> <span id="lbl-class">Classification</span></label>
-        <label><input type="checkbox" id="chk-prob1"/> Probability 1 &#8211; Tree cover</label>
-        <label><input type="checkbox" id="chk-prob2"/> Probability 2 &#8211; Grassland</label>
-        <label><input type="checkbox" id="chk-prob3"/> Probability 3 &#8211; Cropland</label>
-        <label><input type="checkbox" id="chk-prob4"/> Probability 4 &#8211; Wetland</label>
-        <label><input type="checkbox" id="chk-prob5"/> Probability 5 &#8211; Built-up</label>
-        <label><input type="checkbox" id="chk-prob6"/> Probability 6 &#8211; Water</label>
-        <label><input type="checkbox" id="chk-prob7"/> Probability 7 &#8211; Other</label>
+        <p class="layer-group-title">LULC (<span id="lbl-lulc-version">v…</span>)</p>
+        <label><input type="checkbox" id="chk-class" checked/> <span id="lbl-class">LULC</span></label>
+        <label><input type="checkbox" id="chk-prob1"/> Probability 1 - Tree cover</label>
+        <label><input type="checkbox" id="chk-prob2"/> Probability 2 - Grassland</label>
+        <label><input type="checkbox" id="chk-prob3"/> Probability 3 - Cropland</label>
+        <label><input type="checkbox" id="chk-prob4"/> Probability 4 - Wetland</label>
+        <label><input type="checkbox" id="chk-prob5"/> Probability 5 - Built-up</label>
+        <label><input type="checkbox" id="chk-prob6"/> Probability 6 - Water</label>
+        <label><input type="checkbox" id="chk-prob7"/> Probability 7 - Other</label>
       </div>
 
       <div class="layer-group" style="margin-top:8px;">
@@ -192,6 +192,15 @@
         <label><input type="checkbox" id="chk-rgb" checked/> GeoMedian (RGB)</label>
         <label><input type="checkbox" id="chk-geomad"/> GeoMAD (S, E, BC)</label>
         <label><input type="checkbox" id="chk-count"/> Observation count</label>
+      </div>
+
+      <div class="layer-group" style="margin-top:8px;">
+        <p class="layer-group-title">Reference</p>
+        <label><input type="checkbox" id="chk-grid" checked/> SIDS tile grid</label>
+        <div class="opacity-row" style="padding-left:2px;">
+          <input type="range" id="grid-opacity" min="0" max="1" step="0.05" value="0.6"/>
+          <span id="grid-opacity-val" style="min-width:32px;text-align:right;font-size:11px;color:var(--color-light-2);">60%</span>
+        </div>
       </div>
     </div>
 
@@ -259,7 +268,7 @@
     });
 
     var YEARS_GEOMAD = [];
-    var YEARS_PREDICTION = [];
+    var YEARS_LULC = [];
     var VERSIONS = {};
     var CLASS_LABELS = {1:"Tree cover",2:"Grassland",3:"Cropland",4:"Wetland",5:"Built-up",6:"Water",7:"Other",255:"No data"};
 
@@ -304,25 +313,25 @@
     // Layer definitions (order determines z-order on map: first = bottom)
     var LAYER_ORDER = ["count", "geomad", "rgb", "prob7", "prob6", "prob5", "prob4", "prob3", "prob2", "prob1", "class"];
     var LAYERS = {
-      "class":  { label:"Classification",       ds:"prediction", dsYears:YEARS_PREDICTION,
+      "class":  { label:"LULC",       ds:"lulc", dsYears:YEARS_LULC,
                   qs:"assets=classification&colormap_name=lulc" },
       "rgb":    { label:"GeoMedian (RGB)",       ds:"geomad",     dsYears:YEARS_GEOMAD,
                   qs:"assets=red&assets=green&assets=blue&rescale=7200,12000&rescale=7200,12000&rescale=7200,12000" },
       "geomad": { label:"GeoMAD (S, E, BC)",     ds:"geomad",     dsYears:YEARS_GEOMAD,
                   qs:"assets=smad&assets=emad&assets=bcmad&rescale=0,0.0012&rescale=262,2150&rescale=0.006,0.04" },
-      "prob1":  { label:"Probability 1 (Tree cover)", ds:"prediction", dsYears:YEARS_PREDICTION,
+      "prob1":  { label:"Probability 1 (Tree cover)", ds:"lulc", dsYears:YEARS_LULC,
                   qs:"assets=probability_1&colormap_name=rdylgn&rescale=0,100" },
-      "prob2":  { label:"Probability 2 (Grassland)",  ds:"prediction", dsYears:YEARS_PREDICTION,
+      "prob2":  { label:"Probability 2 (Grassland)",  ds:"lulc", dsYears:YEARS_LULC,
                   qs:"assets=probability_2&colormap_name=rdylgn&rescale=0,100" },
-      "prob3":  { label:"Probability 3 (Cropland)",   ds:"prediction", dsYears:YEARS_PREDICTION,
+      "prob3":  { label:"Probability 3 (Cropland)",   ds:"lulc", dsYears:YEARS_LULC,
                   qs:"assets=probability_3&colormap_name=rdylgn&rescale=0,100" },
-      "prob4":  { label:"Probability 4 (Wetland)",    ds:"prediction", dsYears:YEARS_PREDICTION,
+      "prob4":  { label:"Probability 4 (Wetland)",    ds:"lulc", dsYears:YEARS_LULC,
                   qs:"assets=probability_4&colormap_name=rdylgn&rescale=0,100" },
-      "prob5":  { label:"Probability 5 (Built-up)",   ds:"prediction", dsYears:YEARS_PREDICTION,
+      "prob5":  { label:"Probability 5 (Built-up)",   ds:"lulc", dsYears:YEARS_LULC,
                   qs:"assets=probability_5&colormap_name=rdylgn&rescale=0,100" },
-      "prob6":  { label:"Probability 6 (Water)",      ds:"prediction", dsYears:YEARS_PREDICTION,
+      "prob6":  { label:"Probability 6 (Water)",      ds:"lulc", dsYears:YEARS_LULC,
                   qs:"assets=probability_6&colormap_name=rdylgn&rescale=0,100" },
-      "prob7":  { label:"Probability 7 (Other)",      ds:"prediction", dsYears:YEARS_PREDICTION,
+      "prob7":  { label:"Probability 7 (Other)",      ds:"lulc", dsYears:YEARS_LULC,
                   qs:"assets=probability_7&colormap_name=rdylgn&rescale=0,100" },
       "count":  { label:"Obs count",             ds:"geomad",     dsYears:YEARS_GEOMAD,
                   qs:"assets=count&colormap_name=viridis&rescale=0,65" }
@@ -674,28 +683,28 @@
       return r.json();
     }).then(function(config) {
       YEARS_GEOMAD = config.years_geomad;
-      YEARS_PREDICTION = config.years_prediction;
+      YEARS_LULC = config.years_lulc;
       VERSIONS = {
         geomad: config.geomad_version,
-        prediction: config.prediction_version
+        lulc: config.lulc_version
       };
       currentYear = config.default_year;
 
       // Update layer dsYears references now that config is loaded
-      LAYERS["class"].dsYears = YEARS_PREDICTION;
-      for (var i = 1; i <= 7; i++) { LAYERS["prob" + i].dsYears = YEARS_PREDICTION; }
+      LAYERS["class"].dsYears = YEARS_LULC;
+      for (var i = 1; i <= 7; i++) { LAYERS["prob" + i].dsYears = YEARS_LULC; }
       LAYERS["rgb"].dsYears = YEARS_GEOMAD;
       LAYERS["geomad"].dsYears = YEARS_GEOMAD;
       LAYERS["count"].dsYears = YEARS_GEOMAD;
 
       // Update version spans in layer group headings
-      var pv = config.prediction_version;
+      var pv = config.lulc_version;
       var gv = config.geomad_version;
-      document.getElementById("lbl-prediction-version").textContent = "v" + pv;
+      document.getElementById("lbl-lulc-version").textContent = "v" + pv;
       document.getElementById("lbl-geomad-version").textContent = "v" + gv;
 
       // Set labels with version numbers (used in opacity sliders and swipe selects)
-      LAYERS["class"].label  = "Classification v" + pv;
+      LAYERS["class"].label  = "LULC v" + pv;
       LAYERS["rgb"].label    = "GeoMedian v" + gv + " (RGB)";
       LAYERS["geomad"].label = "GeoMAD v" + gv + " (S, E, BC)";
       LAYERS["count"].label  = "Obs count v" + gv;
@@ -757,6 +766,66 @@
       msg.style.cssText = "color:#c00;font-size:12px;padding:10px 0;";
       msg.textContent = "Failed to load configuration. Please refresh the page.";
       panel.appendChild(msg);
+    });
+
+    // --- SIDS tile grid layer ---
+    var gridLayer = null;
+
+    function setGridOpacity(op) {
+      if (!gridLayer) return;
+      gridLayer.setStyle(function(feature) {
+        return {
+          fillOpacity: op * 0.25,
+          opacity: op,
+        };
+      });
+    }
+
+    function styleGrid(feature) {
+      var op = parseFloat(document.getElementById("grid-opacity").value);
+      var pacific = feature.properties.region === "pacific";
+      return {
+        color:        pacific ? "#b45309" : "#991b1b",
+        fillColor:    pacific ? "#facc15" : "#ef4444",
+        weight:       1,
+        opacity:      op,
+        fillOpacity:  op * 0.15,
+      };
+    }
+
+    fetch("/sids-tiles.geojson")
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        gridLayer = L.geoJSON(data, {
+          style: styleGrid,
+          onEachFeature: function(feature, layer) {
+            var p = feature.properties;
+            layer.bindTooltip(
+              p.label + (p.region ? " (" + p.region + ")" : ""),
+              { sticky: true, className: "leaflet-tooltip" }
+            );
+          }
+        });
+
+        if (document.getElementById("chk-grid").checked) {
+          gridLayer.addTo(map);
+        }
+      })
+      .catch(function(err) { console.warn("Failed to load SIDS grid:", err); });
+
+    document.getElementById("chk-grid").addEventListener("change", function() {
+      if (!gridLayer) return;
+      if (this.checked) {
+        gridLayer.addTo(map);
+      } else {
+        map.removeLayer(gridLayer);
+      }
+    });
+
+    document.getElementById("grid-opacity").addEventListener("input", function() {
+      var op = parseFloat(this.value);
+      document.getElementById("grid-opacity-val").textContent = Math.round(op * 100) + "%";
+      setGridOpacity(op);
     });
   </script>
 </body>

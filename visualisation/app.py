@@ -12,7 +12,9 @@ import re
 import sys
 from typing import Annotated, Literal
 
-import httpx
+import boto3
+from botocore import UNSIGNED
+from botocore.config import Config
 from cogeo_mosaic.backends import MosaicBackend
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,11 +27,23 @@ from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
 
-GEOMAD_VERSION = "0-3-0"
-PREDICTION_VERSION = "0-0-4-test"  # TODO: Update.
+GEOMAD_VERSION = "0-2-1"
+LULC_VERSION = "0-0-9"
 
-GEOMAD_MOSAIC_BASE = f"https://source.coop/auspatious/geomad-sids/ls_geomad/{GEOMAD_VERSION}/mosaics"
-PREDICTION_MOSAIC_BASE = f"https://source.coop/auspatious/lulc-sids/ls_lulc_prediction/{PREDICTION_VERSION}/mosaics"
+SOURCE_COOP_ENDPOINT = "https://data.source.coop"
+SOURCE_COOP_ACCOUNT = "auspatious"
+
+LULC_BUCKET = "dep-public-staging"
+LULC_REGION = "us-west-2"
+
+
+# GDAL/rasterio (used by rio-tiler/STACReader to actually read COG pixels) has its
+# own credential resolution, separate from the boto3 client above used just for
+# listing. Without this, GDAL tries instance-profile creds via the EC2 metadata
+# service (169.254.169.254), which doesn't exist off-AWS and hangs until timeout.
+os.environ.setdefault("AWS_NO_SIGN_REQUEST", "YES")
+os.environ.setdefault("AWS_REGION", LULC_REGION)
+os.environ.setdefault("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR")
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +55,6 @@ logging.basicConfig(
     force=True,
 )
 logger.setLevel(logging.INFO)  # Our logging level.
-
 
 cmap = default_cmap.register(
     {
@@ -59,54 +72,87 @@ cmap = default_cmap.register(
 )
 ColorMapParams = create_colormap_dependency(cmap)
 
-# Discover available mosaics by fetching the directory listing over HTTPS.
-# Expects filenames like geomad_2020_mosaic.json or prediction_2020_mosaic.json.
+# Discover available mosaics by listing the backing bucket.
+# Expects keys/filenames like geomad_2020_mosaic.json or prediction_2020_mosaic.json.
 
-MOSAIC_PATHS_GEOMAD: dict[str, str] = {}
-MOSAIC_PATHS_PREDICTION: dict[str, str] = {}
-
-MOSAIC_PATTERN = re.compile(r"_(\d{4})_mosaic\.json$")
+MOSAIC_PATTERN = re.compile(r"(\d{4})_mosaic\.json$")
 
 
-# TODO: this should use boto3 s3.list_objects_v2 for non-source.coop buckets.
-def _discover_mosaics(base_url: str) -> dict[str, str]:
-    """Fetch an HTTPS directory listing and return {year: full_url} for each mosaic JSON found."""
+def _make_s3_client(endpoint_url: str | None = None) -> boto3.client:
+    """Create an unsigned S3 client, optionally with a custom endpoint."""
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint_url,
+        config=Config(signature_version=UNSIGNED),
+    )
+
+
+def _discover_mosaics_source_coop(repo: str, prefix: str) -> dict[str, str]:
+    """
+    List mosaics on source.coop via its S3-compatible data proxy.
+    Returns {year: https_url}.
+    """
+    s3 = _make_s3_client(endpoint_url=SOURCE_COOP_ENDPOINT)
     paths: dict[str, str] = {}
-    try:
-        response = httpx.get(base_url, follow_redirects=True, timeout=10)
-        response.raise_for_status()
-        # Parse hrefs from the HTML directory listing
-        for href in re.findall(r'href="([^"]+_mosaic\.json)"', response.text):
-            filename = href.split("/")[-1]
-            match = MOSAIC_PATTERN.search(filename)
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=SOURCE_COOP_ACCOUNT, Prefix=f"{repo}/{prefix}/"):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            match = MOSAIC_PATTERN.search(key)
             if match:
                 year = match.group(1)
-                # Resolve relative or absolute hrefs
-                url = href if href.startswith("http") else f"{base_url}/{filename}"
-                paths[year] = url
-    except Exception as e:
-        logger.error(f"Failed to discover mosaics from {base_url}: {e}")
+                # HTTPS URL — opened by cogeo-mosaic's HTTPBackend
+                paths[year] = f"{SOURCE_COOP_ENDPOINT}/{SOURCE_COOP_ACCOUNT}/{key}"
+                logger.info(f"Discovered mosaic: {year} → {paths[year]}")
+    return paths
+
+
+def _discover_mosaics_s3(bucket: str, prefix: str, region: str) -> dict[str, str]:
+    """
+    List mosaics in a public S3 bucket (e.g. dep-public-staging).
+    Returns {year: https_url}.
+    """
+    s3 = _make_s3_client()
+    paths: dict[str, str] = {}
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/"):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            match = MOSAIC_PATTERN.search(key)
+            if match:
+                year = match.group(1)
+                paths[year] = f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
+                logger.info(f"Discovered mosaic: {year} → {paths[year]}")
     return paths
 
 
 try:
-    MOSAIC_PATHS_GEOMAD = _discover_mosaics(GEOMAD_MOSAIC_BASE)
-    MOSAIC_PATHS_PREDICTION = _discover_mosaics(PREDICTION_MOSAIC_BASE)
+    MOSAIC_PATHS_GEOMAD = _discover_mosaics_source_coop(
+        repo="geomad-sids",
+        prefix=f"ls_geomad/{GEOMAD_VERSION}/mosaics",
+    )
+    MOSAIC_PATHS_LULC = _discover_mosaics_s3(
+        bucket=LULC_BUCKET,
+        prefix=f"dep_ls_lulc/{LULC_VERSION}/mosaics",
+        region=LULC_REGION,
+    )
 except Exception as e:
     logger.error(f"Failed to discover mosaics: {e}")
+    MOSAIC_PATHS_GEOMAD = {}
+    MOSAIC_PATHS_LULC = {}
 
-if not MOSAIC_PATHS_GEOMAD and not MOSAIC_PATHS_PREDICTION:
+if not MOSAIC_PATHS_GEOMAD and not MOSAIC_PATHS_LULC:
     raise RuntimeError(
-        "Cannot start: failed to discover any mosaics from source.coop. "
-        "Check network connectivity and that the base URLs are correct."
+        "Cannot start: failed to discover any mosaics from source.coop or "
+        f"s3://{LULC_BUCKET}. Check network connectivity and bucket/prefix names."
     )
 
 logger.info(f"GeoMAD mosaics: {sorted(MOSAIC_PATHS_GEOMAD.keys())}")
-logger.info(f"Prediction mosaics: {sorted(MOSAIC_PATHS_PREDICTION.keys())}")
+logger.info(f"LULC mosaics: {sorted(MOSAIC_PATHS_LULC.keys())}")
 
 DATASETS: dict[str, dict[str, str]] = {
     "geomad": MOSAIC_PATHS_GEOMAD,
-    "prediction": MOSAIC_PATHS_PREDICTION,
+    "lulc": MOSAIC_PATHS_LULC,
 }
 
 
@@ -119,7 +165,7 @@ def mosaic_path_params(
         Query(description="Year (e.g. '2020')", pattern=r"^\d{4}$"),
     ],
     dataset: Annotated[
-        Literal["geomad", "prediction"],
+        Literal["geomad", "lulc"],
         Query(description="Dataset name"),
     ],
 ) -> str:
@@ -143,8 +189,8 @@ def mosaic_path_params(
 app = FastAPI(
     title="LDN LULC Mosaic Viewer",
     description=(
-        "Mosaic viewer for Landsat GeoMedian/GeoMAD and LULC Prediction data. "
-        "Pass `dataset` (e.g. `dataset=geomad` or `dataset=prediction`), `year` (e.g. `year=2020`), and band assets as "
+        "Mosaic viewer for Landsat GeoMedian/GeoMAD and LULC data. "
+        "Pass `dataset` (e.g. `dataset=geomad` or `dataset=lulc`), `year` (e.g. `year=2020`), and band assets as "
         "`assets=red&assets=green&assets=blue` or `assets=classification`."
     ),
     version="1.0.0",
@@ -193,20 +239,26 @@ def health():
 def config():
     """Return dynamic configuration for the frontend."""
     years_geomad = sorted(MOSAIC_PATHS_GEOMAD.keys())
-    years_prediction = sorted(MOSAIC_PATHS_PREDICTION.keys())
-    all_years = sorted(set(years_geomad + years_prediction))
+    years_lulc = sorted(MOSAIC_PATHS_LULC.keys())
+    all_years = sorted(set(years_geomad + years_lulc))
     default_year = all_years[-1] if all_years else "2020"
     return {
         "years_geomad": years_geomad,
-        "years_prediction": years_prediction,
+        "years_lulc": years_lulc,
         "all_years": all_years,
         "default_year": default_year,
         "geomad_version": GEOMAD_VERSION,
-        "prediction_version": PREDICTION_VERSION,
+        "lulc_version": LULC_VERSION,
     }
 
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+
+@app.get("/sids-tiles.geojson", tags=["Viewer"])
+def sids_tiles():
+    """Serve the SIDS tiles GeoJSON for map overlay."""
+    return FileResponse(os.path.join(STATIC_DIR, "sids_all_tiles.geojson"), media_type="application/json")
 
 
 @app.get("/", tags=["Viewer"])
