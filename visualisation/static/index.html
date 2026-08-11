@@ -104,6 +104,14 @@
     }
     @keyframes spin { to { transform:rotate(360deg); } }
 
+    /* Swipe compare sub-rows */
+    .swipe-side { margin-bottom:8px; }
+    .swipe-side:last-of-type { margin-bottom:0; }
+    .swipe-side-label { font-size:11px; font-weight:600; color:var(--color-light-2); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px; }
+    .swipe-row { display:flex; gap:6px; }
+    .swipe-row select:first-child { flex:2; }
+    .swipe-row select:last-child { flex:1; }
+
     /* Desktop */
     @media (min-width: 801px) {
       #controls {
@@ -211,10 +219,33 @@
 
     <div class="section">
       <h3>Swipe compare</h3>
-      <p style="font-size:11px;color:var(--color-light-2);margin-bottom:6px;">Select two different layers to compare side-by-side.</p>
-      <label>Left: <select id="swipe-left"><option value="">None</option></select></label>
-      <label>Right: <select id="swipe-right"><option value="">None</option></select></label>
-      <p id="swipe-hint" style="font-size:11px;color:#c00;margin-top:4px;display:none;"></p>
+      <p style="font-size:11px;color:var(--color-light-2);margin-bottom:8px;">Compare any two layers, and/or the same layer across two different years, side-by-side.</p>
+
+      <div class="swipe-side">
+        <div class="swipe-side-label">Left</div>
+        <div class="swipe-row">
+          <select id="swipe-left-layer"><option value="">None</option></select>
+          <select id="swipe-left-year" disabled></select>
+        </div>
+        <div class="opacity-row">
+          <input type="range" id="swipe-left-opacity" min="0" max="1" step="0.05" value="1" disabled/>
+          <span id="swipe-left-opacity-val" style="min-width:32px;text-align:right;font-size:11px;color:var(--color-light-2);">100%</span>
+        </div>
+      </div>
+
+      <div class="swipe-side">
+        <div class="swipe-side-label">Right</div>
+        <div class="swipe-row">
+          <select id="swipe-right-layer"><option value="">None</option></select>
+          <select id="swipe-right-year" disabled></select>
+        </div>
+        <div class="opacity-row">
+          <input type="range" id="swipe-right-opacity" min="0" max="1" step="0.05" value="1" disabled/>
+          <span id="swipe-right-opacity-val" style="min-width:32px;text-align:right;font-size:11px;color:var(--color-light-2);">100%</span>
+        </div>
+      </div>
+
+      <p id="swipe-hint" style="font-size:11px;color:#c00;margin-top:6px;display:none;"></p>
     </div>
 
     <div class="section" style="text-align:center;">
@@ -347,6 +378,11 @@
     var tileLayers = {};
     var currentYear = "";
     var swipeControl = null;
+    // Dedicated layers used only for swipe-compare (independent of the checkboxes/opacity
+    // sliders, so left/right can each be any layer at any year).
+    var swipeLayers = { left: null, right: null };
+    // Regular layers that were temporarily hidden from the map while a swipe compare is active.
+    var hiddenForSwipe = [];
 
     function tileUrl(key, year) {
       var layer = LAYERS[key];
@@ -377,10 +413,10 @@
       }
     }
 
-    function createTileLayer(key, year) {
+    function createTileLayer(key, year, opacity) {
       var zIndex = LAYER_ORDER.indexOf(key) + 1;
       var layer = L.tileLayer(tileUrl(key, year), {
-        opacity: 0.75, minZoom: 0, maxZoom: 20, tileSize: 256, zIndex: zIndex,
+        opacity: (opacity !== undefined ? opacity : 0.75), minZoom: 0, maxZoom: 20, tileSize: 256, zIndex: zIndex,
         errorTileUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
       });
       layer.on("tileloadstart", function() { tilesLoading++; updateLoadingIndicator(); });
@@ -388,10 +424,11 @@
       return layer;
     }
 
-    function rebuildLayers() {
-      // Remove swipe control before removing layers it references
-      if (swipeControl) { swipeControl.remove(); swipeControl = null; }
+    // Remembers the last opacity set on each side of a swipe compare, so it
+    // survives re-creating the layers (e.g. when switching left/right year).
+    var swipeOpacity = { left: 1, right: 1 };
 
+    function rebuildLayers() {
       // Remove existing tile layers from map
       for (var k in tileLayers) {
         if (map.hasLayer(tileLayers[k])) map.removeLayer(tileLayers[k]);
@@ -412,16 +449,12 @@
       });
 
       rebuildOpacitySliders();
-      rebuildSwipeSelects();
-      updateSwipe();
       updateLegends();
+      updateSwipe();
       pushState();
     }
 
     function syncLayers() {
-      // Remove swipe control before removing layers it may reference
-      if (swipeControl) { swipeControl.remove(); swipeControl = null; }
-
       // Only add/remove layers that changed, preserving existing ones
       var desired = {};
       LAYER_ORDER.forEach(function(key) {
@@ -445,9 +478,8 @@
       });
 
       rebuildOpacitySliders();
-      rebuildSwipeSelects();
-      updateSwipe();
       updateLegends();
+      updateSwipe();
       pushState();
     }
 
@@ -494,24 +526,63 @@
       });
     }
 
-    function rebuildSwipeSelects() {
+    // --- Swipe compare: left/right can each be any layer at any year, independent
+    // of the checkbox-driven layers and of each other. ---
+
+    function buildSwipeLayerSelects() {
       var displayOrder = LAYER_ORDER.slice().reverse();
-      ["swipe-left","swipe-right"].forEach(function(id) {
-        var sel = document.getElementById(id);
+      ["left", "right"].forEach(function(side) {
+        var sel = document.getElementById("swipe-" + side + "-layer");
         var prev = sel.value;
         sel.innerHTML = '<option value="">None</option>';
-        var found = false;
-        displayOrder.forEach(function(k) {
-          if (!tileLayers[k]) return;
+        displayOrder.forEach(function(key) {
           var opt = document.createElement("option");
-          opt.value = k;
-          opt.textContent = LAYERS[k].label;
-          if (k === prev) { opt.selected = true; found = true; }
+          opt.value = key;
+          opt.textContent = LAYERS[key].label;
+          if (key === prev) opt.selected = true;
           sel.appendChild(opt);
         });
-        if (!found) sel.value = "";
+        updateSwipeYearSelect(side);
       });
     }
+
+    function updateSwipeYearSelect(side) {
+      var layerSel = document.getElementById("swipe-" + side + "-layer");
+      var yearSel = document.getElementById("swipe-" + side + "-year");
+      var prevYear = yearSel.value;
+      var key = layerSel.value;
+      yearSel.innerHTML = "";
+      if (!key) { yearSel.disabled = true; return; }
+      yearSel.disabled = false;
+      var years = LAYERS[key].dsYears;
+      years.forEach(function(y) {
+        var opt = document.createElement("option");
+        opt.value = y; opt.textContent = y;
+        yearSel.appendChild(opt);
+      });
+      if (years.indexOf(prevYear) >= 0) {
+        yearSel.value = prevYear;
+      } else {
+        yearSel.value = years.indexOf(currentYear) >= 0 ? currentYear : (years[years.length - 1] || "");
+      }
+    }
+
+    ["left", "right"].forEach(function(side) {
+      document.getElementById("swipe-" + side + "-layer").addEventListener("change", function() {
+        updateSwipeYearSelect(side);
+        document.getElementById("swipe-" + side + "-opacity").disabled = !this.value;
+        updateSwipe();
+      });
+      document.getElementById("swipe-" + side + "-year").addEventListener("change", updateSwipe);
+      // Live-update opacity without tearing down/rebuilding the compare control.
+      document.getElementById("swipe-" + side + "-opacity").addEventListener("input", function(e) {
+        var op = parseFloat(e.target.value);
+        swipeOpacity[side] = op;
+        document.getElementById("swipe-" + side + "-opacity-val").textContent = Math.round(op * 100) + "%";
+        if (swipeLayers[side]) swipeLayers[side].setOpacity(op);
+        pushState();
+      });
+    });
 
     function updateSwipe() {
       var hint = document.getElementById("swipe-hint");
@@ -519,33 +590,51 @@
       hint.textContent = "";
 
       if (swipeControl) { swipeControl.remove(); swipeControl = null; }
+      if (swipeLayers.left) { map.removeLayer(swipeLayers.left); swipeLayers.left = null; }
+      if (swipeLayers.right) { map.removeLayer(swipeLayers.right); swipeLayers.right = null; }
 
-      var leftKey = document.getElementById("swipe-left").value;
-      var rightKey = document.getElementById("swipe-right").value;
+      // Restore any regular layers that were hidden for a previous compare
+      hiddenForSwipe.forEach(function(k) {
+        if (tileLayers[k] && !map.hasLayer(tileLayers[k])) tileLayers[k].addTo(map);
+      });
+      hiddenForSwipe = [];
 
-      if (!leftKey && !rightKey) return;
-      if (leftKey && !rightKey) {
+      var lKey = document.getElementById("swipe-left-layer").value;
+      var rKey = document.getElementById("swipe-right-layer").value;
+      var lYear = document.getElementById("swipe-left-year").value;
+      var rYear = document.getElementById("swipe-right-year").value;
+
+      if (!lKey && !rKey) return;
+      if (lKey && !rKey) {
         hint.textContent = "Select a right layer to compare.";
         hint.style.display = "block"; return;
       }
-      if (!leftKey && rightKey) {
+      if (!lKey && rKey) {
         hint.textContent = "Select a left layer to compare.";
         hint.style.display = "block"; return;
       }
-      if (leftKey === rightKey) {
-        hint.textContent = "Left and right must be different layers.";
+      if (lKey === rKey && lYear === rYear) {
+        hint.textContent = "Left and right must be a different layer or year.";
         hint.style.display = "block"; return;
       }
-      if (!tileLayers[leftKey] || !tileLayers[rightKey]) return;
+      if (!lYear || !rYear) return;
 
-      swipeControl = new L.Control.Compare(tileLayers[leftKey], tileLayers[rightKey]);
+      // Hide regular checkbox-driven layers while comparing, so they don't
+      // show through underneath the swipe layers.
+      for (var k in tileLayers) {
+        if (map.hasLayer(tileLayers[k])) { map.removeLayer(tileLayers[k]); hiddenForSwipe.push(k); }
+      }
+
+      swipeLayers.left = createTileLayer(lKey, lYear, swipeOpacity.left);
+      swipeLayers.right = createTileLayer(rKey, rYear, swipeOpacity.right);
+      swipeLayers.left.addTo(map);
+      swipeLayers.right.addTo(map);
+
+      swipeControl = new L.Control.Compare(swipeLayers.left, swipeLayers.right);
       swipeControl.addTo(map);
       L.DomEvent.disableClickPropagation(swipeControl._container);
       L.DomEvent.on(swipeControl._range, "mousedown", L.DomEvent.stopPropagation);
     }
-
-    document.getElementById("swipe-left").addEventListener("change", updateSwipe);
-    document.getElementById("swipe-right").addEventListener("change", updateSwipe);
 
     document.getElementById("year-select").addEventListener("change", function() {
       currentYear = this.value;
@@ -623,58 +712,86 @@
 
     map.on("mouseout", function() { tooltip.style.display = "none"; });
 
-    // --- URL hash state ---
-    function getStateFromHash() {
-      var hash = window.location.hash.replace(/^#/, "");
-      if (!hash) return null;
-      var parts = hash.split("/");
+    // --- URL query-string state ---
+    // Uses real query params (?...) rather than a #hash fragment, since some
+    // link shorteners / chat-app link previews drop everything after '#'.
+    // Query params round-trip through those the same way any normal link does.
+    function getStateFromQuery() {
+      var params = new URLSearchParams(window.location.search);
+      if ([...params.keys()].length === 0) return null;
       var state = {};
-      // lat,lng,zoom
-      if (parts[0]) {
-        var pos = parts[0].split(",");
-        if (pos.length >= 3) {
-          state.lat = parseFloat(pos[0]);
-          state.lng = parseFloat(pos[1]);
-          state.zoom = parseInt(pos[2], 10);
+
+      var pos = params.get("pos"); // "lat,lng,zoom"
+      if (pos) {
+        var p = pos.split(",");
+        if (p.length >= 3) {
+          state.lat = parseFloat(p[0]);
+          state.lng = parseFloat(p[1]);
+          state.zoom = parseInt(p[2], 10);
         }
       }
-      if (parts[1]) state.year = parts[1];
-      if (parts[2]) state.basemap = parts[2];
-      if (parts[3]) state.layers = parts[3].split(",");
-      if (parts[4]) {
-        var opParts = parts[4].split(",");
+
+      if (params.get("year")) state.year = params.get("year");
+      if (params.get("basemap")) state.basemap = params.get("basemap");
+      if (params.get("layers")) state.layers = params.get("layers").split(",").filter(Boolean);
+
+      if (params.get("op")) {
         state.opacity = {};
-        opParts.forEach(function(p) {
+        params.get("op").split(",").forEach(function(p) {
           var kv = p.split(":");
           if (kv.length === 2) state.opacity[kv[0]] = parseFloat(kv[1]);
         });
       }
-      if (parts[5]) {
-        var sw = parts[5].split(",");
-        state.swipeLeft = sw[0] || "";
-        state.swipeRight = sw[1] || "";
+
+      function parseSide(raw) {
+        if (!raw) return { key: "", year: "", opacity: null };
+        var kv = raw.split(":");
+        return {
+          key: kv[0] || "",
+          year: kv[1] || "",
+          opacity: kv[2] !== undefined ? parseFloat(kv[2]) : null
+        };
       }
+      // Only present when a compare is active — key:year:opacity each.
+      if (params.get("left") || params.get("right")) {
+        state.swipeLeft = parseSide(params.get("left") || "");
+        state.swipeRight = parseSide(params.get("right") || "");
+      }
+
       return state;
     }
 
     function pushState() {
       var c = map.getCenter();
       var z = map.getZoom();
-      var pos = c.lat.toFixed(4) + "," + c.lng.toFixed(4) + "," + z;
-      var basemap = document.getElementById("basemap-select").value;
+      var params = new URLSearchParams();
+
+      params.set("pos", c.lat.toFixed(4) + "," + c.lng.toFixed(4) + "," + z);
+      params.set("year", currentYear);
+      params.set("basemap", document.getElementById("basemap-select").value);
+
       var layers = [];
       for (var key in CHECKBOX_MAP) {
         if (document.getElementById(CHECKBOX_MAP[key]).checked) layers.push(key);
       }
+      if (layers.length) params.set("layers", layers.join(","));
+
       var opParts = [];
       for (var k in tileLayers) {
         opParts.push(k + ":" + tileLayers[k].options.opacity);
       }
-      var sl = document.getElementById("swipe-left").value || "";
-      var sr = document.getElementById("swipe-right").value || "";
-      var swipe = (sl || sr) ? sl + "," + sr : "";
-      var hash = pos + "/" + currentYear + "/" + basemap + "/" + layers.join(",") + "/" + opParts.join(",") + "/" + swipe;
-      history.replaceState(null, "", "#" + hash);
+      if (opParts.length) params.set("op", opParts.join(","));
+
+      var lKey = document.getElementById("swipe-left-layer").value || "";
+      var lYear = document.getElementById("swipe-left-year").value || "";
+      var rKey = document.getElementById("swipe-right-layer").value || "";
+      var rYear = document.getElementById("swipe-right-year").value || "";
+      // Only include left/right params while a compare is actually set up,
+      // so a plain (non-comparison) link stays short and clean.
+      if (lKey) params.set("left", lKey + ":" + lYear + ":" + swipeOpacity.left);
+      if (rKey) params.set("right", rKey + ":" + rYear + ":" + swipeOpacity.right);
+
+      history.replaceState(null, "", "?" + params.toString());
     }
 
     // Fetch config and initialize
@@ -719,8 +836,10 @@
         yearSelect.appendChild(opt);
       });
 
+      buildSwipeLayerSelects();
+
       // Apply hash state on load
-      var initState = getStateFromHash();
+      var initState = getStateFromQuery();
       if (initState) {
         if (initState.lat !== undefined) map.setView([initState.lat, initState.lng], initState.zoom);
         if (initState.year && config.all_years.indexOf(initState.year) >= 0) {
@@ -749,16 +868,36 @@
           }
           rebuildOpacitySliders();
         }
-        if (initState.swipeLeft) document.getElementById("swipe-left").value = initState.swipeLeft;
-        if (initState.swipeRight) document.getElementById("swipe-right").value = initState.swipeRight;
-        if (initState.swipeLeft && initState.swipeRight) updateSwipe();
+        if (initState.swipeLeft && initState.swipeLeft.key) {
+          document.getElementById("swipe-left-layer").value = initState.swipeLeft.key;
+          updateSwipeYearSelect("left");
+          if (initState.swipeLeft.year) document.getElementById("swipe-left-year").value = initState.swipeLeft.year;
+          if (initState.swipeLeft.opacity !== null && !isNaN(initState.swipeLeft.opacity)) {
+            swipeOpacity.left = initState.swipeLeft.opacity;
+          }
+          document.getElementById("swipe-left-opacity").disabled = false;
+          document.getElementById("swipe-left-opacity").value = swipeOpacity.left;
+          document.getElementById("swipe-left-opacity-val").textContent = Math.round(swipeOpacity.left * 100) + "%";
+        }
+        if (initState.swipeRight && initState.swipeRight.key) {
+          document.getElementById("swipe-right-layer").value = initState.swipeRight.key;
+          updateSwipeYearSelect("right");
+          if (initState.swipeRight.year) document.getElementById("swipe-right-year").value = initState.swipeRight.year;
+          if (initState.swipeRight.opacity !== null && !isNaN(initState.swipeRight.opacity)) {
+            swipeOpacity.right = initState.swipeRight.opacity;
+          }
+          document.getElementById("swipe-right-opacity").disabled = false;
+          document.getElementById("swipe-right-opacity").value = swipeOpacity.right;
+          document.getElementById("swipe-right-opacity-val").textContent = Math.round(swipeOpacity.right * 100) + "%";
+        }
+        if (initState.swipeLeft && initState.swipeLeft.key && initState.swipeRight && initState.swipeRight.key) {
+          updateSwipe();
+        }
       }
 
-      // Update hash on map move and basemap/swipe changes
+      // Update hash on map move and basemap changes
       map.on("moveend", pushState);
       document.getElementById("basemap-select").addEventListener("change", pushState);
-      document.getElementById("swipe-left").addEventListener("change", pushState);
-      document.getElementById("swipe-right").addEventListener("change", pushState);
     }).catch(function(err) {
       console.error("Failed to load config:", err);
       var panel = document.getElementById("controls");

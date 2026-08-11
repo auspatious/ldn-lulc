@@ -6,10 +6,13 @@ Can visualise single or multiple bands.
 Tiles from separate per-band COGs using TiTiler + STACReader.
 """
 
+import json
 import logging
 import os
 import re
 import sys
+import tempfile
+import urllib.request
 from typing import Annotated, Literal
 
 import boto3
@@ -35,6 +38,15 @@ SOURCE_COOP_ACCOUNT = "auspatious"
 
 LULC_BUCKET = "dep-public-staging"
 LULC_REGION = "us-west-2"
+
+# LULC is published per-region. Each region's mosaics live under their own
+# prefix but share a version; for years where more than one region has a
+# mosaic, we merge them into a single combined MosaicJSON so the frontend can
+# keep treating "lulc" as one seamless dataset.
+LULC_REGIONAL_PREFIXES = {
+    "pacific": "dep_ls_lulc",
+    "non-pacific": "ci_ls_lulc",
+}
 
 
 # GDAL/rasterio (used by rio-tiler/STACReader to actually read COG pixels) has its
@@ -126,16 +138,96 @@ def _discover_mosaics_s3(bucket: str, prefix: str, region: str) -> dict[str, str
     return paths
 
 
+# TODO: Remove this kinda hack once LULC is created for both regions together.
+def _merge_mosaicjson_docs(docs: list[dict]) -> dict:
+    """Merge multiple MosaicJSON documents (same year, different regions) into one.
+
+    Assumes all docs share the same minzoom/maxzoom (true for mosaics produced
+    by the same pipeline/version), so quadkeys are directly comparable. Since
+    the regions are geographically disjoint, quadkeys shouldn't collide, but
+    if they do we just concatenate the asset lists.
+    """
+    base = dict(docs[0])
+    combined_tiles: dict[str, list] = {}
+    bounds = None
+    for doc in docs:
+        for quadkey, assets in doc.get("tiles", {}).items():
+            combined_tiles.setdefault(quadkey, []).extend(assets)
+        b = doc.get("bounds")
+        if b:
+            bounds = (
+                b
+                if bounds is None
+                else [
+                    min(bounds[0], b[0]),
+                    min(bounds[1], b[1]),
+                    max(bounds[2], b[2]),
+                    max(bounds[3], b[3]),
+                ]
+            )
+    base["tiles"] = combined_tiles
+    if bounds:
+        base["bounds"] = bounds
+        base["center"] = [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2, base.get("minzoom", 0)]
+    return base
+
+
+def _merge_regional_mosaics(regional_paths: list[dict[str, str]], label: str) -> dict[str, str]:
+    """
+    Merge {year: url} dicts from multiple regional prefixes of the same
+    logical dataset into a single {year: path} dict.
+
+    Years present in only one region pass through unchanged (their original
+    URL). Years present in 2+ regions are merged into a combined MosaicJSON
+    written to /tmp and referenced by local file path — cogeo-mosaic opens
+    plain local paths natively, no extra backend needed.
+    """
+    years: dict[str, list[str]] = {}
+    for paths in regional_paths:
+        for year, url in paths.items():
+            years.setdefault(year, []).append(url)
+
+    merged: dict[str, str] = {}
+    for year, urls in years.items():
+        if len(urls) == 1:
+            merged[year] = urls[0]
+            continue
+        try:
+            docs = []
+            for url in urls:
+                with urllib.request.urlopen(url, timeout=30) as resp:
+                    docs.append(json.loads(resp.read()))
+            merged_doc = _merge_mosaicjson_docs(docs)
+            out_path = os.path.join(tempfile.gettempdir(), f"merged_{label}_{year}_mosaic.json")
+            with open(out_path, "w") as f:
+                json.dump(merged_doc, f)
+            merged[year] = out_path
+            logger.info(
+                f"Merged {len(urls)} regional mosaics for {label} {year} "
+                f"({sum(len(d.get('tiles', {})) for d in docs)} tiles total) → {out_path}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to merge {label} mosaics for {year}: {e}; using first region only")
+            merged[year] = urls[0]
+    return merged
+
+
 try:
     MOSAIC_PATHS_GEOMAD = _discover_mosaics_source_coop(
         repo="geomad-sids",
         prefix=f"ls_geomad/{GEOMAD_VERSION}/mosaics",
     )
-    MOSAIC_PATHS_LULC = _discover_mosaics_s3(
-        bucket=LULC_BUCKET,
-        prefix=f"dep_ls_lulc/{LULC_VERSION}/mosaics",
-        region=LULC_REGION,
-    )
+
+    lulc_regions: dict[str, dict[str, str]] = {}
+    for region_name, region_prefix in LULC_REGIONAL_PREFIXES.items():
+        lulc_regions[region_name] = _discover_mosaics_s3(
+            bucket=LULC_BUCKET,
+            prefix=f"{region_prefix}/{LULC_VERSION}/mosaics",
+            region=LULC_REGION,
+        )
+        logger.info(f"LULC ({region_name}) mosaics: {sorted(lulc_regions[region_name].keys())}")
+
+    MOSAIC_PATHS_LULC = _merge_regional_mosaics(list(lulc_regions.values()), label="lulc")
 except Exception as e:
     logger.error(f"Failed to discover mosaics: {e}")
     MOSAIC_PATHS_GEOMAD = {}
@@ -148,7 +240,7 @@ if not MOSAIC_PATHS_GEOMAD and not MOSAIC_PATHS_LULC:
     )
 
 logger.info(f"GeoMAD mosaics: {sorted(MOSAIC_PATHS_GEOMAD.keys())}")
-logger.info(f"LULC mosaics: {sorted(MOSAIC_PATHS_LULC.keys())}")
+logger.info(f"LULC mosaics (merged, all regions): {sorted(MOSAIC_PATHS_LULC.keys())}")
 
 DATASETS: dict[str, dict[str, str]] = {
     "geomad": MOSAIC_PATHS_GEOMAD,
