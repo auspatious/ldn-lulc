@@ -99,32 +99,12 @@ def _make_s3_client(endpoint_url: str | None = None) -> boto3.client:
     )
 
 
-def _discover_mosaics_source_coop(repo: str, prefix: str) -> dict[str, str]:
+def _discover_mosaics(bucket: str, prefix: str, url_for_key, endpoint_url: str | None = None) -> dict[str, str]:
     """
-    List mosaics on source.coop via its S3-compatible data proxy.
-    Returns {year: https_url}.
+    List mosaics in an S3-compatible bucket. Returns {year: https_url}.
+    `url_for_key` builds the public HTTPS URL for a given object key.
     """
-    s3 = _make_s3_client(endpoint_url=SOURCE_COOP_ENDPOINT)
-    paths: dict[str, str] = {}
-    paginator = s3.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=SOURCE_COOP_ACCOUNT, Prefix=f"{repo}/{prefix}/"):
-        for obj in page.get("Contents", []):
-            key = obj["Key"]
-            match = MOSAIC_PATTERN.search(key)
-            if match:
-                year = match.group(1)
-                # HTTPS URL — opened by cogeo-mosaic's HTTPBackend
-                paths[year] = f"{SOURCE_COOP_ENDPOINT}/{SOURCE_COOP_ACCOUNT}/{key}"
-                logger.info(f"Discovered mosaic: {year} → {paths[year]}")
-    return paths
-
-
-def _discover_mosaics_s3(bucket: str, prefix: str, region: str) -> dict[str, str]:
-    """
-    List mosaics in a public S3 bucket (e.g. dep-public-staging).
-    Returns {year: https_url}.
-    """
-    s3 = _make_s3_client()
+    s3 = _make_s3_client(endpoint_url=endpoint_url)
     paths: dict[str, str] = {}
     paginator = s3.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/"):
@@ -133,7 +113,7 @@ def _discover_mosaics_s3(bucket: str, prefix: str, region: str) -> dict[str, str
             match = MOSAIC_PATTERN.search(key)
             if match:
                 year = match.group(1)
-                paths[year] = f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
+                paths[year] = url_for_key(key)
                 logger.info(f"Discovered mosaic: {year} → {paths[year]}")
     return paths
 
@@ -213,17 +193,21 @@ def _merge_regional_mosaics(regional_paths: list[dict[str, str]], label: str) ->
 
 
 try:
-    MOSAIC_PATHS_GEOMAD = _discover_mosaics_source_coop(
-        repo="geomad-sids",
-        prefix=f"ls_geomad/{GEOMAD_VERSION}/mosaics",
+    geomad_prefix = f"geomad-sids/ls_geomad/{GEOMAD_VERSION}/mosaics"
+    MOSAIC_PATHS_GEOMAD = _discover_mosaics(
+        bucket=SOURCE_COOP_ACCOUNT,
+        prefix=geomad_prefix,
+        url_for_key=lambda key: f"{SOURCE_COOP_ENDPOINT}/{SOURCE_COOP_ACCOUNT}/{key}",
+        endpoint_url=SOURCE_COOP_ENDPOINT,
     )
 
     lulc_regions: dict[str, dict[str, str]] = {}
     for region_name, region_prefix in LULC_REGIONAL_PREFIXES.items():
-        lulc_regions[region_name] = _discover_mosaics_s3(
+        prefix = f"{region_prefix}/{LULC_VERSION}/mosaics"
+        lulc_regions[region_name] = _discover_mosaics(
             bucket=LULC_BUCKET,
-            prefix=f"{region_prefix}/{LULC_VERSION}/mosaics",
-            region=LULC_REGION,
+            prefix=prefix,
+            url_for_key=lambda key: f"https://{LULC_BUCKET}.s3.{LULC_REGION}.amazonaws.com/{key}",
         )
         logger.info(f"LULC ({region_name}) mosaics: {sorted(lulc_regions[region_name].keys())}")
 

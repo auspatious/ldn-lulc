@@ -49,6 +49,7 @@
     .opacity-row { display:flex; align-items:center; gap:6px; margin:2px 0 4px; }
     .opacity-row input { flex:1; }
     .opacity-row span { min-width:32px; text-align:right; font-size:11px; color:var(--color-dark-2); }
+    .opacity-row span.light { color:var(--color-light-2); }
 
     /* Layer sub-groups */
     .layer-group { margin-bottom:8px; }
@@ -68,9 +69,6 @@
       font-size:12px;
     }
     #legend-container:empty { display:none; }
-    #legend-class, #legend-prob, #legend-count {
-      border-top:1px solid var(--color-dark-2); padding-top:10px;
-    }
     #legend-container > .legend-hidden { display:none; }
     #legend-container > div:not(.legend-hidden) ~ div:not(.legend-hidden) {
       border-top:1px solid var(--color-dark-2); padding-top:10px;
@@ -207,7 +205,7 @@
         <label><input type="checkbox" id="chk-grid" checked/> SIDS tile grid</label>
         <div class="opacity-row" style="padding-left:2px;">
           <input type="range" id="grid-opacity" min="0" max="1" step="0.05" value="0.6"/>
-          <span id="grid-opacity-val" style="min-width:32px;text-align:right;font-size:11px;color:var(--color-light-2);">60%</span>
+          <span id="grid-opacity-val" class="light">60%</span>
         </div>
       </div>
     </div>
@@ -229,7 +227,7 @@
         </div>
         <div class="opacity-row">
           <input type="range" id="swipe-left-opacity" min="0" max="1" step="0.05" value="1" disabled/>
-          <span id="swipe-left-opacity-val" style="min-width:32px;text-align:right;font-size:11px;color:var(--color-light-2);">100%</span>
+          <span id="swipe-left-opacity-val" class="light">100%</span>
         </div>
       </div>
 
@@ -241,7 +239,7 @@
         </div>
         <div class="opacity-row">
           <input type="range" id="swipe-right-opacity" min="0" max="1" step="0.05" value="1" disabled/>
-          <span id="swipe-right-opacity-val" style="min-width:32px;text-align:right;font-size:11px;color:var(--color-light-2);">100%</span>
+          <span id="swipe-right-opacity-val" class="light">100%</span>
         </div>
       </div>
 
@@ -300,7 +298,6 @@
 
     var YEARS_GEOMAD = [];
     var YEARS_LULC = [];
-    var VERSIONS = {};
     var CLASS_LABELS = {1:"Tree cover",2:"Grassland",3:"Cropland",4:"Wetland",5:"Built-up",6:"Water",7:"Other",255:"No data"};
 
     var map = L.map("map", {center:[0,160], zoom:3});
@@ -448,6 +445,10 @@
         }
       });
 
+      finishLayerUpdate();
+    }
+
+    function finishLayerUpdate() {
       rebuildOpacitySliders();
       updateLegends();
       updateSwipe();
@@ -477,10 +478,7 @@
         }
       });
 
-      rebuildOpacitySliders();
-      updateLegends();
-      updateSwipe();
-      pushState();
+      finishLayerUpdate();
     }
 
     function updateLegends() {
@@ -801,10 +799,6 @@
     }).then(function(config) {
       YEARS_GEOMAD = config.years_geomad;
       YEARS_LULC = config.years_lulc;
-      VERSIONS = {
-        geomad: config.geomad_version,
-        lulc: config.lulc_version
-      };
       currentYear = config.default_year;
 
       // Update layer dsYears references now that config is loaded
