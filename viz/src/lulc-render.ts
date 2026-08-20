@@ -4,9 +4,6 @@ import type { GeoTIFF, Overview } from "@developmentseed/geotiff";
 import type { Device, Texture } from "@luma.gl/core";
 import type { ShaderModule } from "@luma.gl/shadertools";
 
-// Same classes/colors as visualisation/app.py's `cmap` dict (server-side
-// titiler colormap). 255 = nodata; anything not listed here also renders
-// transparent (the palette texture below is zero-initialized).
 export const LULC_CLASSES: Array<{
   value: number;
   label: string;

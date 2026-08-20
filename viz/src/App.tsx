@@ -65,33 +65,16 @@ function splitWebMercatorMetersX(
   return lng * (Math.PI / 180) * WEB_MERCATOR_RADIUS;
 }
 
-// LULC predictions only exist for these two years (unlike geomad, which has
-// a full annual series) — see visualisation/app.py's LULC_VERSION and the
-// years actually present in the STAC GeoParquets (queried directly).
+// LULC predictions only exist for these two years (unlike geomad)
 const LULC_YEARS = [2000, 2025];
 
-// Matches the existing titiler viewer's rescale=7200,12000 stretch for
-// red/green/blue (visualisation/static/index.html). COG pixel values are
+// Rescale=7200,12000 stretch for red/green/blue.
+// COG pixel values are
 // uint16, sampled into the shader as r16unorm (normalized by 65535), so the
 // raw DN range is divided through to match.
 const RESCALE_MIN = 7200 / 65535;
 const RESCALE_MAX = 12000 / 65535;
 
-// ponytail: the texture sampler is hardcoded to bilinear inside
-// @developmentseed/deck.gl-geotiff (not exposed as an overridable prop), so
-// any nodata/valid boundary arrives at this shader already smoothed into a
-// continuous gradient, not a crisp edge. Measured every cutoff from 0 to
-// RESCALE_MIN against real tiles: below the cutoff -> transparent gap,
-// between the cutoff and RESCALE_MIN -> still opaque black (LinearRescale's
-// floor clamps it), above RESCALE_MIN -> real data. There is no cutoff that
-// avoids a visible seam, because the seam IS that gradient — this only
-// chooses which artifact (transparent vs black) shows at the boundary.
-// Picked RESCALE_MIN: transparent reads as "no data" in a map viewer, black
-// reads as a rendering bug. Ceiling: a genuinely very dark real pixel (deep
-// clear water, shadow) below RESCALE_MIN on all channels renders
-// transparent too, same as it would already render as black.
-// Upgrade path: needs library support for nearest-neighbor sampling or a
-// real mask/alpha band read — not fixable from this application's code.
 const NODATA_BLEND_THRESHOLD = RESCALE_MIN;
 
 const DiscardNearZero = {
@@ -595,21 +578,19 @@ export default function App() {
       height: window.innerHeight,
     });
     const splitX = splitWebMercatorMetersX(viewport, compare.split);
-    const yMin = -WEB_MERCATOR_HALF_EXTENT;
-    const yMax = WEB_MERCATOR_HALF_EXTENT;
     return {
-      left: [-WEB_MERCATOR_HALF_EXTENT, yMin, splitX, yMax] as [
-        number,
-        number,
-        number,
-        number,
-      ],
-      right: [splitX, yMin, WEB_MERCATOR_HALF_EXTENT, yMax] as [
-        number,
-        number,
-        number,
-        number,
-      ],
+      left: [
+        -WEB_MERCATOR_HALF_EXTENT,
+        -WEB_MERCATOR_HALF_EXTENT,
+        splitX,
+        WEB_MERCATOR_HALF_EXTENT,
+      ] as [number, number, number, number],
+      right: [
+        splitX,
+        -WEB_MERCATOR_HALF_EXTENT,
+        WEB_MERCATOR_HALF_EXTENT,
+        WEB_MERCATOR_HALF_EXTENT,
+      ] as [number, number, number, number],
     };
   }, [compare.enabled, compare.split, liveView]);
 

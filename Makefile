@@ -9,7 +9,6 @@
 # 5. Run LULC prediction for all tiles/years
 # 6. Run index LULC (STAC-Geoparquet)
 # 7. Run make-mosaic for geomad and LULC datasets
-# 8. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
 # You need to manually set AWS_PROFILE first.
 -include .env
