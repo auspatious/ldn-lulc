@@ -18,6 +18,8 @@ export type CompareState = {
   enabled: boolean;
   left: CompareContent;
   right: CompareContent;
+  /** Swipe handle position as a fraction of canvas width, in [0, 1]. */
+  split: number;
 };
 
 export type UrlState = {
@@ -96,6 +98,7 @@ export function readUrlState(): UrlState {
       enabled: params.get("cmp") === "1",
       left: parseCompareContent(params.get("cmpLeft"), defaultContent),
       right: parseCompareContent(params.get("cmpRight"), defaultContent),
+      split: Math.min(1, Math.max(0, parseNum(params.get("cmpSplit"), 0.5))),
     },
   };
 }
@@ -122,6 +125,7 @@ export function writeUrlState(state: UrlState): void {
     "cmpRight",
     `${state.compare.right.dataset}:${state.compare.right.year}`,
   );
+  params.set("cmpSplit", state.compare.split.toFixed(3));
   const url = `${window.location.pathname}?${params.toString()}`;
   window.history.replaceState(null, "", url);
 }

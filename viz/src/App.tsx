@@ -1,17 +1,17 @@
+import { WebMercatorViewport } from "@deck.gl/core";
+import { ClipExtension } from "@deck.gl/extensions";
 import {
   COGLayer,
   MosaicLayer,
   MultiCOGLayer,
 } from "@developmentseed/deck.gl-geotiff";
 import { LinearRescale } from "@developmentseed/deck.gl-raster/gpu-modules";
-import type { Device } from "@luma.gl/core";
+import type { Device, Texture } from "@luma.gl/core";
 import type { ShaderModule } from "@luma.gl/shadertools";
-import Compare from "@maplibre/maplibre-gl-compare";
-import "@maplibre/maplibre-gl-compare/dist/maplibre-gl-compare.css";
 import type { StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Map as MaplibreMap, type MapRef } from "react-map-gl/maplibre";
+import { useEffect, useMemo, useState } from "react";
+import { Map as MaplibreMap } from "react-map-gl/maplibre";
 import { DeckGLOverlay } from "./deckgl-overlay.js";
 import { fetchGeomadItems, GEOMAD_PARQUET_URL, type GeomadItem } from "./geomad.js";
 import { queryDistinctYears } from "./duckdb.js";
@@ -23,16 +23,47 @@ import {
   type LulcTileData,
   makeLulcRenderTile,
 } from "./lulc-render.js";
+import { SwipeHandle } from "./swipe-handle.js";
 import {
   type CompareContent,
   type CompareDataset,
   type CompareState,
   type LayerKey,
   type LayerUiState,
-  type MapViewState,
   readUrlState,
   writeUrlState,
 } from "./url-state.js";
+
+// Standard spherical Web Mercator (EPSG:3857) constants — same values
+// @developmentseed/deck.gl-raster's RasterTileLayer uses internally to
+// position its mesh (raster-tile-layer/constants.js: TILE_SIZE=512,
+// WEB_MERCATOR_METER_CIRCUMFERENCE=40075016.686). Not re-exported by the
+// package, so duplicated here rather than importing an internal path.
+const WEB_MERCATOR_METER_CIRCUMFERENCE = 40075016.686;
+const WEB_MERCATOR_RADIUS = WEB_MERCATOR_METER_CIRCUMFERENCE / (2 * Math.PI);
+// Half the projected world's vertical extent, in meters — large enough to
+// always cover the full globe, used as an unclipped Y range (we only ever
+// clip on X).
+const WEB_MERCATOR_HALF_EXTENT = WEB_MERCATOR_METER_CIRCUMFERENCE / 2;
+
+/**
+ * ClipExtension's `clipBounds` get re-projected through the layer's own
+ * `projectPosition` before comparison (see ClipExtension.draw() in
+ * @deck.gl/extensions). RasterTileLayer positions its mesh with
+ * `coordinateSystem: "cartesian"` + a modelMatrix that scales Web Mercator
+ * *meters* into deck.gl's [0, 512] common space — so clipBounds must be
+ * given in those same meters, not already-common-space numbers (passing
+ * common-space numbers here get scaled down to a sliver near the center,
+ * which is why nothing rendered at first: everything got clipped away).
+ */
+function splitWebMercatorMetersX(
+  viewport: WebMercatorViewport,
+  splitFraction: number,
+): number {
+  const splitPx = viewport.width * splitFraction;
+  const [lng] = viewport.unproject([splitPx, 0]);
+  return lng * (Math.PI / 180) * WEB_MERCATOR_RADIUS;
+}
 
 // LULC predictions only exist for these two years (unlike geomad, which has
 // a full annual series) — see visualisation/app.py's LULC_VERSION and the
@@ -122,21 +153,41 @@ function getGeomadSources(source: GeomadItem) {
   return sources;
 }
 
-function buildGeomadLayer(items: GeomadItem[], year: number, ui: LayerUiState) {
+// ClipExtension injects `clipBounds`/`clipByInstance` at runtime; neither
+// MultiCOGLayerProps nor COGLayerProps know about extension-injected props.
+type ClipProps = {
+  extensions: ClipExtension[];
+  clipBounds: [number, number, number, number];
+  clipByInstance: false;
+};
+
+function clipProps(clipBounds?: [number, number, number, number]): ClipProps | object {
+  return clipBounds
+    ? { extensions: [new ClipExtension()], clipBounds, clipByInstance: false }
+    : {};
+}
+
+function buildGeomadLayer(
+  items: GeomadItem[],
+  keyPrefix: string,
+  ui: LayerUiState,
+  clipBounds?: [number, number, number, number],
+) {
   return new MosaicLayer<GeomadItem>({
-    // Include the year in the id: MosaicLayer's inner TileLayer keeps a
-    // stable id across updates (`mosaic-layer-${id}`), so with a constant id
-    // here a year switch just updates props on the same persistent tileset
-    // instead of unambiguously signaling "this is a new dataset" — changing
-    // the id forces a clean unmount of the old year's tiles and mount of the
-    // new year's, rather than relying on the library's partial-update path.
-    id: `geomad-mosaic-${year}`,
+    // Include keyPrefix (year, or side+year in compare mode) in the id:
+    // MosaicLayer's inner TileLayer keeps a stable id across updates
+    // (`mosaic-layer-${id}`), so with a constant id here a change just
+    // updates props on the same persistent tileset instead of unambiguously
+    // signaling "this is a new dataset" — changing the id forces a clean
+    // unmount of the old tiles and mount of the new ones, rather than
+    // relying on the library's partial-update path.
+    id: `geomad-mosaic-${keyPrefix}`,
     sources: items,
     visible: ui.visible,
     opacity: ui.opacity,
     renderSource: (source) =>
       new MultiCOGLayer({
-        id: `geomad-${source.id}`,
+        id: `geomad-${keyPrefix}-${source.id}`,
         opacity: ui.opacity,
         sources: getGeomadSources(source),
         composite: { r: "red", g: "green", b: "blue" },
@@ -150,25 +201,27 @@ function buildGeomadLayer(items: GeomadItem[], year: number, ui: LayerUiState) {
             props: { rescaleMin: RESCALE_MIN, rescaleMax: RESCALE_MAX },
           },
         ],
+        ...clipProps(clipBounds),
       }),
   });
 }
 
 function buildLulcLayer(
   items: LulcItem[],
-  year: number,
-  colormapTexture: ReturnType<typeof buildLulcColormapTexture>,
+  keyPrefix: string,
+  colormapTexture: Texture,
   ui: LayerUiState,
+  clipBounds?: [number, number, number, number],
 ) {
   const renderTile = makeLulcRenderTile(colormapTexture);
   return new MosaicLayer<LulcItem>({
-    id: `lulc-mosaic-${year}`,
+    id: `lulc-mosaic-${keyPrefix}`,
     sources: items,
     visible: ui.visible,
     opacity: ui.opacity,
     renderSource: (source) =>
       new COGLayer<LulcTileData>({
-        id: `lulc-${source.id}`,
+        id: `lulc-${keyPrefix}-${source.id}`,
         opacity: ui.opacity,
         geotiff: source.assets.classification.href,
         getTileData: getLulcTileData,
@@ -176,119 +229,74 @@ function buildLulcLayer(
         onTileUnload: (tile) => {
           (tile.content as LulcTileData | null)?.texture.destroy();
         },
+        ...clipProps(clipBounds),
       }),
   });
 }
 
-/** One side of the swipe compare — its own map, own device/layer, fetched independently of the main view. */
-function CompareSide({
-  content,
-  layerUi,
-  view,
-  mapRef,
-  wrapperRef,
-  onLoad,
-}: {
-  content: CompareContent;
-  layerUi: Record<LayerKey, LayerUiState>;
-  view: MapViewState;
-  mapRef: React.RefObject<MapRef | null>;
-  wrapperRef: React.RefObject<HTMLDivElement | null>;
-  onLoad: () => void;
-}) {
+/** Dispatches to whichever dataset a compare side has selected. */
+function buildSideLayer(
+  content: CompareContent,
+  geomadItems: GeomadItem[],
+  lulcItems: LulcItem[],
+  keyPrefix: string,
+  layerUi: Record<LayerKey, LayerUiState>,
+  lulcColormapTexture: Texture | null,
+  clipBounds?: [number, number, number, number],
+) {
+  if (content.dataset === "geomad") {
+    return geomadItems.length > 0
+      ? buildGeomadLayer(geomadItems, `${keyPrefix}-${content.year}`, layerUi.geomad, clipBounds)
+      : null;
+  }
+  return lulcItems.length > 0 && lulcColormapTexture
+    ? buildLulcLayer(
+        lulcItems,
+        `${keyPrefix}-${content.year}`,
+        lulcColormapTexture,
+        layerUi.lulc,
+        clipBounds,
+      )
+    : null;
+}
+
+/**
+ * Fetches items for one compare side. Clears state at the start of every
+ * fetch (rather than tracking "which content the current items came from")
+ * so a mid-flight year/dataset switch can't render the previous selection's
+ * items under the new selection's layer id — the existing `items.length > 0`
+ * checks in `buildSideLayer` already gate rendering on real data being ready.
+ */
+function useCompareItems(content: CompareContent, enabled: boolean) {
   const [geomadItems, setGeomadItems] = useState<GeomadItem[]>([]);
   const [lulcItems, setLulcItems] = useState<LulcItem[]>([]);
-  const [device, setDevice] = useState<Device | null>(null);
-  // Tracks which (dataset, year) the items currently in state actually came
-  // from. Without this, changing `content.year` recomputes `layer` on the
-  // SAME render using the still-stale items from the previous year (the
-  // fetch hasn't resolved yet) — producing a layer id that matches the NEW
-  // year but sources from the OLD one, a real mismatch that only
-  // self-corrects once the fetch finishes. That transient wrong-data flash
-  // is what looked like "doesn't change / desyncs from the select".
-  const [loadedContent, setLoadedContent] = useState<CompareContent | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     const controller = new AbortController();
+    setGeomadItems([]);
+    setLulcItems([]);
     if (content.dataset === "geomad") {
       fetchGeomadItems(content.year, controller.signal)
-        .then((items) => {
-          setGeomadItems(items);
-          setLoadedContent(content);
-        })
+        .then(setGeomadItems)
         .catch((err: unknown) => {
           if (err instanceof Error && err.name === "AbortError") return;
           console.error("Failed to load compare geomad items:", err);
         });
     } else {
       fetchLulcItems(content.year, controller.signal)
-        .then((items) => {
-          setLulcItems(items);
-          setLoadedContent(content);
-        })
+        .then(setLulcItems)
         .catch((err: unknown) => {
           if (err instanceof Error && err.name === "AbortError") return;
           console.error("Failed to load compare lulc items:", err);
         });
     }
     return () => controller.abort();
-  }, [content.dataset, content.year]);
+  }, [enabled, content.dataset, content.year]);
 
-  const lulcColormapTexture = useMemo(
-    () => (device ? buildLulcColormapTexture(device) : null),
-    [device],
-  );
-
-  const layer = useMemo(() => {
-    if (
-      !loadedContent ||
-      loadedContent.dataset !== content.dataset ||
-      loadedContent.year !== content.year
-    ) {
-      return null;
-    }
-    if (content.dataset === "geomad") {
-      return geomadItems.length > 0
-        ? buildGeomadLayer(geomadItems, content.year, layerUi.geomad)
-        : null;
-    }
-    return lulcItems.length > 0 && lulcColormapTexture
-      ? buildLulcLayer(lulcItems, content.year, lulcColormapTexture, layerUi.lulc)
-      : null;
-  }, [
-    content.dataset,
-    content.year,
-    loadedContent,
-    geomadItems,
-    lulcItems,
-    lulcColormapTexture,
-    layerUi.geomad,
-    layerUi.lulc,
-  ]);
-
-  return (
-    <div ref={wrapperRef} style={{ position: "absolute", inset: 0 }}>
-      <MaplibreMap
-        ref={mapRef}
-        initialViewState={view}
-        mapStyle={BASEMAP_STYLE}
-        onLoad={onLoad}
-        // maplibre-gl-compare clips each map via the legacy `clip: rect()`
-        // CSS property (not `clip-path`), which is a documented no-op on
-        // anything that isn't position:absolute/fixed. react-map-gl's
-        // container defaults to position:relative, so without this override
-        // the clip was silently doing nothing — the divider dragged fine,
-        // but nothing was ever actually masked.
-        style={{ position: "absolute", inset: 0 }}
-      >
-        <DeckGLOverlay
-          layers={layer ? [layer] : []}
-          deviceProps={{ webgl: { antialias: false } }}
-          onDeviceInitialized={setDevice}
-        />
-      </MaplibreMap>
-    </div>
-  );
+  return { geomadItems, lulcItems };
 }
 
 function Legend({ visible }: { visible: boolean }) {
@@ -517,15 +525,8 @@ export default function App() {
   const [years, setYears] = useState<number[]>([initial.year]);
   const [layerUi, setLayerUi] = useState(initial.layers);
   const [view, setView] = useState(initial.view);
+  const [liveView, setLiveView] = useState(initial.view);
   const [compare, setCompare] = useState<CompareState>(initial.compare);
-
-  const leftMapRef = useRef<MapRef>(null);
-  const rightMapRef = useRef<MapRef>(null);
-  const leftWrapperRef = useRef<HTMLDivElement>(null);
-  const rightWrapperRef = useRef<HTMLDivElement>(null);
-  const compareContainerRef = useRef<HTMLDivElement>(null);
-  const [leftLoaded, setLeftLoaded] = useState(false);
-  const [rightLoaded, setRightLoaded] = useState(false);
 
   const [geomadItems, setGeomadItems] = useState<GeomadItem[]>([]);
   const [lulcItems, setLulcItems] = useState<LulcItem[]>([]);
@@ -559,7 +560,6 @@ export default function App() {
     return () => controller.abort();
   }, [year]);
 
-
   const lulcColormapTexture = useMemo(
     () => (device ? buildLulcColormapTexture(device) : null),
     [device],
@@ -570,71 +570,48 @@ export default function App() {
     writeUrlState({ year, view, layers: layerUi, compare });
   }, [year, view, layerUi, compare]);
 
-  // Reset the "map loaded" flags whenever compare mode is toggled off/on, so
-  // a re-enable doesn't try to reuse stale refs from the previous mount.
-  useEffect(() => {
-    setLeftLoaded(false);
-    setRightLoaded(false);
-  }, [compare.enabled]);
+  const { geomadItems: leftGeomadItems, lulcItems: leftLulcItems } = useCompareItems(
+    compare.left,
+    compare.enabled,
+  );
+  const { geomadItems: rightGeomadItems, lulcItems: rightLulcItems } = useCompareItems(
+    compare.right,
+    compare.enabled,
+  );
 
-  // Instantiate maplibre-gl-compare once both compare maps have loaded.
-  useEffect(() => {
-    if (!compare.enabled || !leftLoaded || !rightLoaded) {
-      return;
+  // Clip rectangles for each side, in Web Mercator meters (see
+  // splitWebMercatorMetersX), recomputed from the live (continuously-updated)
+  // viewport so the split line stays screen-locked while panning/zooming.
+  // Cheap: ClipExtension only needs a prop update on the already-open
+  // layers, not a data reload (see buildGeomadLayer/buildLulcLayer —
+  // sources/geotiff references stay stable across this).
+  const clipBounds = useMemo(() => {
+    if (!compare.enabled) {
+      return null;
     }
-    const leftMap = leftMapRef.current?.getMap();
-    const rightMap = rightMapRef.current?.getMap();
-    const container = compareContainerRef.current;
-    if (!leftMap || !rightMap || !container) {
-      return;
-    }
-    const instance = new Compare(leftMap, rightMap, container);
-
-    // maplibre-gl-compare only clips with the legacy `clip: rect()` CSS
-    // property, which is paint-only — it does NOT restrict pointer events
-    // (unlike `clip-path`, which does). That alone wouldn't even be enough
-    // here: `clip`/`clip-path` on map.getContainer() only affects that
-    // element's own subtree, but each side is ALSO wrapped in a plain,
-    // fully-overlapping `<div>` of our own (CompareSide's root) — an
-    // unclipped sibling still claims every pointer event across its whole
-    // box regardless of what's clipped inside it. The right wrapper, being
-    // later in the DOM, was capturing all events everywhere, including the
-    // region where only the left map is visible. Mirror the library's
-    // position as `clip-path` on our OWN wrapper divs (not the inner map
-    // containers) so each side's actual hit area matches what's drawn.
-    const leftEl = leftMap.getContainer();
-    const rightEl = rightMap.getContainer();
-    const leftWrapper = leftWrapperRef.current;
-    const rightWrapper = rightWrapperRef.current;
-    const syncClipPath = () => {
-      if (!leftWrapper || !rightWrapper) {
-        return;
-      }
-      // biome-ignore lint: instance.currentPosition/_bounds aren't in the .d.ts shim, but are plain public-in-practice fields set by the library itself.
-      const inst = instance as unknown as {
-        currentPosition?: number;
-        _bounds?: { width: number };
-      };
-      const x = inst.currentPosition;
-      const width = inst._bounds?.width;
-      if (x === undefined || width === undefined) {
-        return;
-      }
-      leftWrapper.style.clipPath = `inset(0 ${Math.max(0, width - x)}px 0 0)`;
-      rightWrapper.style.clipPath = `inset(0 0 0 ${x}px)`;
+    const viewport = new WebMercatorViewport({
+      ...liveView,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+    const splitX = splitWebMercatorMetersX(viewport, compare.split);
+    const yMin = -WEB_MERCATOR_HALF_EXTENT;
+    const yMax = WEB_MERCATOR_HALF_EXTENT;
+    return {
+      left: [-WEB_MERCATOR_HALF_EXTENT, yMin, splitX, yMax] as [
+        number,
+        number,
+        number,
+        number,
+      ],
+      right: [splitX, yMin, WEB_MERCATOR_HALF_EXTENT, yMax] as [
+        number,
+        number,
+        number,
+        number,
+      ],
     };
-    syncClipPath();
-    const observer = new MutationObserver(syncClipPath);
-    observer.observe(leftEl, { attributes: true, attributeFilter: ["style"] });
-    observer.observe(rightEl, { attributes: true, attributeFilter: ["style"] });
-
-    return () => {
-      observer.disconnect();
-      if (leftWrapper) leftWrapper.style.clipPath = "";
-      if (rightWrapper) rightWrapper.style.clipPath = "";
-      instance.remove();
-    };
-  }, [compare.enabled, leftLoaded, rightLoaded]);
+  }, [compare.enabled, compare.split, liveView]);
 
   // Memoized so panning/zooming (which only changes `view`) doesn't rebuild
   // these — without this, every render (including onMoveEnd) constructed
@@ -645,60 +622,81 @@ export default function App() {
   const geomadLayer = useMemo(
     () =>
       geomadItems.length > 0
-        ? buildGeomadLayer(geomadItems, year, layerUi.geomad)
+        ? buildGeomadLayer(geomadItems, String(year), layerUi.geomad)
         : null,
     [geomadItems, year, layerUi.geomad],
   );
   const lulcLayer = useMemo(
     () =>
       lulcItems.length > 0 && lulcColormapTexture
-        ? buildLulcLayer(lulcItems, year, lulcColormapTexture, layerUi.lulc)
+        ? buildLulcLayer(lulcItems, String(year), lulcColormapTexture, layerUi.lulc)
         : null,
     [lulcItems, year, lulcColormapTexture, layerUi.lulc],
   );
-  const layers = [geomadLayer, lulcLayer].filter((l) => l !== null);
+
+  const leftLayer = useMemo(
+    () =>
+      clipBounds
+        ? buildSideLayer(
+            compare.left,
+            leftGeomadItems,
+            leftLulcItems,
+            "left",
+            layerUi,
+            lulcColormapTexture,
+            clipBounds.left,
+          )
+        : null,
+    [compare.left, leftGeomadItems, leftLulcItems, layerUi, lulcColormapTexture, clipBounds],
+  );
+  const rightLayer = useMemo(
+    () =>
+      clipBounds
+        ? buildSideLayer(
+            compare.right,
+            rightGeomadItems,
+            rightLulcItems,
+            "right",
+            layerUi,
+            lulcColormapTexture,
+            clipBounds.right,
+          )
+        : null,
+    [compare.right, rightGeomadItems, rightLulcItems, layerUi, lulcColormapTexture, clipBounds],
+  );
+
+  const layers = compare.enabled
+    ? [leftLayer, rightLayer].filter((l) => l !== null)
+    : [geomadLayer, lulcLayer].filter((l) => l !== null);
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
-      {compare.enabled ? (
-        <div ref={compareContainerRef} style={{ position: "absolute", inset: 0 }}>
-          <CompareSide
-            content={compare.left}
-            layerUi={layerUi}
-            view={view}
-            mapRef={leftMapRef}
-            wrapperRef={leftWrapperRef}
-            onLoad={() => setLeftLoaded(true)}
-          />
-          <CompareSide
-            content={compare.right}
-            layerUi={layerUi}
-            view={view}
-            mapRef={rightMapRef}
-            wrapperRef={rightWrapperRef}
-            onLoad={() => setRightLoaded(true)}
-          />
-        </div>
-      ) : (
-        <MaplibreMap
-          initialViewState={view}
-          mapStyle={BASEMAP_STYLE}
-          onMoveEnd={(e) =>
-            setView({
-              longitude: e.viewState.longitude,
-              latitude: e.viewState.latitude,
-              zoom: e.viewState.zoom,
-              pitch: e.viewState.pitch,
-              bearing: e.viewState.bearing,
-            })
-          }
-        >
-          <DeckGLOverlay
-            layers={layers}
-            deviceProps={{ webgl: { antialias: false } }}
-            onDeviceInitialized={setDevice}
-          />
-        </MaplibreMap>
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      <MaplibreMap
+        initialViewState={view}
+        mapStyle={BASEMAP_STYLE}
+        onMove={(e) => setLiveView(e.viewState)}
+        onMoveEnd={(e) =>
+          setView({
+            longitude: e.viewState.longitude,
+            latitude: e.viewState.latitude,
+            zoom: e.viewState.zoom,
+            pitch: e.viewState.pitch,
+            bearing: e.viewState.bearing,
+          })
+        }
+      >
+        <DeckGLOverlay
+          layers={layers}
+          deviceProps={{ webgl: { antialias: false } }}
+          onDeviceInitialized={setDevice}
+        />
+      </MaplibreMap>
+
+      {compare.enabled && (
+        <SwipeHandle
+          fraction={compare.split}
+          onChange={(split) => setCompare((prev) => ({ ...prev, split }))}
+        />
       )}
 
       <div
