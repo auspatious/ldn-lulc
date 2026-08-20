@@ -1,0 +1,38 @@
+{
+  "name": "viz",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@deck.gl/core": "^9.3.10",
+    "@deck.gl/geo-layers": "^9.3.10",
+    "@deck.gl/layers": "^9.3.10",
+    "@deck.gl/mapbox": "^9.3.10",
+    "@deck.gl/mesh-layers": "^9.3.10",
+    "@developmentseed/deck.gl-geotiff": "^0.7.0",
+    "@developmentseed/deck.gl-raster": "^0.7.0",
+    "@duckdb/duckdb-wasm": "^1.33.1-dev57.0",
+    "@luma.gl/core": "^9.3.6",
+    "@luma.gl/shadertools": "^9.3.6",
+    "deck.gl": "^9.3.10",
+    "maplibre-gl": "^6.4.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-map-gl": "^8.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "oxlint": "^1.75.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.0"
+  }
+}
