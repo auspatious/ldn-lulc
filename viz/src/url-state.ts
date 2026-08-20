@@ -1,4 +1,4 @@
-export type LayerKey = "geomad" | "lulc" | "tiles";
+export type LayerKey = "geomad" | "lulc";
 
 export type LayerUiState = { visible: boolean; opacity: number };
 
@@ -10,10 +10,21 @@ export type MapViewState = {
   bearing: number;
 };
 
+export type CompareDataset = "geomad" | "lulc";
+
+export type CompareContent = { dataset: CompareDataset; year: number };
+
+export type CompareState = {
+  enabled: boolean;
+  left: CompareContent;
+  right: CompareContent;
+};
+
 export type UrlState = {
   year: number;
   view: MapViewState;
   layers: Record<LayerKey, LayerUiState>;
+  compare: CompareState;
 };
 
 export const DEFAULT_VIEW: MapViewState = {
@@ -26,7 +37,7 @@ export const DEFAULT_VIEW: MapViewState = {
 
 export const DEFAULT_YEAR = 2025;
 
-const LAYER_KEYS: LayerKey[] = ["geomad", "lulc", "tiles"];
+const LAYER_KEYS: LayerKey[] = ["geomad", "lulc"];
 
 function parseNum(raw: string | null, fallback: number): number {
   if (raw === null) {
@@ -50,14 +61,29 @@ function parseLayerParam(params: URLSearchParams, key: LayerKey): LayerUiState {
   return { visible, opacity };
 }
 
-/** Read year/view/layer state from the current URL, falling back to defaults. */
+function parseCompareContent(
+  raw: string | null,
+  fallback: CompareContent,
+): CompareContent {
+  if (!raw) {
+    return fallback;
+  }
+  const [dsRaw, yearRaw] = raw.split(":");
+  const dataset: CompareDataset = dsRaw === "lulc" ? "lulc" : "geomad";
+  const year = Number(yearRaw);
+  return { dataset, year: Number.isFinite(year) ? year : fallback.year };
+}
+
+/** Read year/view/layer/compare state from the current URL, falling back to defaults. */
 export function readUrlState(): UrlState {
   const params = new URLSearchParams(window.location.search);
   const layers = Object.fromEntries(
     LAYER_KEYS.map((key) => [key, parseLayerParam(params, key)]),
   ) as Record<LayerKey, LayerUiState>;
+  const year = parseNum(params.get("year"), DEFAULT_YEAR);
+  const defaultContent: CompareContent = { dataset: "geomad", year };
   return {
-    year: parseNum(params.get("year"), DEFAULT_YEAR),
+    year,
     view: {
       longitude: parseNum(params.get("lng"), DEFAULT_VIEW.longitude),
       latitude: parseNum(params.get("lat"), DEFAULT_VIEW.latitude),
@@ -66,6 +92,11 @@ export function readUrlState(): UrlState {
       bearing: parseNum(params.get("bearing"), DEFAULT_VIEW.bearing),
     },
     layers,
+    compare: {
+      enabled: params.get("cmp") === "1",
+      left: parseCompareContent(params.get("cmpLeft"), defaultContent),
+      right: parseCompareContent(params.get("cmpRight"), defaultContent),
+    },
   };
 }
 
@@ -82,6 +113,15 @@ export function writeUrlState(state: UrlState): void {
     const { visible, opacity } = state.layers[key];
     params.set(key, `${visible ? 1 : 0},${Math.round(opacity * 100)}`);
   }
+  params.set("cmp", state.compare.enabled ? "1" : "0");
+  params.set(
+    "cmpLeft",
+    `${state.compare.left.dataset}:${state.compare.left.year}`,
+  );
+  params.set(
+    "cmpRight",
+    `${state.compare.right.dataset}:${state.compare.right.year}`,
+  );
   const url = `${window.location.pathname}?${params.toString()}`;
   window.history.replaceState(null, "", url);
 }
