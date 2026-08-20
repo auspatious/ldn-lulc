@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
-  generateName: index-mosaic-
+  generateName: index-
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
@@ -67,10 +67,6 @@ spec:
           #   depends: index-to-stac-geoparquet.Succeeded
           #   template: make-geomad-collection
 
-          # - name: make-mosaics
-          #   depends: index-to-stac-geoparquet.Succeeded
-          #   template: make-mosaics
-
     - name: index-to-stac-geoparquet
       activeDeadlineSeconds: 900 # 15 mins
       container:
@@ -96,7 +92,6 @@ spec:
           - "{{ workflow.parameters.bucket }}"
 
     # Collection already exists for DEP prod so don't need to make it here.
-    # Mosaics just needed for our visualisation app that already points to Source.Coop version with both regions.
 
     # - name: make-geomad-collection
     #   activeDeadlineSeconds: 900 # 15 mins
@@ -120,30 +115,6 @@ spec:
     #       - "{{ workflow.parameters.product-owner }}"
     #       - --collection-url-root
     #       - "{{ workflow.parameters.collection-url-root }}"
-    #       - "{{ workflow.parameters.single-region }}"
-    #       - --bucket
-    #       - "{{ workflow.parameters.bucket }}"
-
-    # - name: make-mosaics
-    #   activeDeadlineSeconds: 900 # 15 mins
-    #   container:
-    #     image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
-    #     imagePullPolicy: IfNotPresent
-    #     resources:
-    #       requests:
-    #         memory: 2Gi
-    #         cpu: 1
-    #     command: [ldn]
-    #     args:
-    #       - make-mosaics
-    #       - --dataset
-    #       - "{{ workflow.parameters.dataset }}"
-    #       - --geomad-version
-    #       - "{{ workflow.parameters.geomad-version }}"
-    #       - --lulc-version
-    #       - "{{ workflow.parameters.lulc-version }}"
-    #       - --product-owner
-    #       - "{{ workflow.parameters.product-owner }}"
     #       - "{{ workflow.parameters.single-region }}"
     #       - --bucket
     #       - "{{ workflow.parameters.bucket }}"

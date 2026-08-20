@@ -7,11 +7,8 @@ from typing import Literal
 
 import rustac
 import typer
-from cogeo_mosaic.mosaic import MosaicJSON
 from dotenv import load_dotenv
-from pystac import Item, ItemCollection
 from rustac import write_sync
-from shapely.geometry import mapping, shape
 from typing_extensions import Annotated
 
 load_dotenv()  # Load AWS credentials from .env file (for local dev). Do this before aws import.
@@ -37,7 +34,6 @@ from ldn.utils import (
     get_stac_geoparquet_key,
     get_stac_geoparquet_url,
     is_bucket_source_coop,
-    load_stac_geoparquet_features,
     owner_for_region,
     parse_tile_id,
     parse_years,
@@ -347,154 +343,3 @@ def index_to_stac_geoparquet(
     logger.info(f"Writing combined STAC-Geoparquet ({len(all_docs)} items) to {geomad_stac_geoparquet_url}")
     write_sync(parquet_key, all_docs, store=store)
     logger.info(f"Done. Wrote {len(all_docs)} items to {geomad_stac_geoparquet_url}")
-
-
-def _stac_self_link(feature: dict) -> str:
-    """Extract the STAC item self-link URL."""
-    links = {link["rel"]: link["href"] for link in feature.get("links", [])}
-    self_link = links.get("self")
-    if self_link is None:
-        raise LdnError(f"Feature {feature.get('id', 'unknown')} has no self link, cannot determine STAC item URL.")
-    return self_link
-
-
-def _build_mosaic_for_year(year: int, item_collection: ItemCollection) -> MosaicJSON:
-    """Filter features by year and build a MosaicJSON.
-
-    Args:
-        year: Year integer to filter for.
-        item_collection: ItemCollection of STAC items from the index.
-
-    Returns:
-        MosaicJSON for the matching features.
-    """
-
-    def _matches_year(feat: Item) -> bool:
-        """Check if a feature's datetime falls within the target year."""
-        dt = feat.datetime
-        if not dt:
-            return False
-        return dt.year == year
-
-    year_features = [f for f in item_collection if _matches_year(f)]
-
-    if not year_features:
-        raise LdnError(f"No STAC items found for year {year}")
-
-    def _ensure_polygon(feat: dict) -> dict:
-        """Return feat with geometry as Polygon (convex hull if MultiPolygon)."""
-        geom = shape(feat.get("geometry"))
-        if geom.geom_type == "Polygon":
-            return feat
-        return {**feat, "geometry": mapping(geom.convex_hull)}
-
-    year_items = [f.to_dict() for f in year_features]
-    year_features = [_ensure_polygon(f) for f in year_items]
-    logger.info(f"  {year}: {len(year_features)} features")
-
-    mosaic = MosaicJSON.from_features(
-        year_features,
-        minzoom=5,
-        maxzoom=12,
-        accessor=_stac_self_link,
-    )
-
-    return mosaic
-
-
-def _extract_years(features: ItemCollection) -> list[int]:
-    """Extract sorted unique years from STAC feature datetimes.
-
-    Args:
-        features: List of STAC item features.
-
-    Returns:
-        Sorted list of year integers.
-    """
-    years: set[int] = set()
-    for feat in features:
-        dt = feat.datetime
-        if dt:
-            years.add(dt.year)
-    return sorted(years)
-
-
-@app.command()
-def make_mosaics(
-    dataset: Annotated[
-        Literal["geomad", "lulc"],
-        typer.Option(help="Which dataset to build mosaics for: 'geomad' or 'lulc'."),
-    ],
-    single_region: Annotated[
-        bool,
-        typer.Option(
-            help="Whether to use the single region prefix (e.g. 'dep_ls_geomad') "
-            "or the generic prefix (e.g. 'ls_geomad')."
-        ),
-    ],
-    years: Annotated[
-        str | None,
-        typer.Option(
-            help="Comma-separated years or range (e.g. '2020,2021' or '2010-2023'). Defaults to all years in the index."
-        ),
-    ] = None,
-    geomad_version: Annotated[
-        str,
-        typer.Option(help="Version string for GeoMAD dataset."),
-    ] = GEOMAD_VERSION,
-    lulc_version: Annotated[
-        str,
-        typer.Option(help="Version string for LULC dataset."),
-    ] = LULC_VERSION,
-    bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
-    product_owner: Annotated[
-        str | None,
-        typer.Option(
-            help="Override the region-derived owner prefix. Optional. If using, use single_region=True."
-            "Required if single_region is True."
-        ),
-    ] = None,
-    sensor: Annotated[
-        str,
-        typer.Option(help="Sensor to use for the STAC item path. Optional, defaults to 'ls'."),
-    ] = SENSOR,
-) -> None:
-    """Make mosaic.jsons per year from the combined STAC-Geoparquet index."""
-    logger.info(f"Making mosaics for dataset '{dataset}'")
-    bucket = bucket or get_env_var("BUCKET")  # Default
-    requested_years: list[int] | None = parse_years(years) if years is not None else None
-    version = version_for_dataset(dataset, geomad_version, lulc_version)
-
-    if single_region and not product_owner:
-        raise LdnError("product_owner must be provided when single_region is True.")
-    stac_geoparquet_key = get_stac_geoparquet_key(bucket, product_owner, sensor, dataset, version)
-
-    logger.info(f"Loading {'single region' if single_region else 'many regions'} index from {stac_geoparquet_key}")
-    item_collection = load_stac_geoparquet_features(bucket, stac_geoparquet_key)
-
-    available_years = _extract_years(item_collection)
-    logger.info(f"Found {len(item_collection)} features across {len(available_years)} years: {available_years}")
-
-    if requested_years is not None:
-        missing = [y for y in requested_years if y not in available_years]
-        if missing:
-            logger.warning(f"Requested years not in index: {missing}")
-        years_list = [y for y in requested_years if y in available_years]
-        if not years_list:
-            logger.warning("No requested years match available data, skipping.")
-            return
-    else:
-        years_list = available_years
-
-    # TODO: This is a bit hacky
-    output_prefix = stac_geoparquet_key.rsplit("/", 1)[0]
-    output_prefix = f"{output_prefix}/mosaics"
-
-    for _year in years_list:
-        mosaic = _build_mosaic_for_year(_year, item_collection)
-        output_prefix_year = f"{output_prefix}/{_year}/{_year}_mosaic.json"
-        body = mosaic.model_dump_json(exclude_none=True).encode("utf-8")
-        s3_client.put_object(Bucket=bucket, Key=output_prefix_year, Body=body, ContentType="application/json")
-        logger.info(f"  {_year} written to {output_prefix_year}.")
-
-    logger.info("Finished writing mosaics.")

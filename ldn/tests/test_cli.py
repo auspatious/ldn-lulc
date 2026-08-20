@@ -1,22 +1,16 @@
 import io
 import json
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from cogeo_mosaic.mosaic import MosaicJSON
 from typer.testing import CliRunner
 
 from ldn.cli import (
-    _build_mosaic_for_year,
-    _extract_years,
     _find_stac_items_s3,
     _load_stac_docs,
-    _stac_self_link,
     app,
     index_to_stac_geoparquet,
 )
-from ldn.tests.test_mosaic import _make_feature, _make_item
 from ldn.utils import LdnError
 
 # Shared fixture
@@ -25,42 +19,6 @@ from ldn.utils import LdnError
 BBOX = [100.0, 0.0, 101.0, 1.0]
 BBOX2 = [102.0, 0.0, 103.0, 1.0]
 runner = CliRunner()
-
-
-# _stac_self_link
-
-
-class TestStacSelfLink:
-    def test_returns_self_href(self):
-        feat = _make_feature("tile_1", BBOX)
-        assert _stac_self_link(feat) == "https://example.com/items/tile_1"
-
-    def test_raises_when_no_self_link(self):
-        feat = _make_feature("tile_1", BBOX)
-        feat["links"] = []
-        with pytest.raises(Exception, match="no self link"):
-            _stac_self_link(feat)
-
-    def test_raises_includes_feature_id(self):
-        feat = _make_feature("tile_99_88", BBOX)
-        feat["links"] = []
-        with pytest.raises(Exception, match="tile_99_88"):
-            _stac_self_link(feat)
-
-    def test_picks_self_among_multiple_links(self):
-        feat = _make_feature("tile_1", BBOX)
-        feat["links"] = [
-            {"rel": "root", "href": "https://example.com/root"},
-            {"rel": "self", "href": "https://example.com/self"},
-            {"rel": "collection", "href": "https://example.com/collection"},
-        ]
-        assert _stac_self_link(feat) == "https://example.com/self"
-
-    def test_raises_when_only_non_self_links_present(self):
-        feat = _make_feature("tile_1", BBOX)
-        feat["links"] = [{"rel": "root", "href": "https://example.com/root"}]
-        with pytest.raises(Exception):
-            _stac_self_link(feat)
 
 
 def test_cli_help_works_without_aws_credentials():
@@ -81,69 +39,6 @@ def test_credential_provider_raises_when_used_without_aws_credentials(monkeypatc
 
     with pytest.raises(ValueError, match="Received None from session.get_credentials"):
         aws_module.get_credential_provider()
-
-
-# _extract_years
-
-
-class TestExtractYears:
-    def test_single_year(self):
-        assert _extract_years([_make_item("t1", BBOX, year="2020")]) == [2020]
-
-    def test_multiple_years_sorted(self):
-        features = [_make_item(f"t{i}", BBOX, year=str(y)) for i, y in enumerate([2022, 2019, 2021])]
-        assert _extract_years(features) == [2019, 2021, 2022]
-
-    def test_deduplicates_years(self):
-        features = [
-            _make_item("t1", BBOX, year="2020"),
-            _make_item("t2", BBOX2, year="2020"),
-            _make_item("t3", BBOX, year="2021"),
-        ]
-        assert _extract_years(features) == [2020, 2021]
-
-    def test_empty_input(self):
-        assert _extract_years([]) == []
-
-    def test_skips_empty_datetime(self):
-        feat = SimpleNamespace(datetime=None)
-        assert _extract_years([feat]) == []
-
-    def test_skips_missing_properties(self):
-        feat = SimpleNamespace(datetime=None)
-        assert _extract_years([feat]) == []
-
-    def test_parses_full_iso_string(self):
-        feat = _make_item("t1", BBOX, year="2018")
-        assert _extract_years([feat]) == [2018]
-
-
-# _build_mosaic_for_year
-
-
-class TestBuildMosaicForYear:
-    def test_returns_mosaic_json_instance(self):
-        features = [_make_item("t1", BBOX, year="2020"), _make_item("t2", BBOX2, year="2020")]
-        assert isinstance(_build_mosaic_for_year(2020, features), MosaicJSON)
-
-    def test_raises_for_year_with_no_features(self):
-        with pytest.raises(Exception, match="2099"):
-            _build_mosaic_for_year(2099, [_make_item("t1", BBOX, year="2020")])
-
-    def test_filters_to_requested_year_only(self):
-        features = [
-            _make_item("t1", BBOX, year="2020"),
-            _make_item("t2", BBOX2, year="2021"),
-        ]
-        mosaic = _build_mosaic_for_year(2020, features)
-        tile_hrefs = [href for hrefs in mosaic.tiles.values() for href in hrefs]
-        assert all("/t1" in href for href in tile_hrefs)
-        assert all("/t2" not in href for href in tile_hrefs)
-
-    def test_zoom_range(self):
-        mosaic = _build_mosaic_for_year(2020, [_make_item("t1", BBOX, year="2020")])
-        assert mosaic.minzoom == 5
-        assert mosaic.maxzoom == 12
 
 
 # _find_stac_items_s3
@@ -192,6 +87,30 @@ class TestFindStacItemsS3:
 
 
 # _load_stac_docs
+
+
+def _make_feature(item_id: str, bbox: list[float], year: str = "2020") -> dict:
+    """Helper to create a STAC feature dict."""
+    minx, miny, maxx, maxy = bbox
+    return {
+        "id": item_id,
+        "type": "Feature",
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [minx, miny],
+                    [maxx, miny],
+                    [maxx, maxy],
+                    [minx, maxy],
+                    [minx, miny],
+                ]
+            ],
+        },
+        "links": [{"rel": "self", "href": f"https://example.com/items/{item_id}"}],
+        "properties": {"datetime": f"{year}-06-01T00:00:00Z"},
+        "assets": {},
+    }
 
 
 class TestLoadStacDocs:
