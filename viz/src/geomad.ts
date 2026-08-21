@@ -30,11 +30,8 @@ export async function fetchGeomadItems(
         assets.blue.href AS blue_href
       FROM read_parquet('${GEOMAD_PARQUET_URL}')
       WHERE EXTRACT(year FROM datetime) = ${year}
-        -- A handful of antimeridian-crossing tiles have a corrupted bbox of
-        -- exactly [-180, ymin, 180, ymax] instead of their true footprint
-        -- (upstream data bug, not fixable client-side) — drop them rather
-        -- than render them stretched across the whole world.
-        AND (bbox.xmax - bbox.xmin) < 10
+        -- Antimeridian-crossing heuristic - simply ignore for now.
+        AND NOT (bbox.xmax = 180 AND bbox.xmin = -180)
     `);
     signal?.throwIfAborted();
     return result.toArray().map((row) => ({

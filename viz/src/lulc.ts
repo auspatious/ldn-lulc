@@ -32,9 +32,8 @@ async function queryOne(
         assets.classification.href AS href
       FROM read_parquet('${url}')
       WHERE EXTRACT(year FROM datetime) = ${year}
-        -- Same antimeridian-crossing bbox bug as geomad — drop rows whose
-        -- bbox is corrupted to the full [-180, 180] range.
-        AND (bbox.xmax - bbox.xmin) < 10
+        -- Antimeridian-crossing heuristic - simply ignore for now.
+        AND NOT (bbox.xmax = 180 AND bbox.xmin = -180)
     `);
     signal?.throwIfAborted();
     return result.toArray().map((row) => ({
