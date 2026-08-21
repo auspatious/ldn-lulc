@@ -8,8 +8,6 @@
 # 4. Train model (in notebooks/training_data/1_Train_Model.ipynb)
 # 5. Run LULC prediction for all tiles/years
 # 6. Run index LULC (STAC-Geoparquet)
-# 7. Run make-mosaic for geomad and LULC datasets
-# 8. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
 
 # You need to manually set AWS_PROFILE first.
 -include .env
@@ -101,16 +99,6 @@ collection-geomad-test-dep-staging:
 	--product-owner dep \
 	--bucket dep-public-staging \
 	--has-stac-api;
-
-
-make-mosaics-geomad:
-	ldn make-mosaics \
-	--dataset geomad \
-	--geomad-version 0-3-0 \
-	--lulc-version 0-0-9 \
-	--single-region \
-	--product-owner dep \
-	--bucket dep-public-staging;
 
 
 #### Training Data
@@ -213,25 +201,6 @@ index-lulc-test-ci-staging:
 	ldn index-to-stac-geoparquet \
 	--dataset lulc \
  	--geomad-version 0-2-1 \
-	--lulc-version 0-0-9 \
-	--single-region \
-	--product-owner ci \
-	--bucket dep-public-staging;
-
-
-make-mosaics-lulc-dep:
-	ldn make-mosaics \
-	--dataset lulc \
-	--geomad-version 0-2-1 \
-	--lulc-version 0-0-9 \
-	--single-region \
-	--product-owner dep \
-	--bucket dep-public-staging;
-
-make-mosaics-lulc-ci:
-	ldn make-mosaics \
-	--dataset lulc \
-	--geomad-version 0-2-1 \
 	--lulc-version 0-0-9 \
 	--single-region \
 	--product-owner ci \
