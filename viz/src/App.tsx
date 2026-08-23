@@ -66,7 +66,7 @@ function splitWebMercatorMetersX(
 }
 
 // LULC predictions only exist for these two years (unlike geomad)
-const LULC_YEARS = [2000, 2025];
+const LULC_YEARS = [2000, 2025]; // TODO: remove this once all years have been created.
 
 // Rescale=7200,12000 stretch for red/green/blue.
 // COG pixel values are
@@ -77,25 +77,54 @@ const RESCALE_MAX = 12000 / 65535;
 
 const NODATA_BLEND_THRESHOLD = RESCALE_MIN;
 
-const DiscardNearZero = {
-  name: "discardNearZero",
+// Bilinear sampling blends real data texels with the zero-filled nodata
+// padding at the edge of every source (dataset edge, ragged partial tile, or
+// the seam between two adjacent COG scenes in the mosaic). A hard discard at
+// NODATA_BLEND_THRESHOLD turns that blend into a one-pixel cliff: values just
+// below get dropped (see-through "gap"), values just above survive but
+// rescale to near-black ("border"). Fading alpha across a small band instead
+// of discarding removes the cliff, at the cost of a few edge pixels being
+// partially transparent rather than fully opaque or fully see-through.
+// Tune to taste — wider hides more artifacting but eats into genuinely dark
+// valid pixels near the low end of the rescale window. Only fades *below*
+// threshold (never above it) so real in-range data keeps full opacity —
+// fading above threshold too washed out the whole image last attempt.
+const NODATA_FEATHER = NODATA_BLEND_THRESHOLD * 0.5;
+
+// Flip to false to silence geomad debug output. When on: draws MultiCOGLayer's
+// tile-boundary overlay (primary + secondary tile outlines, stitch/UV info)
+// and logs per-source GeoTIFF metadata (nodata, tile size, bbox, stored band
+// stats) to the console — useful for tracking down the nodata-edge/COG-seam
+// artifacts.
+const GEOMAD_DEBUG = false;
+
+const FadeNearZero = {
+  name: "fadeNearZero",
   fs: `
-    uniform discardNearZeroUniforms {
+    uniform fadeNearZeroUniforms {
       float threshold;
-    } discardNearZero;
+      float feather;
+    } fadeNearZero;
   `,
   inject: {
     "fs:DECKGL_FILTER_COLOR": `
-      if (max(color.r, max(color.g, color.b)) <= discardNearZero.threshold) {
+      float nearZeroValue = max(color.r, max(color.g, color.b));
+      color.a *= smoothstep(
+        fadeNearZero.threshold - fadeNearZero.feather,
+        fadeNearZero.threshold,
+        nearZeroValue
+      );
+      if (color.a <= 0.0) {
         discard;
       }
     `,
   },
-  uniformTypes: { threshold: "f32" },
-  getUniforms: (props?: { threshold?: number }) => ({
+  uniformTypes: { threshold: "f32", feather: "f32" },
+  getUniforms: (props?: { threshold?: number; feather?: number }) => ({
     threshold: props?.threshold ?? 0,
+    feather: props?.feather ?? 0,
   }),
-} as const satisfies ShaderModule<{ threshold: number }>;
+} as const satisfies ShaderModule<{ threshold: number; feather: number }>;
 
 // Inline raster style instead of a hosted vector style URL — no external
 // style-JSON fetch to go wrong, just tiles.
@@ -176,14 +205,44 @@ function buildGeomadLayer(
         composite: { r: "red", g: "green", b: "blue" },
         renderPipeline: [
           {
-            module: DiscardNearZero,
-            props: { threshold: NODATA_BLEND_THRESHOLD },
+            module: FadeNearZero,
+            props: { threshold: NODATA_BLEND_THRESHOLD, feather: NODATA_FEATHER },
           },
           {
             module: LinearRescale,
             props: { rescaleMin: RESCALE_MIN, rescaleMax: RESCALE_MAX },
           },
         ],
+        debug: GEOMAD_DEBUG,
+        debugLevel: 3,
+        onGeoTIFFLoad: GEOMAD_DEBUG
+          ? (sources, { primaryKey, geographicBounds }) => {
+              console.groupCollapsed(
+                `[geomad debug] ${source.id} opened (primary=${primaryKey})`,
+              );
+              console.log("geographicBounds", geographicBounds);
+              console.log("composite", { r: "red", g: "green", b: "blue" });
+              console.log("rescale", {
+                rescaleMin: RESCALE_MIN,
+                rescaleMax: RESCALE_MAX,
+                nodataDiscardThreshold: NODATA_BLEND_THRESHOLD,
+              });
+              for (const [name, geotiff] of sources) {
+                console.log(name, {
+                  nodata: geotiff.nodata,
+                  bands: geotiff.count,
+                  size: `${geotiff.width}x${geotiff.height}`,
+                  tileSize: `${geotiff.tileWidth}x${geotiff.tileHeight}`,
+                  isTiled: geotiff.isTiled,
+                  bbox: geotiff.bbox,
+                  offsets: geotiff.offsets,
+                  scales: geotiff.scales,
+                  storedStats: geotiff.storedStats,
+                });
+              }
+              console.groupEnd();
+            }
+          : undefined,
         ...clipProps(clipBounds),
       }),
   });
