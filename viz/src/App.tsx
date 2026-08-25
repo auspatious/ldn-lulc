@@ -5,9 +5,11 @@ import {
   MosaicLayer,
   MultiCOGLayer,
 } from "@developmentseed/deck.gl-geotiff";
-import { LinearRescale } from "@developmentseed/deck.gl-raster/gpu-modules";
+import {
+  FilterNoDataVal,
+  LinearRescale,
+} from "@developmentseed/deck.gl-raster/gpu-modules";
 import type { Device, Texture } from "@luma.gl/core";
-import type { ShaderModule } from "@luma.gl/shadertools";
 import type { StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useState } from "react";
@@ -34,14 +36,14 @@ import {
   writeUrlState,
 } from "./url-state.js";
 
-// Standard spherical Web Mercator (EPSG:3857) constants — same values
+// Standard spherical Web Mercator (EPSG:3857) constants - same values
 // @developmentseed/deck.gl-raster's RasterTileLayer uses internally to
 // position its mesh (raster-tile-layer/constants.js: TILE_SIZE=512,
 // WEB_MERCATOR_METER_CIRCUMFERENCE=40075016.686). Not re-exported by the
 // package, so duplicated here rather than importing an internal path.
 const WEB_MERCATOR_METER_CIRCUMFERENCE = 40075016.686;
 const WEB_MERCATOR_RADIUS = WEB_MERCATOR_METER_CIRCUMFERENCE / (2 * Math.PI);
-// Half the projected world's vertical extent, in meters — large enough to
+// Half the projected world's vertical extent, in meters - large enough to
 // always cover the full globe, used as an unclipped Y range (we only ever
 // clip on X).
 const WEB_MERCATOR_HALF_EXTENT = WEB_MERCATOR_METER_CIRCUMFERENCE / 2;
@@ -51,7 +53,7 @@ const WEB_MERCATOR_HALF_EXTENT = WEB_MERCATOR_METER_CIRCUMFERENCE / 2;
  * `projectPosition` before comparison (see ClipExtension.draw() in
  * @deck.gl/extensions). RasterTileLayer positions its mesh with
  * `coordinateSystem: "cartesian"` + a modelMatrix that scales Web Mercator
- * *meters* into deck.gl's [0, 512] common space — so clipBounds must be
+ * *meters* into deck.gl's [0, 512] common space - so clipBounds must be
  * given in those same meters, not already-common-space numbers (passing
  * common-space numbers here get scaled down to a sliver near the center,
  * which is why nothing rendered at first: everything got clipped away).
@@ -66,7 +68,7 @@ function splitWebMercatorMetersX(
 }
 
 // LULC predictions only exist for these two years (unlike geomad)
-const LULC_YEARS = [2000, 2025];
+const LULC_YEARS = [2000, 2025]; // TODO: remove this once all years have been created.
 
 // Rescale=7200,12000 stretch for red/green/blue.
 // COG pixel values are
@@ -75,29 +77,7 @@ const LULC_YEARS = [2000, 2025];
 const RESCALE_MIN = 7200 / 65535;
 const RESCALE_MAX = 12000 / 65535;
 
-const NODATA_BLEND_THRESHOLD = RESCALE_MIN;
-
-const DiscardNearZero = {
-  name: "discardNearZero",
-  fs: `
-    uniform discardNearZeroUniforms {
-      float threshold;
-    } discardNearZero;
-  `,
-  inject: {
-    "fs:DECKGL_FILTER_COLOR": `
-      if (max(color.r, max(color.g, color.b)) <= discardNearZero.threshold) {
-        discard;
-      }
-    `,
-  },
-  uniformTypes: { threshold: "f32" },
-  getUniforms: (props?: { threshold?: number }) => ({
-    threshold: props?.threshold ?? 0,
-  }),
-} as const satisfies ShaderModule<{ threshold: number }>;
-
-// Inline raster style instead of a hosted vector style URL — no external
+// Inline raster style instead of a hosted vector style URL - no external
 // style-JSON fetch to go wrong, just tiles.
 const BASEMAP_STYLE: StyleSpecification = {
   version: 8,
@@ -113,7 +93,7 @@ const BASEMAP_STYLE: StyleSpecification = {
 };
 
 // MultiCOGLayer only re-opens/re-fetches its COGs when the `sources` prop
-// object is a *different reference* (checked via `!==`, not deep equality —
+// object is a *different reference* (checked via `!==`, not deep equality -
 // see updateState in the compiled multi-cog-layer.js). buildGeomadLayer runs
 // again on every opacity/visibility change, so without this cache each
 // toggle built a fresh `{red:{url},...}` object every time and triggered a
@@ -161,7 +141,7 @@ function buildGeomadLayer(
     // MosaicLayer's inner TileLayer keeps a stable id across updates
     // (`mosaic-layer-${id}`), so with a constant id here a change just
     // updates props on the same persistent tileset instead of unambiguously
-    // signaling "this is a new dataset" — changing the id forces a clean
+    // signaling "this is a new dataset" - changing the id forces a clean
     // unmount of the old tiles and mount of the new ones, rather than
     // relying on the library's partial-update path.
     id: `geomad-mosaic-${keyPrefix}`,
@@ -176,14 +156,28 @@ function buildGeomadLayer(
         composite: { r: "red", g: "green", b: "blue" },
         renderPipeline: [
           {
-            module: DiscardNearZero,
-            props: { threshold: NODATA_BLEND_THRESHOLD },
+            module: FilterNoDataVal,
+            props: { value: 0 },
           },
           {
             module: LinearRescale,
             props: { rescaleMin: RESCALE_MIN, rescaleMax: RESCALE_MAX },
           },
         ],
+        // MultiCOGLayer's band textures default to linear filtering, which
+        // blends real data texels with the zero-filled nodata neighbor at
+        // every nodata mask edge and at adjacent-tile boundaries, showing up
+        // as a black/washed-out border. Nearest removes the blending, at the
+        // cost of blocky pixels when zoomed in past native resolution (same
+        // trade-off LULC's COGLayer already makes for its categorical data).
+        onTileLoad: (tile) => {
+          const bands = (
+            tile.content as { bands?: Map<string, { texture: Texture }> } | null
+          )?.bands;
+          for (const band of bands?.values() ?? []) {
+            band.texture.setSampler({ minFilter: "nearest", magFilter: "nearest" });
+          }
+        },
         ...clipProps(clipBounds),
       }),
   });
@@ -247,7 +241,7 @@ function buildSideLayer(
  * Fetches items for one compare side. Clears state at the start of every
  * fetch (rather than tracking "which content the current items came from")
  * so a mid-flight year/dataset switch can't render the previous selection's
- * items under the new selection's layer id — the existing `items.length > 0`
+ * items under the new selection's layer id - the existing `items.length > 0`
  * checks in `buildSideLayer` already gate rendering on real data being ready.
  */
 function useCompareItems(content: CompareContent, enabled: boolean) {
@@ -328,7 +322,7 @@ const LAYER_LABELS: Record<LayerKey, string> = {
 };
 
 // Top-to-bottom in the controls list = top-to-bottom in the map's stacking
-// order (lulc renders on top, geomad on the bottom) — reverse of the
+// order (lulc renders on top, geomad on the bottom) - reverse of the
 // bottom-up order layers are pushed in for rendering.
 const LAYER_LIST_ORDER: LayerKey[] = ["lulc", "geomad"];
 
@@ -517,7 +511,7 @@ export default function App() {
   const [device, setDevice] = useState<Device | null>(null);
   const [status, setStatus] = useState("loading…");
 
-  // Available years for the selector — geomad has the fullest series.
+  // Available years for the selector - geomad has the fullest series.
   useEffect(() => {
     queryDistinctYears(GEOMAD_PARQUET_URL)
       .then(setYears)
@@ -566,7 +560,7 @@ export default function App() {
   // splitWebMercatorMetersX), recomputed from the live (continuously-updated)
   // viewport so the split line stays screen-locked while panning/zooming.
   // Cheap: ClipExtension only needs a prop update on the already-open
-  // layers, not a data reload (see buildGeomadLayer/buildLulcLayer —
+  // layers, not a data reload (see buildGeomadLayer/buildLulcLayer -
   // sources/geotiff references stay stable across this).
   const clipBounds = useMemo(() => {
     if (!compare.enabled) {
@@ -595,7 +589,7 @@ export default function App() {
   }, [compare.enabled, compare.split, liveView]);
 
   // Memoized so panning/zooming (which only changes `view`) doesn't rebuild
-  // these — without this, every render (including onMoveEnd) constructed
+  // these - without this, every render (including onMoveEnd) constructed
   // brand-new MosaicLayer/MultiCOGLayer/COGLayer instances with fresh
   // renderSource closures, which deck.gl can't distinguish from a real data
   // change, so it re-initialized every visible tile's mesh/texture on every
