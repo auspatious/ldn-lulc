@@ -32,19 +32,14 @@ or
 
 4. Sync dependencies. uv will create a `.venv` automatically using the Python version pinned by `requires-python` in `pyproject.toml` (installing it if needed).
 
-This installs the main dependency group plus the `dev` group (synced by default). Deps like `cogeo-mosaic` and `boto3` are in both the main group and the `visualisation` group.
+This installs the main dependency group plus the `dev` group (synced by default).
 ```bash
   uv sync
 ```
 
-  For main dependencies only (no dev tools):
+For main dependencies only (no dev tools):
 ```bash
    uv sync --no-dev
-```
-
-  For visualisation dependencies only (no project, no dev group):
-```bash
-   uv sync --only-group visualisation
 ```
 
 5. Run the CLI tool:
@@ -73,7 +68,7 @@ uv add "datacube-compute @ git+https://github.com/auspatious/datacube-compute.gi
 
 ### To run tests
 
-Simply run: `uv run pytest` or for a specific file: `uv run pytest ldn/tests/test_mosaic.py`
+Simply run: `uv run pytest` or for a specific file: `uv run pytest ldn/tests/test_geomad.py`
 
 
 ### Pre-commit hooks
@@ -126,41 +121,6 @@ Much faster than running locally.
 6. Run. Use `tmux` so that even if it disconnects the command will keep running.
 Run `tmux new -s geomad` then when inside run `uv run make geomad-2000-2025`. To detach, run `Ctrl+B, D` and it'll keep running. To reattach run `tmux attach -t geomad`. To kill it from outside run `tmux kill-session -t geomad`.
 
-## Visualisation
-
-A tile server for viewing GeoMedian/GeoMAD and predicted LULC mosaics, built with
-[TiTiler](https://developmentseed.org/titiler/) and deployed as an AWS Lambda behind API Gateway.
-
-### Prerequisites
-
-- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
-- Docker
-
-### Run locally
-
-```bash
-uv sync --group visualisation
-uv run uvicorn visualisation.app:app --host 0.0.0.0 --port 8081 --reload
-```
-
-### Deploy
-
-From the project root:
-```bash
-uv sync --group visualisation # Needed for ldn make-mosaics command.
-uv run bash visualisation/deploy.sh
-```
-
-This will:
-1. Build mosaic JSON files and upload to S3
-2. Create an ECR repository (if it doesn't exist)
-3. Build and push the Docker image
-4. Deploy the Lambda + API Gateway via Terraform
-
-### Current deployment
-
-https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
-
 
 # Instances:
 ## 1. Source.Coop
@@ -188,3 +148,55 @@ See .env.example on how to set env vars. After cloning this repo you need to cop
 `source .env`
 
 you need to set `AWS_PROFILE` using `export AWS_PROFILE=XXX`
+
+
+## Viz
+
+Client-side viewer for GeoMAD/LULC COGs. Reads STAC GeoParquet directly in
+the browser (duckdb-wasm) and renders with deck.gl-raster - no tiling
+server.
+
+### Quickstart
+
+```
+cd viz
+npm install
+npm run dev
+```
+
+
+### Current deployment
+
+Not yet deployed. Old titiler version here: https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
+
+
+### Features
+
+This is for agents to read so new features don't cause regressions.
+
+#### Done:
+
+- Display GeoMAD (z=0) and LULC (z=1) COGs directly in the browser. Uses STAC-Geoparquet file as a reference.
+- Display LULC legend.
+- For each layer have an opacity and visibility control.
+- Allow user to select year to visualise.
+- Allow user to swipe/compare different datasets and years.
+- Add layer config and map view into url parameters.
+
+
+#### WIP:
+- The tiles that cross the antimeridian are stretched over the whole world. LULC viz better at antimeridian. metadata?? Kyle is working on this. https://github.com/developmentseed/deck.gl-raster/tree/kyle/antimeridian-crossing
+
+- Add tiles json layer (z=2). https://raw.githubusercontent.com/auspatious/ldn-lulc/refs/heads/main/ldn/sids_all_tiles.geojson
+
+- error in console: @developmentseed_deck__gl-geotiff.js?v=27d6aca0:31566 Uncaught (in promise) Could not get projection name from: [object Object]
+
+
+- Can the tiles wrap the antimeridian? v0.8 release will fix this! https://github.com/developmentseed/deck.gl-raster/blob/1cfe0861ab2fdcf3c9fd9970d671215cf45587f2/docs/blog/v0.8-release.md
+
+- the tiles/cogs each have a black boundary/border. remove this! mosaic should be seamless.
+
+- Make the ui nicer. e.g. map controls and logo etc.
+- Add basemap switcher
+- Fix geomad nodata value and color range. I think this could fix the white/black gaps between tiles and at edge of nodata patches. Dive deep somewhere like https://developmentseed.org/deck.gl-raster/api/deck-gl-raster-gpu-modules/variables/FilterNoDataVal/
+- Fix geomad simplification. it is not a hard pixel shape (unlike LULC).
