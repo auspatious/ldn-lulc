@@ -164,20 +164,6 @@ function buildGeomadLayer(
             props: { rescaleMin: RESCALE_MIN, rescaleMax: RESCALE_MAX },
           },
         ],
-        // MultiCOGLayer's band textures default to linear filtering, which
-        // blends real data texels with the zero-filled nodata neighbor at
-        // every nodata mask edge and at adjacent-tile boundaries, showing up
-        // as a black/washed-out border. Nearest removes the blending, at the
-        // cost of blocky pixels when zoomed in past native resolution (same
-        // trade-off LULC's COGLayer already makes for its categorical data).
-        onTileLoad: (tile) => {
-          const bands = (
-            tile.content as { bands?: Map<string, { texture: Texture }> } | null
-          )?.bands;
-          for (const band of bands?.values() ?? []) {
-            band.texture.setSampler({ minFilter: "nearest", magFilter: "nearest" });
-          }
-        },
         ...clipProps(clipBounds),
       }),
   });
@@ -209,6 +195,32 @@ function buildLulcLayer(
         ...clipProps(clipBounds),
       }),
   });
+}
+
+function useSideLayer(
+  side: "left" | "right",
+  content: CompareContent,
+  geomadItems: GeomadItem[],
+  lulcItems: LulcItem[],
+  layerUi: Record<LayerKey, LayerUiState>,
+  lulcColormapTexture: Texture | null,
+  clipBoundsSide: [number, number, number, number] | null,
+) {
+  return useMemo(
+    () =>
+      clipBoundsSide
+        ? buildSideLayer(
+            content,
+            geomadItems,
+            lulcItems,
+            side,
+            layerUi,
+            lulcColormapTexture,
+            clipBoundsSide,
+          )
+        : null,
+    [side, content, geomadItems, lulcItems, layerUi, lulcColormapTexture, clipBoundsSide],
+  );
 }
 
 /** Dispatches to whichever dataset a compare side has selected. */
@@ -609,35 +621,23 @@ export default function App() {
     [lulcItems, year, lulcColormapTexture, layerUi.lulc],
   );
 
-  const leftLayer = useMemo(
-    () =>
-      clipBounds
-        ? buildSideLayer(
-            compare.left,
-            leftGeomadItems,
-            leftLulcItems,
-            "left",
-            layerUi,
-            lulcColormapTexture,
-            clipBounds.left,
-          )
-        : null,
-    [compare.left, leftGeomadItems, leftLulcItems, layerUi, lulcColormapTexture, clipBounds],
+  const leftLayer = useSideLayer(
+    "left",
+    compare.left,
+    leftGeomadItems,
+    leftLulcItems,
+    layerUi,
+    lulcColormapTexture,
+    clipBounds?.left ?? null,
   );
-  const rightLayer = useMemo(
-    () =>
-      clipBounds
-        ? buildSideLayer(
-            compare.right,
-            rightGeomadItems,
-            rightLulcItems,
-            "right",
-            layerUi,
-            lulcColormapTexture,
-            clipBounds.right,
-          )
-        : null,
-    [compare.right, rightGeomadItems, rightLulcItems, layerUi, lulcColormapTexture, clipBounds],
+  const rightLayer = useSideLayer(
+    "right",
+    compare.right,
+    rightGeomadItems,
+    rightLulcItems,
+    layerUi,
+    lulcColormapTexture,
+    clipBounds?.right ?? null,
   );
 
   const layers = compare.enabled
