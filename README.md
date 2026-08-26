@@ -11,7 +11,7 @@ Creating Land Use/Land Cover (LULC) datasets for the UN Small Island Developing 
 ## Contents
 
 - [Products](#products)
-  - [1. Geomedian with GeoMAD](#1-geomedian-with-geomad)
+  - [1. Geomedian and median absolute deviations](#1-geomad)
   - [2. Land Use/Land Cover Classification](#2-land-useland-cover-classification)
 - [Coverage: Regions & Grids](#coverage-regions--grids)
   - [Area of Interest](#area-of-interest)
@@ -272,7 +272,7 @@ Per-country maps: [browse here](https://github.com/auspatious/ldn-lulc/tree/main
 
 ### Coordinate Reference Systems
 
-The two regions use different CRSs because a single geographic-latitude grid would be less accurate, and a single projected grid can't cleanly span the antimeridian:
+The two regions use different CRSs because a single lat/lon grid would cause distortions, and there's no single projected grid that can cleanly span the antimeridian while covering the whole world:
 
 | Region | Countries/Territories | Grid tiles | CRS | Region map |
 | --- | --- | --- | --- | --- |
