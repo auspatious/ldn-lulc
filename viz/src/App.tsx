@@ -164,6 +164,12 @@ function buildGeomadLayer(
             props: { rescaleMin: RESCALE_MIN, rescaleMax: RESCALE_MAX },
           },
         ],
+        // Nearest avoids blending real data with nodata/out-of-bounds fill
+        // at mask, tile, and dataset edges (the black-border/tile-seam
+        // artifacts linear produces) — set at texture creation via this
+        // prop, not mutated after the fact (see plan.md for why that broke
+        // things). Requires the forked deck.gl-geotiff with `bandSampler`.
+        bandSampler: { minFilter: "nearest", magFilter: "nearest" },
         ...clipProps(clipBounds),
       }),
   });
