@@ -352,6 +352,28 @@ def build_pipeline_components(
     return itempath, stac_creator, writer
 
 
+def _antimeridian_safe_bbox(area: GeoBox, fallback_bbox: list[float]) -> list[float]:
+    """Return a STAC-correct bbox for a tile, fixing antimeridian-crossing cases.
+
+    rio_stac derives the STAC bbox from the raster's own reprojected corners,
+    which for a tile crossing the antimeridian collapses to a near-global
+    (-180, 180) box instead of the STAC-recommended [east_edge, ymin,
+    west_edge, ymax] form (bbox[0] > bbox[2]). `bbox_across_180` already knows
+    how to split such a tile into two non-crossing halves; here we just glue
+    the outer edges of those halves back into one antimeridian-flipped bbox.
+    """
+    halves = bbox_across_180(area)
+    if not isinstance(halves, tuple):
+        return fallback_bbox
+    east_bbox, west_bbox = halves
+    return [
+        east_bbox[0],
+        min(east_bbox[1], west_bbox[1]),
+        west_bbox[2],
+        max(east_bbox[3], west_bbox[3]),
+    ]
+
+
 # Shared by both GeoMAD creation and LULC classification tasks.
 class AwsStacTask(AreaTask):
     """Area task with search + STAC creation/writing for AWS workflows."""
@@ -395,6 +417,7 @@ class AwsStacTask(AreaTask):
 
         if self.stac_creator is not None and self.stac_writer is not None:
             stac_item = self.stac_creator.process(output_data, self.id)
+            stac_item.bbox = _antimeridian_safe_bbox(self.area, stac_item.bbox)
             self.stac_writer.write(stac_item, self.id)
 
         return paths
