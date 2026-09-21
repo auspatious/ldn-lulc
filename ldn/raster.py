@@ -3,6 +3,7 @@ from typing import Literal
 
 import numpy as np
 import xarray as xr
+from antimeridian import fix_shape
 from dep_tools.aws import BaseClient, object_exists
 from dep_tools.loaders import StacLoader
 from dep_tools.namers import S3ItemPath
@@ -418,6 +419,7 @@ class AwsStacTask(AreaTask):
         if self.stac_creator is not None and self.stac_writer is not None:
             stac_item = self.stac_creator.process(output_data, self.id)
             stac_item.bbox = _antimeridian_safe_bbox(self.area, stac_item.bbox)
+            stac_item.geometry = fix_shape(stac_item.geometry)
             self.stac_writer.write(stac_item, self.id)
 
         return paths

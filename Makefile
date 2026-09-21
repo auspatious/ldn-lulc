@@ -62,7 +62,7 @@ geomad-test-ausp:
 		--overwrite;
 geomad-test-dep-staging:
 	ldn geomad run \
-		--tile-id 064_020 \
+		--tile-id 066_022 \
 		--region pacific \
 		--year 2025 \
 		--version 0-3-1-test \
