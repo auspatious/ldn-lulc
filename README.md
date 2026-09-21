@@ -198,3 +198,5 @@ This is for agents to read so new features don't cause regressions.
 
 - Make the ui nicer. e.g. map controls and logo etc.
 - Add basemap switcher
+- Fix geomad nodata value and color range. I think this could fix the white/black gaps between tiles and at edge of nodata patches. Dive deep somewhere like https://developmentseed.org/deck.gl-raster/api/deck-gl-raster-gpu-modules/variables/FilterNoDataVal/
+- Fix geomad simplification. it is not a hard pixel shape (unlike LULC).
