@@ -3,11 +3,16 @@ from typing import Literal
 
 import numpy as np
 import xarray as xr
+from antimeridian import fix_shape
 from dep_tools.aws import BaseClient, object_exists
+from dep_tools.loaders import StacLoader
 from dep_tools.namers import S3ItemPath
+from dep_tools.processors import Processor
+from dep_tools.searchers import Searcher
 from dep_tools.stac_utils import StacCreator
+from dep_tools.task import AreaTask
 from dep_tools.utils import bbox_across_180, join_path_or_url, search_across_180
-from dep_tools.writers import AwsDsCogWriter
+from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from geopandas import GeoDataFrame
 from odc.geo.geobox import GeoBox
 from odc.stac import load as stac_load
@@ -346,3 +351,75 @@ def build_pipeline_components(
     )
 
     return itempath, stac_creator, writer
+
+
+def _antimeridian_safe_bbox(area: GeoBox, fallback_bbox: list[float]) -> list[float]:
+    """Return a STAC-correct bbox for a tile, fixing antimeridian-crossing cases.
+
+    rio_stac derives the STAC bbox from the raster's own reprojected corners,
+    which for a tile crossing the antimeridian collapses to a near-global
+    (-180, 180) box instead of the STAC-recommended [east_edge, ymin,
+    west_edge, ymax] form (bbox[0] > bbox[2]). `bbox_across_180` already knows
+    how to split such a tile into two non-crossing halves; here we just glue
+    the outer edges of those halves back into one antimeridian-flipped bbox.
+    """
+    halves = bbox_across_180(area)
+    if not isinstance(halves, tuple):
+        return fallback_bbox
+    east_bbox, west_bbox = halves
+    return [
+        east_bbox[0],
+        min(east_bbox[1], west_bbox[1]),
+        west_bbox[2],
+        max(east_bbox[3], west_bbox[3]),
+    ]
+
+
+# Shared by both GeoMAD creation and LULC classification tasks.
+class AwsStacTask(AreaTask):
+    """Area task with search + STAC creation/writing for AWS workflows."""
+
+    def __init__(
+        self,
+        itempath: PrefixedS3ItemPath,
+        id: tuple[int, int],
+        area: GeoBox,
+        searcher: Searcher,
+        loader: StacLoader,
+        processor: Processor,
+        post_processor: Processor | None = None,
+        logger: logging.Logger = logger,
+        **kwargs,
+    ):
+        writer = kwargs.pop("writer", AwsDsCogWriter(itempath))
+        stac_creator = kwargs.pop("stac_creator", StacCreator(itempath))
+        stac_writer = kwargs.pop("stac_writer", AwsStacWriter(itempath))
+
+        super().__init__(id, area, loader, processor, writer, logger)
+        self.id = id
+        self.searcher = searcher
+        self.post_processor = post_processor
+        self.stac_creator = stac_creator
+        self.stac_writer = stac_writer
+
+    def run(self):
+        items = self.searcher.search(self.area)
+        logger.info(f"Found {len(items)} items for this tile/year")
+        input_data = self.loader.load(items, self.area)
+        logger.info(f"Loaded {len(input_data.time.values)} items for this tile/year")
+
+        processor_kwargs = dict(area=self.area) if self.processor.send_area_to_processor else dict()
+        output_data = self.processor.process(input_data, **processor_kwargs)
+
+        if self.post_processor is not None:
+            output_data = self.post_processor.process(output_data)
+
+        paths = self.writer.write(output_data, self.id)
+
+        if self.stac_creator is not None and self.stac_writer is not None:
+            stac_item = self.stac_creator.process(output_data, self.id)
+            stac_item.bbox = _antimeridian_safe_bbox(self.area, stac_item.bbox)
+            stac_item.geometry = fix_shape(stac_item.geometry)
+            self.stac_writer.write(stac_item, self.id)
+
+        return paths

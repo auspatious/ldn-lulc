@@ -23,7 +23,6 @@ from sklearn.ensemble import RandomForestClassifier
 from typing_extensions import Annotated
 
 from ldn.aws import configure_s3_access_profile, s3_client
-from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
 from ldn.raster import (
     GEOMAD_BANDS,
@@ -31,6 +30,9 @@ from ldn.raster import (
     calculate_indices,
     load_dem_terrain,
     scale_offset_landsat,
+)
+from ldn.raster import (
+    AwsStacTask as Task,
 )
 from ldn.utils import (
     GEOMAD_DATASET_ID,
