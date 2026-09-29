@@ -65,15 +65,15 @@ cci_lc_map:
     82: 1
     90: 1
     100: 1
-    # Grass and Herbaceous / Moss/Lichen -> Grassland
+    # Grass and Herbaceous -> Grassland
     110: 2
     130: 2
-    140: 2
-    # Sparse vegetation -> Grassland
-    150: 2
-    151: 2
-    152: 2
-    153: 2
+    # Moss/Lichen / Sparse vegetation -> other land
+    140: 7
+    150: 7
+    151: 7
+    152: 7
+    153: 7
     # Wetland
     160: 4
     170: 4
@@ -87,7 +87,6 @@ cci_lc_map:
     220: 7
     # Water
     210: 6
-# TODO: CCI needs to map more classes to Other (7). Right now it has no Other pixels in Singapore.
 
 world_cover_map:
     # No data
@@ -127,9 +126,10 @@ io_map:
     5: 3
     # Built-up
     7: 5
-    # Bare/Sparse / Snow/Ice / Cloud -> other land
+    # Bare/Sparse / Snow/Ice -> other land
     8: 7
     9: 7
-    10: 7
+    # Clouds -> no data
+    10: 255
     # Rangeland
     11: 2

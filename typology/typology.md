@@ -60,14 +60,14 @@ These rules will be tested through mapping and validation. Recurring ambiguities
 
 Initial training data will come from agreement among ESA CCI Land Cover, ESA WorldCover and Impact Observatory (IO) LULC, reclassified as below.
 
-| Level-1 Class | ESA WorldCover classes | IO LULC classes |
-| ------------- | ---------------------- | --------------- |
-| Tree cover | Tree cover | Trees |
-| Grassland | Shrubland, Grassland | Rangeland |
-| Cropland | Cropland | Crops |
-| Built-up | Built-up | Built Area |
-| Other | Bare/sparse vegetation, Snow and Ice, Moss and lichen | Bare Ground, Snow/Ice |
-| Water | Permanent water bodies | Water |
-| Wetland | Herbaceous wetland, Mangroves | Flooded Veg. |
+| Level-1 Class | ESA WorldCover classes | IO LULC classes | ESA CCI Land Cover classes |
+| ------------- | ---------------------- | --------------- | -------------------------- |
+| Tree cover | Tree cover | Trees | Tree cover (all leaf types and densities), Mosaic tree and shrub |
+| Grassland | Shrubland, Grassland | Rangeland | Mosaic natural vegetation / cropland, Mosaic herbaceous / tree and shrub, Shrubland, Grassland |
+| Cropland | Cropland | Crops | Cropland (rainfed and irrigated), Mosaic cropland / natural vegetation |
+| Built-up | Built-up | Built Area | Urban areas |
+| Other | Bare/sparse vegetation, Snow and Ice, Moss and lichen | Bare Ground, Snow/Ice | Lichens and mosses, Sparse vegetation, Bare areas, Permanent snow and ice |
+| Water | Permanent water bodies | Water | Water bodies |
+| Wetland | Herbaceous wetland, Mangroves | Flooded Veg. | Tree cover flooded (fresh and saline), Shrub or herbaceous cover flooded |
 
 These products differ in resolution, reference year, class definitions, thresholds and methods, so the class definitions cannot be applied perfectly to every derived label, and some ambiguity will propagate into the maps. Validation data must apply the project definitions independently of the training labels, so the accuracy assessment captures errors from ambiguous training labels rather than reproducing them.
