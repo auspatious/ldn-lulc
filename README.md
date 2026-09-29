@@ -185,16 +185,17 @@ This is for agents to read so new features don't cause regressions.
 
 
 #### WIP:
-- The tiles that cross the antimeridian are stretched over the whole world. LULC viz better at antimeridian. metadata?? Kyle is working on this. https://github.com/developmentseed/deck.gl-raster/tree/kyle/antimeridian-crossing
+
+3 main problems:
+1. antimeridian-spanning COGs render badly or not at all
+2. need to render world copies so we see data on both sides of the antimeridian
+3. geomad needs nearest, not linear sampling so it is crisp and artifact-free.
+
+The viz/vendor folder contains a build of https://github.com/willjnz/deck.gl-raster/tree/willjnz/frankenstein which should solve all 3. If these fixes get merged, we can reference that future version. For now we do this hacky way.
 
 - Add tiles json layer (z=2). https://raw.githubusercontent.com/auspatious/ldn-lulc/refs/heads/main/ldn/sids_all_tiles.geojson
 
-- error in console: @developmentseed_deck__gl-geotiff.js?v=27d6aca0:31566 Uncaught (in promise) Could not get projection name from: [object Object]
-
-
-- Can the tiles wrap the antimeridian? v0.8 release will fix this! https://github.com/developmentseed/deck.gl-raster/blob/1cfe0861ab2fdcf3c9fd9970d671215cf45587f2/docs/blog/v0.8-release.md
-
-- the tiles/cogs each have a black boundary/border. remove this! mosaic should be seamless.
-
 - Make the ui nicer. e.g. map controls and logo etc.
 - Add basemap switcher
+
+-  the data in 3832 renders fine (apart from the am-crossing items). the data in 6933 throws the projection error and doesn't show. "installHook.js:1 deck: loading COG sources: undefined Could not get projection name from: [object Object]"

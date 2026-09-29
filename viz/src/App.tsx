@@ -174,6 +174,7 @@ function buildGeomadLayer(
         opacity: ui.opacity,
         sources: getGeomadSources(source),
         composite: { r: "red", g: "green", b: "blue" },
+        bandSampler: { minFilter: "nearest", magFilter: "nearest" },
         renderPipeline: [
           {
             module: DiscardNearZero,

@@ -30,8 +30,6 @@ export async function fetchGeomadItems(
         assets.blue.href AS blue_href
       FROM read_parquet('${GEOMAD_PARQUET_URL}')
       WHERE EXTRACT(year FROM datetime) = ${year}
-        -- Antimeridian-crossing heuristic - simply ignore for now.
-        AND NOT (bbox.xmax = 180 AND bbox.xmin = -180)
     `);
     signal?.throwIfAborted();
     return result.toArray().map((row) => ({
