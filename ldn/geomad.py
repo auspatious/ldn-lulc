@@ -4,17 +4,10 @@ from typing import Iterable, Tuple
 
 import numpy as np
 from datacube_compute import geomedian_with_mads
-from dep_tools.loaders import StacLoader
 from dep_tools.processors import Processor
-from dep_tools.searchers import Searcher
-from dep_tools.stac_utils import StacCreator
-from dep_tools.task import AreaTask
-from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from odc.algo import mask_cleanup
-from odc.geo import GeoBox
 from xarray import DataArray, Dataset
 
-from ldn.raster import PrefixedS3ItemPath
 from ldn.utils import LdnError
 
 logger = logging.getLogger(__name__)
@@ -372,52 +365,3 @@ class GeoMADProcessor(Processor):
             geomad = geomad.compute()
 
         return _set_stac_properties(data, geomad)
-
-
-# This is a generic function used be geomad creation and lulc classification tasks.
-# TODO: Move it to raster.py
-class AwsStacTask(AreaTask):
-    """Area task with search + STAC creation/writing for AWS workflows."""
-
-    def __init__(
-        self,
-        itempath: PrefixedS3ItemPath,
-        id: tuple[int, int],
-        area: GeoBox,
-        searcher: Searcher,
-        loader: StacLoader,
-        processor: Processor,
-        post_processor: Processor | None = None,
-        logger: logging.Logger = logger,
-        **kwargs,
-    ):
-        writer = kwargs.pop("writer", AwsDsCogWriter(itempath))
-        stac_creator = kwargs.pop("stac_creator", StacCreator(itempath))
-        stac_writer = kwargs.pop("stac_writer", AwsStacWriter(itempath))
-
-        super().__init__(id, area, loader, processor, writer, logger)
-        self.id = id
-        self.searcher = searcher
-        self.post_processor = post_processor
-        self.stac_creator = stac_creator
-        self.stac_writer = stac_writer
-
-    def run(self):
-        items = self.searcher.search(self.area)
-        logger.info(f"Found {len(items)} items for this tile/year")
-        input_data = self.loader.load(items, self.area)
-        logger.info(f"Loaded {len(input_data.time.values)} items for this tile/year")
-
-        processor_kwargs = dict(area=self.area) if self.processor.send_area_to_processor else dict()
-        output_data = self.processor.process(input_data, **processor_kwargs)
-
-        if self.post_processor is not None:
-            output_data = self.post_processor.process(output_data)
-
-        paths = self.writer.write(output_data, self.id)
-
-        if self.stac_creator is not None and self.stac_writer is not None:
-            stac_item = self.stac_creator.process(output_data, self.id)
-            self.stac_writer.write(stac_item, self.id)
-
-        return paths
