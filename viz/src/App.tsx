@@ -13,6 +13,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useState } from "react";
 import { Map as MaplibreMap } from "react-map-gl/maplibre";
 import { DeckGLOverlay } from "./deckgl-overlay.js";
+import { epsgResolverWithFixups } from "./epsg-resolver.js";
 import { fetchGeomadItems, GEOMAD_PARQUET_URL, type GeomadItem } from "./geomad.js";
 import { queryDistinctYears } from "./duckdb.js";
 import { fetchLulcItems, type LulcItem } from "./lulc.js";
@@ -175,6 +176,7 @@ function buildGeomadLayer(
         sources: getGeomadSources(source),
         composite: { r: "red", g: "green", b: "blue" },
         bandSampler: { minFilter: "nearest", magFilter: "nearest" },
+        epsgResolver: epsgResolverWithFixups,
         renderPipeline: [
           {
             module: DiscardNearZero,
@@ -210,6 +212,7 @@ function buildLulcLayer(
         geotiff: source.assets.classification.href,
         getTileData: getLulcTileData,
         renderTile,
+        epsgResolver: epsgResolverWithFixups,
         onTileUnload: (tile) => {
           (tile.content as LulcTileData | null)?.texture.destroy();
         },
