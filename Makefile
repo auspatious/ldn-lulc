@@ -162,6 +162,7 @@ lulc-predict-test-pacific:
 		--geomad-version 0-2-1 \
 		--geomad-bucket dep-public-staging \
 		--output-bucket dep-public-staging \
+		--product-owner dep \
 		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 		--no-overwrite;
 
@@ -178,6 +179,7 @@ lulc-predict-test-2:
 				--geomad-version 0-2-1 \
 				--geomad-bucket dep-public-staging \
 				--output-bucket dep-public-staging \
+				--product-owner dep \
 				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 				--no-overwrite;
 		done;
@@ -185,18 +187,19 @@ lulc-predict-test-2:
 
 # TODO: Use Pacific model?
 # TODO: Read from Source Coop.
-lulc-predict-test-non-pacific:
-	ldn lulc run \
-		--tile-id 312_106 \
-		--year 2000 \
-		--region non-pacific \
-		--version 0-0-9 \
-		--geomad-version 0-2-1 \
-		--geomad-bucket us-west-2.opendata.source.coop \
-		--output-bucket dep-public-staging \
-		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
-		--no-overwrite;
-# 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+# lulc-predict-test-non-pacific:
+# 	ldn lulc run \
+# 		--tile-id 312_106 \
+# 		--year 2000 \
+# 		--region non-pacific \
+# 		--version 0-0-9 \
+# 		--geomad-version 0-2-1 \
+# 		--geomad-bucket us-west-2.opendata.source.coop \
+# 		--output-bucket dep-public-staging \
+# 				--product-owner TODO? \
+# 		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+# 		--no-overwrite;
+# # 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 
 
 index-lulc-test-dep-staging:
