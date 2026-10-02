@@ -26,6 +26,7 @@ from ldn.aws import configure_s3_access_profile, s3_client
 from ldn.grids import get_gridspec
 from ldn.raster import (
     GEOMAD_BANDS,
+    PrefixedS3ItemPath,
     build_pipeline_components,
     calculate_indices,
     load_dem_terrain,
@@ -55,28 +56,21 @@ logger = logging.getLogger(__name__)
 
 
 class StacGeoparquetSearcher(Searcher):
-    """Search STAC items in a STAC-Geoparquet file using rustac.
+    """Search a STAC-Geoparquet file for a single item by ID using rustac."""
 
-    Searches by bbox and datetime, then keeps only the item whose datetime
-    year is the target year.
-    """
-
-    def __init__(self, stac_geoparquet_url: str, datetime: str):
+    def __init__(self, stac_geoparquet_url: str, item_id: str):
         """Create a searcher for a STAC-Geoparquet file.
 
         Args:
             stac_geoparquet_url: HTTP(S) URL to the STAC-Geoparquet file.
-            datetime: Temporal filter string (e.g. "2020").
+            item_id: Full STAC item ID, e.g. "dep_ls_geomad_028_030_2000".
         """
         super().__init__()
         self._url = stac_geoparquet_url
-        self._datetime = datetime
+        self._item_id = item_id
 
-    def search(self, area: GeoBox) -> ItemCollection:
-        """Search for the GeoMAD item covering the area in the target year.
-
-        Args:
-            area: A GeoBox defining the search area.
+    def search(self) -> ItemCollection:
+        """Search for the item with the configured ID.
 
         Returns:
             A pystac ItemCollection containing exactly one item.
@@ -84,19 +78,11 @@ class StacGeoparquetSearcher(Searcher):
         Raises:
             LdnError: If the number of matching items is not exactly one.
         """
-        bbox = list(area.geographic_extent.boundingbox)
-
-        # ID search is more specific but requires constructing a complex tile ID, so search spatiotemporally
-        raw = search_sync(self._url, bbox=bbox, datetime=self._datetime)
-        items = [Item.from_dict(doc) for doc in raw]
-
-        # Search may find years on either side of the target year (if year <=2012 due to 1-year buffer). Filter them
-        items = [item for item in items if item.datetime.year == int(self._datetime)]
+        items = [Item.from_dict(doc) for doc in search_sync(self._url, ids=[self._item_id])]
 
         if len(items) != 1:
-            raise LdnError(f"Expected exactly one GeoMAD item for the area, but found {len(items)}")
+            raise LdnError(f"Expected exactly one GeoMAD item with ID {self._item_id}, but found {len(items)}")
 
-        logger.info(f"Found {len(items)} GeoMAD items")
         return ItemCollection(items)
 
 
@@ -504,9 +490,18 @@ def run_classify_task(
         return  # Skip due to no overwrite.
     itempath, stac_creator, writer = components
 
+    # Same ID construction as the GeoMAD writer (itempath.basename).
+    geomad_itempath = PrefixedS3ItemPath(
+        prefix=owner,
+        bucket=geomad_bucket,
+        sensor=sensor,
+        dataset_id=GEOMAD_DATASET_ID,
+        version=geomad_version,
+        time=year,
+    )
     searcher = StacGeoparquetSearcher(
         stac_geoparquet_url=geomad_stac_geoparquet_url,
-        datetime=year,
+        item_id=geomad_itempath.basename(tile_id_tuple),
     )
 
     # GeopolygonOdcLoader converts the geobox to an AM-fixed WGS84
