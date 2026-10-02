@@ -55,8 +55,8 @@ logger = logging.getLogger(__name__)
 class StacGeoparquetSearcher(Searcher):
     """Search STAC items in a STAC-Geoparquet file using rustac.
 
-    Searches by tile ID rather than bbox to avoid globe-spanning queries
-    for antimeridian-crossing tiles.
+    Searches by bbox and datetime, then keeps only the item whose datetime
+    year is the target year.
     """
 
     def __init__(self, stac_geoparquet_url: str, datetime: str):
@@ -71,32 +71,33 @@ class StacGeoparquetSearcher(Searcher):
         self._datetime = datetime
 
     def search(self, area: GeoDataFrame | GeoBox) -> ItemCollection:
-        """Search for STAC items intersecting the area.
+        """Search for the GeoMAD item covering the area in the target year.
 
-        When the area is a GeoBox, derives the tile ID from the geobox
-        and searches by ID to avoid antimeridian wrapping issues.
+        The bbox is taken from the GeoBox geographic extent or the GeoDataFrame bounds.
 
         Args:
             area: A GeoDataFrame or GeoBox defining the search area.
 
         Returns:
-            A pystac ItemCollection of matching items.
+            A pystac ItemCollection containing exactly one item.
+
+        Raises:
+            LdnError: If the number of matching items is not exactly one.
         """
         if isinstance(area, GeoBox):
             bbox = list(area.geographic_extent.boundingbox)
         else:
             bbox = list(area.total_bounds)
 
-        # TODO: Can't this just search on ID?
+        # ID search is more specific but requires constructing a complex tile ID so search spatiotemporally
         raw = search_sync(self._url, bbox=bbox, datetime=self._datetime)
         items = [Item.from_dict(doc) for doc in raw]
 
-        if len(items) == 0:
-            raise LdnError("No GeoMAD items found")
+        # Search may find years on either side of the target year (if year <=2012 due to 1-year buffer). Filter them
+        items = [item for item in items if item.datetime.year == int(self._datetime)]
 
-        logger.info(f"Found {len(items)} items intersecting the area.")
-        # TODO: Should len(items) == 1??
-        # Or are there cases where the edges of other tiles could overlap (even by 1 pixel)?
+        if len(items) != 1:
+            raise LdnError(f"Expected exactly one GeoMAD item for the area, but found {len(items)}")
 
         logger.info(f"Found {len(items)} GeoMAD items")
         return ItemCollection(items)
