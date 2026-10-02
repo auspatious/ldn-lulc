@@ -72,13 +72,11 @@ class StacGeoparquetSearcher(Searcher):
         self._url = stac_geoparquet_url
         self._datetime = datetime
 
-    def search(self, area: GeoDataFrame | GeoBox) -> ItemCollection:
+    def search(self, area: GeoBox) -> ItemCollection:
         """Search for the GeoMAD item covering the area in the target year.
 
-        The bbox is taken from the GeoBox geographic extent or the GeoDataFrame bounds.
-
         Args:
-            area: A GeoDataFrame or GeoBox defining the search area.
+            area: A GeoBox defining the search area.
 
         Returns:
             A pystac ItemCollection containing exactly one item.
@@ -86,12 +84,9 @@ class StacGeoparquetSearcher(Searcher):
         Raises:
             LdnError: If the number of matching items is not exactly one.
         """
-        if isinstance(area, GeoBox):
-            bbox = list(area.geographic_extent.boundingbox)
-        else:
-            bbox = list(area.total_bounds)
+        bbox = list(area.geographic_extent.boundingbox)
 
-        # ID search is more specific but requires constructing a complex tile ID so search spatiotemporally
+        # ID search is more specific but requires constructing a complex tile ID, so search spatiotemporally
         raw = search_sync(self._url, bbox=bbox, datetime=self._datetime)
         items = [Item.from_dict(doc) for doc in raw]
 
