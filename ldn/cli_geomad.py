@@ -252,6 +252,7 @@ def run(
     )
 
     processor = GeoMADProcessor(
+        year=year,
         geomad_options=dict(
             work_chunks=(100, 100),
             num_threads=geomad_threads,

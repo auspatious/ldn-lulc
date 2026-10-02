@@ -44,42 +44,25 @@ def http_to_s3_url(http_url):
     return s3_url
 
 
-def _set_stac_properties(input_xr: Dataset, output_xr: Dataset) -> Dataset:
+def _set_stac_properties(input_xr: Dataset, output_xr: Dataset, year: str) -> Dataset:
     """Set STAC temporal properties on the output Geomad dataset.
 
-    The datetime fields represent the nominal target year (the year the
-    GeoMAD product represents), not the full observation window. For LS7-era
-    products (<=2012) that use a multi-year buffer, the actual observation window is
-    stored in custom properties for provenance.
+    For years >2012 (where only 1 year of data is used), the start_datetime, datetime, and end_datetime are all that
+    year
+    For years <=2012 (where a 1-year buffer is used), the start_datetime and end_datetime represent the full observation
+    window
+    The datetime year is the requested year, passed in rather than inferred from the data
     """
-    start_year = np.datetime64(input_xr.time.min().values, "Y")
-    end_year = np.datetime64(input_xr.time.max().values, "Y")
-    start_year_index = int(start_year.astype("int64"))
-    end_year_index = int(end_year.astype("int64"))
+    years = input_xr.time.dt.year
+    start_year = int(years.min())
+    end_year = int(years.max())
 
-    midpoint_year_index = (start_year_index + end_year_index) // 2
-    midpoint_year = 1970 + midpoint_year_index
-
-    # Nominal year boundaries for STAC temporal search.
-    start_datetime = f"{midpoint_year}-01-01T00:00:00Z"
-    end_datetime = f"{midpoint_year}-12-31T23:59:59Z"
-    midpoint_datetime = f"{midpoint_year}-06-30T00:00:00Z"
-
-    properties = dict(
-        start_datetime=start_datetime,
-        datetime=midpoint_datetime,
-        end_datetime=end_datetime,
-        created=datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-    )
-
-    # Record the actual observation window when it differs from the nominal year.
-    obs_start_year = 1970 + start_year_index
-    obs_end_year = 1970 + end_year_index
-    if obs_start_year != midpoint_year or obs_end_year != midpoint_year:
-        properties["ldn:observation_start"] = f"{obs_start_year}-01-01T00:00:00Z"
-        properties["ldn:observation_end"] = f"{obs_end_year}-12-31T23:59:59Z"
-
-    output_xr.attrs["stac_properties"] = properties
+    output_xr.attrs["stac_properties"] = {
+        "start_datetime": f"{start_year}-01-01T00:00:00Z",
+        "datetime": f"{year}-06-30T00:00:00Z",
+        "end_datetime": f"{end_year}-12-31T23:59:59Z",
+        "created": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+    }
 
     return output_xr
 
@@ -335,6 +318,7 @@ class InsufficientScenesError(LdnError):
 class GeoMADProcessor(Processor):
     def __init__(
         self,
+        year: str,
         send_area_to_processor: bool = False,
         load_data_before_writing: bool = True,
         min_timesteps: int = 3,
@@ -352,6 +336,7 @@ class GeoMADProcessor(Processor):
         **kwargs,
     ) -> None:
         super().__init__(send_area_to_processor, **kwargs)
+        self.year = year
         self.load_data_before_writing = load_data_before_writing
         self.min_timesteps = min_timesteps
         self.geomad_options = geomad_options
@@ -371,7 +356,7 @@ class GeoMADProcessor(Processor):
         if self.load_data_before_writing:
             geomad = geomad.compute()
 
-        return _set_stac_properties(data, geomad)
+        return _set_stac_properties(data, geomad, self.year)
 
 
 # This is a generic function used be geomad creation and lulc classification tasks.
