@@ -27,6 +27,7 @@ from ldn.geomad import AwsStacTask as Task
 from ldn.grids import get_gridspec
 from ldn.raster import (
     GEOMAD_BANDS,
+    PrefixedS3ItemPath,
     build_pipeline_components,
     calculate_indices,
     load_dem_terrain,
@@ -53,52 +54,33 @@ logger = logging.getLogger(__name__)
 
 
 class StacGeoparquetSearcher(Searcher):
-    """Search STAC items in a STAC-Geoparquet file using rustac.
+    """Search a STAC-Geoparquet file for a single item by ID using rustac."""
 
-    Searches by tile ID rather than bbox to avoid globe-spanning queries
-    for antimeridian-crossing tiles.
-    """
-
-    def __init__(self, stac_geoparquet_url: str, datetime: str):
+    def __init__(self, stac_geoparquet_url: str, item_id: str):
         """Create a searcher for a STAC-Geoparquet file.
 
         Args:
             stac_geoparquet_url: HTTP(S) URL to the STAC-Geoparquet file.
-            datetime: Temporal filter string (e.g. "2020").
+            item_id: Full STAC item ID, e.g. "dep_ls_geomad_028_030_2000".
         """
         super().__init__()
         self._url = stac_geoparquet_url
-        self._datetime = datetime
+        self._item_id = item_id
 
-    def search(self, area: GeoDataFrame | GeoBox) -> ItemCollection:
-        """Search for STAC items intersecting the area.
-
-        When the area is a GeoBox, derives the tile ID from the geobox
-        and searches by ID to avoid antimeridian wrapping issues.
-
-        Args:
-            area: A GeoDataFrame or GeoBox defining the search area.
+    def search(self) -> ItemCollection:
+        """Search for the item with the configured ID.
 
         Returns:
-            A pystac ItemCollection of matching items.
+            A pystac ItemCollection containing exactly one item.
+
+        Raises:
+            LdnError: If the number of matching items is not exactly one.
         """
-        if isinstance(area, GeoBox):
-            bbox = list(area.geographic_extent.boundingbox)
-        else:
-            bbox = list(area.total_bounds)
+        items = [Item.from_dict(doc) for doc in search_sync(self._url, ids=[self._item_id])]
 
-        # TODO: Can't this just search on ID?
-        raw = search_sync(self._url, bbox=bbox, datetime=self._datetime)
-        items = [Item.from_dict(doc) for doc in raw]
+        if len(items) != 1:
+            raise LdnError(f"Expected exactly one GeoMAD item with ID {self._item_id}, but found {len(items)}")
 
-        if len(items) == 0:
-            raise LdnError("No GeoMAD items found")
-
-        logger.info(f"Found {len(items)} items intersecting the area.")
-        # TODO: Should len(items) == 1??
-        # Or are there cases where the edges of other tiles could overlap (even by 1 pixel)?
-
-        logger.info(f"Found {len(items)} GeoMAD items")
         return ItemCollection(items)
 
 
@@ -506,9 +488,18 @@ def run_classify_task(
         return  # Skip due to no overwrite.
     itempath, stac_creator, writer = components
 
+    # Same ID construction as the GeoMAD writer (itempath.basename).
+    geomad_itempath = PrefixedS3ItemPath(
+        prefix=owner,
+        bucket=geomad_bucket,
+        sensor=sensor,
+        dataset_id=GEOMAD_DATASET_ID,
+        version=geomad_version,
+        time=year,
+    )
     searcher = StacGeoparquetSearcher(
         stac_geoparquet_url=geomad_stac_geoparquet_url,
-        datetime=year,
+        item_id=geomad_itempath.basename(tile_id_tuple),
     )
 
     # GeopolygonOdcLoader converts the geobox to an AM-fixed WGS84
