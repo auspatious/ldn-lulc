@@ -195,7 +195,10 @@ The viz/vendor folder contains a build of https://github.com/willjnz/deck.gl-ras
 
 - Add tiles json layer (z=2). https://raw.githubusercontent.com/auspatious/ldn-lulc/refs/heads/main/ldn/sids_all_tiles.geojson
 
-- Make the ui nicer. e.g. map controls and logo etc.
+- Make the ui nicer. e.g. map controls and logo etc. Copy deck-gl.raster examples for their simplicity.
 - Add basemap switcher
 
 -  the data in 3832 renders fine (apart from the am-crossing items). the data in 6933 throws the projection error and doesn't show. "installHook.js:1 deck: loading COG sources: undefined Could not get projection name from: [object Object]"
+
+- compare slider no longer works.
+- issue is back where east part of am tile does not show if am/west part is not in view.
