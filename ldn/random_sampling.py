@@ -19,6 +19,7 @@ def random_sampling(
     out_fname=None,
     class_attr=CLASS_ATTR,
     drop_value=255,
+    seed=None,
 ):
     """
     Creates randomly sampled points for post-classification
@@ -58,6 +59,8 @@ def random_sampling(
         class values on the classification map.
     drop_value: integer
         Pixel value on the classification map to be excluded from sampling.
+    seed: int, optional
+        Random seed so the same points are sampled on every run.
 
     Output
     ------
@@ -113,7 +116,7 @@ def random_sampling(
                     + str(int(no_of_points))
                     + " locations"
                 )
-            sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
+            sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)), random_state=seed)
             samples.append(sample_loc)
 
     if sampling == "equal_stratified_random":
@@ -124,7 +127,7 @@ def random_sampling(
             no_of_points = n / len(classes)
             n_available = class_ratio[class_ratio["class"] == _class]["n_available"].values[0]
             if n_available >= no_of_points:
-                sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
+                sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)), random_state=seed)
                 logger.info("Class " + str(_class) + ": sampling at " + str(round(no_of_points)) + " locations")
             else:
                 no_of_points = n_available
@@ -135,7 +138,7 @@ def random_sampling(
                     + str(int(no_of_points))
                     + " locations"
                 )
-            sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
+            sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)), random_state=seed)
             samples.append(sample_loc)
 
             # # Random sample each classes
@@ -153,7 +156,7 @@ def random_sampling(
         no_of_points = n
         # Random sample entire df
         logger.info("Randomly sampling dataArray at " + str(round(no_of_points)) + " locations")
-        sample_loc = df.dropna().sample(n=int(round(no_of_points)))
+        sample_loc = df.dropna().sample(n=int(round(no_of_points)), random_state=seed)
         samples.append(sample_loc)
 
     if sampling == "manual":
@@ -181,7 +184,7 @@ def random_sampling(
                             + str(int(no_of_points))
                             + " locations"
                         )
-                    sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
+                    sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)), random_state=seed)
                     samples.append(sample_loc)
 
                     # try:

@@ -44,6 +44,7 @@ from ldn.utils import (
     GEOMAD_VERSION,
     LULC_DATASET_ID,
     SENSOR,
+    TEST_DATA_VERSION,
     TRAINING_DATA_VERSION,
     TRAINING_DATA_YEAR,
     WGS84,
@@ -68,6 +69,7 @@ PC_CLIENT = None
 
 product_nodata_value = 255
 
+# TODO: Increase to 20-25 Pacific training tiles
 # These tiles are representative of different environments e.g. forest, atoll, volcanic, elevated, urban, beach,
 # wetland, grassland, cropland, etc, Give me more if more than 5 are needed
 PACIFIC_TRAINING_TILES = [
@@ -97,9 +99,46 @@ PACIFIC_TRAINING_TILES = [
     ("050_015", "pacific", {"New Caledonia": "NCL"}),
 ]
 # PACIFIC_TRAINING_TILES are for training and validation.
+# TODO: Add NON_PACIFIC_TRAINING_TILES similar to PACIFIC_TRAINING_TILES for non-Pacific regions.
+# TRAINING_TILES = PACIFIC_TRAINING_TILES + NON_PACIFIC_TRAINING_TILES
 
-# MODEL_TEST_TILES = [] # TODO: define this. It should have all classes! Maybe pick 2.
-# Classify using a model (not trained on these). Compare output against LULC agreeing classes.
+# Held-out tiles used only to compare data and model versions. Never train on these.
+# Picked with a fixed seed, stratified by country (allocation proportional to the square root of each country's tile
+# count), excluding the training tiles and their 8 neighbours. Roughly 3% of the tiles in each region.
+# TODO: Check these tiles together contain all classes (especially wetland and cropland), swap tiles if not.
+PACIFIC_TEST_TILES = [
+    ("010_047", "pacific", {"Palau": "PLW"}),
+    ("025_064", "pacific", {"Northern Mariana Islands": "MNP"}),
+    ("027_050", "pacific", {"Micronesia": "FSM"}),
+    ("032_028", "pacific", {"Papua New Guinea": "PNG"}),
+    ("033_031", "pacific", {"Papua New Guinea": "PNG"}),
+    ("050_029", "pacific", {"Solomon Islands": "SLB"}),
+    ("050_052", "pacific", {"Marshall Islands": "MHL"}),
+    ("051_017", "pacific", {"New Caledonia": "NCL"}),
+    ("064_032", "pacific", {"Tuvalu": "TUV"}),
+    ("067_016", "pacific", {"Fiji": "FJI"}),
+    ("073_019", "pacific", {"Tonga": "TON"}),
+    ("089_016", "pacific", {"Cook Islands": "COK"}),
+    ("094_035", "pacific", {"Kiribati": "KIR"}),
+    ("104_022", "pacific", {"French Polynesia": "PYF"}),
+    ("115_014", "pacific", {"French Polynesia": "PYF"}),
+]
+NON_PACIFIC_TEST_TILES = [
+    ("128_132", "non-pacific", {"Cuba": "CUB"}),
+    ("131_135", "non-pacific", {"Bahamas": "BHS"}),
+    ("133_128", "non-pacific", {"Haiti": "HTI"}),
+    ("138_129", "non-pacific", {"Dominican Republic": "DOM"}),
+    ("149_107", "non-pacific", {"Guyana": "GUY"}),
+    ("151_106", "non-pacific", {"Suriname": "SUR"}),
+    ("183_123", "non-pacific", {"Cabo Verde": "CPV"}),
+    ("193_120", "non-pacific", {"Guinea-Bissau": "GNB"}),
+    ("262_096", "non-pacific", {"Seychelles": "SYC"}),
+    ("281_109", "non-pacific", {"Maldives": "MDV"}),
+]
+TEST_TILES = PACIFIC_TEST_TILES + NON_PACIFIC_TEST_TILES
+
+# Fixed so the test points are identical every time they are generated.
+TEST_DATA_SEED = 0
 
 
 def _get_pc_client():
@@ -396,6 +435,7 @@ def generate_samples(
     geomad_dem_indices: xr.Dataset,
     n: int,
     min_sample_per_class_n: int,
+    seed: int | None,
 ) -> gpd.GeoDataFrame:
     """Generate stratified random samples from the agreement map.
 
@@ -404,6 +444,7 @@ def generate_samples(
         geomad_dem_indices: GeoMAD dataset (used to mask nodata areas).
         n: Total number of sample points.
         min_sample_per_class_n: Minimum samples per class.
+        seed: Random seed for reproducible sampling. None for non-reproducible sampling.
 
     Returns:
         GeoDataFrame of sample points with class labels.
@@ -435,6 +476,7 @@ def generate_samples(
         da=agree_for_sampling,
         n=n,
         min_sample_n=min_sample_per_class_n,
+        seed=seed,
     )
     logger.info(f"Generated {len(samples)} samples")
     return samples
@@ -705,6 +747,7 @@ def make_training_data(
     n: int,
     min_sample_per_class_n: int,
     sensor: str,
+    seed: int | None,
 ):
     """Generate training data for a single tile and upload to S3 as CSV.
 
@@ -726,6 +769,7 @@ def make_training_data(
         n: Total number of sample points.
         min_sample_per_class_n: Minimum samples per class.
         product_owner: Optional override for the product owner.
+        seed: Random seed for reproducible sampling. None for non-reproducible sampling.
 
     Returns:
         GeoDataFrame of final training samples.
@@ -783,7 +827,9 @@ def make_training_data(
     agreed = find_agreement(wc, cci, io_ds)
 
     logger.info("Generating samples")
-    samples = generate_samples(agreed, geomad_dem_indices, n=n, min_sample_per_class_n=min_sample_per_class_n)
+    samples = generate_samples(
+        agreed, geomad_dem_indices, n=n, min_sample_per_class_n=min_sample_per_class_n, seed=seed
+    )
 
     logger.info("Extracting GeoMAD values at sample points")
     samples = extract_geomad_dem_indices_values(samples, geomad_dem_indices, analysis_crs)
@@ -837,9 +883,12 @@ def generate_training_data(
         "or the generic prefix (e.g. 'ls_geomad') when accessing GeoMAD data.",
     ),
     sensor: str = typer.Option(help="Sensor name (e.g. 'ls')", default=SENSOR),
+    split: Literal["train", "test"] = typer.Option(
+        "train", help="'test' makes the frozen held-out test set (TEST_TILES) instead of training data"
+    ),
 ):
-    """Generate training data for LULC classification.
-    Read geomad from any bucket and write training data to any bucket.
+    """Generate training or test data for LULC classification.
+    Read geomad from any bucket and write the data to any bucket.
     """
     output_bucket = output_bucket or get_env_var("BUCKET")  # Default
     if not output_bucket or not geomad_bucket:
@@ -865,10 +914,23 @@ def generate_training_data(
 
     tile_id_x, tile_id_y = parse_tile_id(tile_id)
 
+    is_test_tile = (tile_id_x, tile_id_y) in {parse_tile_id(t[0]) for t in TEST_TILES}
+    if split == "train" and is_test_tile:
+        raise LdnError(f"Tile {tile_id} is a test tile and must not be used for training data.")
+    if split == "test" and not is_test_tile:
+        raise LdnError(f"Tile {tile_id} is not in TEST_TILES.")
+    if split == "test" and overwrite:
+        raise LdnError("Test data is frozen and cannot be overwritten. Bump TEST_DATA_VERSION to regenerate it.")
+    data_dir, data_version, seed = (
+        ("test_data", TEST_DATA_VERSION, TEST_DATA_SEED)
+        if split == "test"
+        else ("training_data", training_data_version, None)
+    )
+
     # TODO: Does this exists check work with Source.Coop and normal S3 buckets?
     # TODO: I think it needs source coop prefix prefixed.
     # Zero padded indexes
-    file_prefix = f"training_data/{training_data_version}/{region}/{tile_id_x:03d}/{tile_id_y:03d}/{year}/samples"
+    file_prefix = f"{data_dir}/{data_version}/{region}/{tile_id_x:03d}/{tile_id_y:03d}/{year}/samples"
     # Training data shouldn't be written to source.coop, but supported just in case.
     _is_bucket_source_coop = is_bucket_source_coop(output_bucket)
     if _is_bucket_source_coop:
@@ -900,6 +962,7 @@ def generate_training_data(
         n,
         min_sample_per_class_n,
         sensor,
+        seed,
     )
 
 
