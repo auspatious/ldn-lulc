@@ -46,41 +46,50 @@ print-tasks-test-dep-staging:
 	ldn print-tasks \
 		--years="2000" \
 		--region="pacific" \
-		--geomad-version 0-3-0-test \
+		--geomad-version 0-3-1-test \
 		--dataset geomad \
 		--no-overwrite \
 		--bucket dep-public-staging;
 
 geomad-test-ausp:
 	ldn geomad run \
-		--tile-id 031_038 \
+		--tile-id 064_020 \
 		--region pacific \
 		--year 2000 \
-		--version 0-3-0-test \
+		--version 0-3-1-test \
 		--decimated \
 		--bucket data.ldn.auspatious.com \
 		--overwrite;
+
+# To test Antimeridian, use Pacific tiles:
+# 065_020 (just before the antimeridian)
+# 066_020 (crosses the antimeridian)
+# 067_020 (just after the antimeridian)
 geomad-test-dep-staging:
-	ldn geomad run \
-		--tile-id 031_038 \
-		--region pacific \
-		--year 2000 \
-		--version 0-3-0-test \
-		--collection-url-root="https://stac.staging.digitalearthpacific.io/collections" \
-		--decimated \
-		--bucket dep-public-staging \
-		--overwrite;
+	for col in 064 065 066 067; do \
+		for row in 020 021 022; do \
+			ldn geomad run \
+				--tile-id $${col}_$${row} \
+				--region pacific \
+				--year 2025 \
+				--version 0-3-1-test \
+				--collection-url-root="https://stac.staging.digitalearthpacific.io/collections" \
+				--decimated \
+				--bucket dep-public-staging \
+				--no-overwrite; \
+		done; \
+	done;
 
 index-geomad-test-ausp:
 	ldn index-to-stac-geoparquet \
 	--dataset geomad \
-	--geomad-version 0-3-0-test \
+	--geomad-version 0-3-1-test \
 	--no-single-region \
 	--bucket data.ldn.auspatious.com;
 index-geomad-test-dep-staging:
 	ldn index-to-stac-geoparquet \
 	--dataset geomad \
-	--geomad-version 0-3-0-test \
+	--geomad-version 0-3-1-test \
 	--single-region \
 	--product-owner dep \
 	--bucket dep-public-staging;
@@ -88,14 +97,14 @@ index-geomad-test-dep-staging:
 collection-geomad-test-ausp:
 	ldn collection create-collection \
 	--dataset geomad \
-	--geomad-version 0-3-0-test \
+	--geomad-version 0-3-1-test \
 	--no-single-region \
 	--bucket data.ldn.auspatious.com \
 	--no-has-stac-api;
 collection-geomad-test-dep-staging:
 	ldn collection create-collection \
 	--dataset geomad \
-	--geomad-version 0-3-0-test \
+	--geomad-version 0-3-1-test \
 	--url-root="https://stac.staging.digitalearthpacific.io" \
 	--single-region \
 	--product-owner dep \
