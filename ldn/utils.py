@@ -20,6 +20,7 @@ class LdnError(Exception):
     """Base exception for the ldn-lulc project."""
 
 
+# TODO: Compare against https://www.un.org/ohrlls/content/list-sids
 SIDS_COUNTRIES_AND_CODES = {
     # Caribbean
     "Anguilla": "AIA",
