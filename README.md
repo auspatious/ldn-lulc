@@ -163,6 +163,21 @@ Tiles crossing the antimeridian (e.g. parts of Kiribati, Fiji) are handled speci
 | Palau | Raised limestone/rock island jungle |
 | New Caledonia | Maquis shrubland / lagoon |
 
+#### Test data
+
+A frozen set of held-out tiles (`TEST_TILES` in `ldn/training_data.py`) is used only to compare data and model versions. It is never used to train a model, and `--split train` refuses to generate these tiles. It is generated with `make test-data-generate` (`--split test`), uses a fixed random seed, is written to `test_data/{TEST_DATA_VERSION}/`, and cannot be overwritten. Change `TEST_DATA_VERSION` to deliberately regenerate it. Human or AI validation of the LULC outputs is a separate, later dataset.
+
+How many tiles to use (Pacific has about 517 tiles and non-Pacific about 300, all containing SIDS land):
+
+| Set | Pacific | Non-Pacific | Notes |
+| - | - | - | - |
+| Test | 15 | 10 | About 3% of tiles. Held out tiles (not just points) so neighbouring pixels cannot leak from training. |
+| Training | 15 now, grow to 20-25 | 10-15 (none yet) | Match the test set size or larger. Add tiles for any class that is rare in the training data. |
+
+- Choose by country, not at random across tiles. Papua New Guinea and French Polynesia hold about 45% of Pacific tiles, so the test tiles are allocated by the square root of each country's tile count to keep small countries represented. Tiles next to training tiles are excluded.
+- Tile count matters less than points per class. Aim for at least 100 test points for the rarest classes (wetland, cropland) after combining all test tiles, and swap tiles if a class is missing.
+- Check the class histogram of the test set before using it. If a class is missing or tiny, change the tiles and bump `TEST_DATA_VERSION`.
+
 #### Model & Prediction
 
 Classification runs per tile/year using a pre-trained **random forest** model (loaded from a local `.joblib` file or downloaded from a S3 URL):

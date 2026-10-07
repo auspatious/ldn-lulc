@@ -24,7 +24,10 @@ aws-login:
 GEOMAD_VERSION := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)");
 LULC_VERSION := $(shell python3 -c "from ldn.utils import LULC_VERSION; print(LULC_VERSION)");
 
+# TODO: Use TRAINING_TILES and TEST_TILES instead of just Pacific.
 PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.training_data import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))");
+# TODO: Add NON_PACIFIC_TRAINING_TILES similar to PACIFIC_TRAINING_TILES for non-Pacific regions.
+PACIFIC_TEST_TILES := $(shell python3 -c "from ldn.training_data import PACIFIC_TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TEST_TILES]))");
 
 DECIMATED ?= --no-decimated;
 
@@ -144,6 +147,28 @@ training-data-generate:
 	done;
 
 #### Make the model using ldn-lulc/notebooks/1_Train_Model.ipynb
+
+# Frozen held-out test set. Never train on this. Non-Pacific test tiles are not included yet (needs the non-Pacific
+# GeoMAD bucket and product owner flags).
+test-data-generate:
+	for site in $(PACIFIC_TEST_TILES) do \
+		tile_id=$$(echo $$site | cut -d: -f1); \
+		region=$$(echo $$site | cut -d: -f2); \
+		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
+		country_code=$$(echo $$site | cut -d: -f4); \
+		ldn training generate-training-data \
+			--tile-id $$tile_id \
+			--region $$region \
+			--country-name "$$country_name" \
+			--country-code "$$country_code" \
+			--geomad-version 0-2-1 \
+			--geomad-bucket dep-public-staging \
+			--output-bucket dep-public-staging \
+			--single-region \
+			--product-owner dep \
+			--split test \
+			--no-overwrite; \
+	done;
 
 
 
