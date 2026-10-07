@@ -642,6 +642,7 @@ def _upload_dataframe_csv_to_s3(df, bucket: str, key: str):
 def get_buffered_country(
     country_of_interest: dict[str, str],
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
+    buffer_m: int = 100,
 ) -> gpd.GeoDataFrame:
     """Fetch and buffer a country geometry for analysis (antimeridian-fixed).
 
@@ -653,12 +654,11 @@ def get_buffered_country(
         country_of_interest: Mapping of country name to country code (single-item
             dictionary expected).
         analysis_crs: Projected CRS string used for buffering in meters.
+        buffer_m: Optional; buffer distance in meters applied to the country geometry.
 
     Returns:
         A GeoDataFrame containing buffered country geometry in `WGS84`.
     """
-    buffer_m = 100
-
     country_gadm = get_gadm(countries=country_of_interest)
 
     country_gadm = gpd.GeoDataFrame(
