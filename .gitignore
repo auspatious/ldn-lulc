@@ -233,3 +233,6 @@ viz/node_modules/
 *.joblib
 
 visualisation/static/sids_all_tiles.geojson
+
+# Intermediate plot files
+notebooks/country_plots/*
