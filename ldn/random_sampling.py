@@ -4,6 +4,7 @@ import logging
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from xarray import DataArray
 
 from ldn.utils import CLASS_ATTR, WGS84, LdnError
 
@@ -11,15 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 def random_sampling(
-    da,
-    n,
-    min_sample_n,
-    sampling="stratified_random",
-    manual_class_ratios=None,
-    out_fname=None,
-    class_attr=CLASS_ATTR,
-    drop_value=255,
-    seed=None,
+    da: DataArray,
+    n: int,
+    min_sample_n: int | None,
+    sampling: str = "stratified_random",
+    manual_class_ratios: dict | None = None,
+    out_fname: str | None = None,
+    class_attr: str = CLASS_ATTR,
+    drop_value: int = 255,
+    seed: int | None = None,
 ):
     """
     Creates randomly sampled points for post-classification
@@ -32,8 +33,8 @@ def random_sampling(
     n: int
         Total number of points to sample. Ignored if providing
         a dictionary of {class:numofpoints} to 'manual_class_ratios'
-    min_sample_n: int
-        Minimum number of samples to generate per class
+    min_sample_n: int, optional
+        Minimum number of samples to generate per class. Only used for stratified_random sampling method
     sampling: str
         'stratified_random' = Create points that are randomly
         distributed within each class, where each class has a
@@ -99,6 +100,8 @@ def random_sampling(
     )
     logger.info(class_ratio)
     if sampling == "stratified_random":
+        if not min_sample_n:
+            raise LdnError("min_sample_n must be defined for stratified_random sampling method")
         for _class in class_ratio["class"]:
             # Use relative proportions of classes to sample df
             no_of_points = n * class_ratio[class_ratio["class"] == _class]["proportion"].values[0]
