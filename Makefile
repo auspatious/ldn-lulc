@@ -24,10 +24,9 @@ aws-login:
 GEOMAD_VERSION := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)");
 LULC_VERSION := $(shell python3 -c "from ldn.utils import LULC_VERSION; print(LULC_VERSION)");
 
-# TODO: Use TRAINING_TILES and TEST_TILES instead of just Pacific.
-PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.training_data import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))");
-# TODO: Add NON_PACIFIC_TRAINING_TILES similar to PACIFIC_TRAINING_TILES for non-Pacific regions.
-PACIFIC_TEST_TILES := $(shell python3 -c "from ldn.training_data import PACIFIC_TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TEST_TILES]))");
+# Training and test tiles for both regions
+TRAINING_TILES := $(shell python3 -c "from ldn.training_data import TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TRAINING_TILES]))");
+TEST_TILES := $(shell python3 -c "from ldn.training_data import TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TEST_TILES]))");
 
 DECIMATED ?= --no-decimated;
 
@@ -148,10 +147,10 @@ training-data-generate:
 
 #### Make the model using ldn-lulc/notebooks/1_Train_Model.ipynb
 
-# Frozen held-out test set. Never train on this. Non-Pacific test tiles are not included yet (needs the non-Pacific
+# Frozen held-out test set. Never train on this. (needs the non-Pacific
 # GeoMAD bucket and product owner flags).
 test-data-generate:
-	for site in $(PACIFIC_TEST_TILES) do \
+	for site in $(TEST_TILES) do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
 		region=$$(echo $$site | cut -d: -f2); \
 		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
