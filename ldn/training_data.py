@@ -70,8 +70,8 @@ PC_CLIENT = None
 product_nodata_value = 255
 
 # TODO: Increase to 20-25 Pacific training tiles
-# These tiles are representative of different environments e.g. forest, atoll, volcanic, elevated, urban, beach,
-# wetland, grassland, cropland, etc, Give me more if more than 5 are needed
+# These tiles are for training the random forest classifier. They are representative of different environments e.g.
+# forest, atoll, volcanic, elevated, urban, beach, wetland, grassland, cropland, etc.
 PACIFIC_TRAINING_TILES = [
     # Papua New Guinea: Dense tropical rainforest & highland montane forest.
     ("028_030", "pacific", {"Papua New Guinea": "PNG"}),  # Capital city and coast.
@@ -98,9 +98,23 @@ PACIFIC_TRAINING_TILES = [
     # New Caledonia for maquis shrubland / lagoon
     ("050_015", "pacific", {"New Caledonia": "NCL"}),
 ]
-# PACIFIC_TRAINING_TILES are for training and validation.
-# TODO: Add NON_PACIFIC_TRAINING_TILES similar to PACIFIC_TRAINING_TILES for non-Pacific regions.
-# TRAINING_TILES = PACIFIC_TRAINING_TILES + NON_PACIFIC_TRAINING_TILES
+
+# Same as PACIFIC_TRAINING_TILES, but for non-Pacific region
+NON_PACIFIC_TRAINING_TILES = [
+    ("334_92", "non-pacific", {"Timor-Leste", "TLS"}),  # Very remote
+    ("312_105", "non-pacific", {"Singapore": "SGP"}),  # very built-up
+    ("281_104", "non-pacific", {"Maldives": "MDV"}),  # barely islands
+    ("266_77", "non-pacific", {"Mauritius", "MUS"}),  # Indian Ocean
+    ("193_119", "non-pacific", {"Guinea-Bissau", "GNB"}),  # African
+    ("251_88", "non-pacific", {"Comoros", "COM"}),  # probably unique in some way?
+    ("185_125", "non-pacific", {"Cabo Verde": "CPV"}),  # bright and bare
+    ("149_113", "non-pacific", {"Guyana", "GUY"}),  # Forest and big river delta
+    ("146_124", "non-pacific", {"Dominica", "DMA"}),  # small Caribbean island
+    ("130_127", "non-pacific", {"Jamaica", "JAM"}),  # medium Carribean island
+    ("126_133", "non-pacific", {"Cuba", "CUB"}),  # big Caribbean isalnd
+    ("119_126", "non-pacific", {"Belize", "BLZ"}),  # non-island in Caribbean
+]
+TRAINING_TILES = PACIFIC_TRAINING_TILES + NON_PACIFIC_TRAINING_TILES
 
 # Held-out tiles used only to compare data and model versions. Never train on these.
 # Picked with a fixed seed, stratified by country (allocation proportional to the square root of each country's tile
@@ -124,6 +138,8 @@ PACIFIC_TEST_TILES = [
     ("115_014", "pacific", {"French Polynesia": "PYF"}),
 ]
 NON_PACIFIC_TEST_TILES = [
+    ("335_92", "non-pacific", {"Timor-Leste", "TLS"}),
+    ("312_106", "non-pacific", {"Singapore": "SGP"}),
     ("128_132", "non-pacific", {"Cuba": "CUB"}),
     ("131_135", "non-pacific", {"Bahamas": "BHS"}),
     ("133_128", "non-pacific", {"Haiti": "HTI"}),
