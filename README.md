@@ -171,10 +171,13 @@ Details to come.
 
 #### 3. Validation data
 
-[Collect Earth Online](https://www.collect.earth/) is used to create the validation data. The notebook `notebooks/Generate_Plots_For_Countries.ipynb` is used to create the plots/samples for CEO.
+[Collect Earth Online](https://www.collect.earth/) is used to create the validation data. The notebook `notebooks/Generate_Plots_For_Countries.ipynb` is used to create the plots/samples for the CEO project. There is one project per country. These plot files are here for example: notebooks/country_plots/Fiji_plots.shp.zip. To use this file in a CEO project, on the "Project Boundary" tab select "Define AOI from plots file", then on the "Plot Generation" tab upload the zipped shapefile (wait until the `check-plot-file` request succeeds before proceeding), and finally on the "Sample Design" tab select "Center". Do not worry if the map shows a different dataset. This is a CEO bug.
 
-This test project has 300 random points (aligned to actual 30m pixel centers) for each of 3 test countries https://app.collect.earth/project-wizard?projectId=64269&institutionId=7195.
+The Fiji project has ~3500 equal stratified random points (aligned to actual 30m pixel centers):  https://app.collect.earth/project-wizard?projectId=64287&institutionId=7195. We will work with local partners to create the validation dataset from these.
 
+The data that is made in CEO is stored here. As the data is tagged, we can export it and store it here for safekeeping and use in the validation process:
+- notebooks/country_plots/ceo-Fiji-LULC-Validation-plot-data-2026-10-09.csv
+- notebooks/country_plots/ceo-Fiji-LULC-Validation-sample-data-2026-10-09.csv
 
 #### Model & Prediction
 
