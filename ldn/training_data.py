@@ -278,21 +278,21 @@ def load_lulc_for_tile(product: str, geobox, year: str) -> xr.Dataset:
     ).squeeze(drop=True)
 
 
+# https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/docs/WorldCover_PUM_V2.0.pdf
+# Band 1: Number of Sentinel-1 GAMMA0 observations used in the classification workflow
+# Band 2: Number of Sentinel-2 L2A observations used in the classification workflow
 def _wc_quality_filter(ds):
     """ESA WorldCover quality filter.
 
-    Retain pixels with at least 1 valid Sentinel observation in at
-    least 2 of the 3 seasons. Where quality is nodata, do not count
-    that season as failing.
+    Keep pixels with at least 1 Sentinel-1 observation and at least 2 Sentinel-2 observations (bands 1 and 2). Values
+    below 0 are nodata (-1, and -2 which is undocumented but covers whole files over northern Fiji), so a band only
+    fails when its count is known to be too low. Band 3 is not used.
     """
-    q1 = ds["input_quality.1"]
-    q2 = ds["input_quality.2"]
-    q3 = ds["input_quality.3"]
+    s1 = ds["input_quality.1"]
+    s2 = ds["input_quality.2"]
 
-    has_obs = (q1 > 0).astype(int) + (q2 > 0).astype(int) + (q3 > 0).astype(int)
-    no_data = (q1 < 0).astype(int) + (q2 < 0).astype(int) + (q3 < 0).astype(int)
-
-    return (has_obs >= 2) | (no_data == 3)
+    # Negative values are nodata, so they pass
+    return ((s1 > 0) | (s1 < 0)) & ((s2 > 1) | (s2 < 0))
 
 
 def _cci_quality_filter(ds):
@@ -326,7 +326,7 @@ LULC_PRODUCTS = [
         "output_band": "esa_wc",
         "class_map": world_cover_map,
         "quality_fn": _wc_quality_filter,
-        "quality_bands": ["input_quality.1", "input_quality.2", "input_quality.3"],
+        "quality_bands": ["input_quality.1", "input_quality.2"],
     },
     {
         "product": "esa-cci-lc",
