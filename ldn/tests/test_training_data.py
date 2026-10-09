@@ -6,7 +6,10 @@ import pytest
 import xarray as xr
 from shapely.geometry import Point
 
+from ldn.random_sampling import random_sampling
 from ldn.training_data import (
+    PACIFIC_TRAINING_TILES,
+    TEST_TILES,
     _cci_quality_filter,
     _item_centroid_lon,
     _wc_quality_filter,
@@ -16,6 +19,7 @@ from ldn.training_data import (
     make_geomad_item_id,
     remove_nan_samples,
 )
+from ldn.utils import parse_tile_id
 
 
 class TestItemCentroidLon:
@@ -317,3 +321,30 @@ class TestGetGeomadItemId:
     def test_product_owner_override(self):
         item_id = make_geomad_item_id("058_043", "ls", "2020", "ci")
         assert item_id == "ci_ls_geomad_058_043_2020"
+
+
+class TestTestTiles:
+    def test_disjoint_from_training_tiles(self):
+        """Held-out test tiles never overlap the training tiles."""
+        train = {parse_tile_id(t[0]) for t in PACIFIC_TRAINING_TILES}
+        test = {parse_tile_id(t[0]) for t in TEST_TILES}
+        assert not train & test
+
+    def test_unique(self):
+        """Each test tile appears once."""
+        assert len(TEST_TILES) == len({t[0] for t in TEST_TILES})
+
+
+class TestRandomSamplingSeed:
+    def _da(self):
+        """Classified array with two classes."""
+        values = np.tile([1, 2], (50, 25))
+        return xr.DataArray(
+            values, coords={"latitude": np.arange(50), "longitude": np.arange(50)}, dims=("latitude", "longitude")
+        )
+
+    def test_same_seed_same_points(self):
+        """The same seed gives identical points."""
+        a = random_sampling(self._da(), n=40, min_sample_n=10, seed=0)
+        b = random_sampling(self._da(), n=40, min_sample_n=10, seed=0)
+        assert a.geometry.equals(b.geometry)
