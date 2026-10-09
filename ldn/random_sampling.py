@@ -19,7 +19,7 @@ def random_sampling(
     out_fname=None,
     class_attr=CLASS_ATTR,
     drop_value=255,
-    seed=None,
+    seed: int | None = None,
 ):
     """
     Creates randomly sampled points for post-classification
@@ -60,7 +60,7 @@ def random_sampling(
     drop_value: integer
         Pixel value on the classification map to be excluded from sampling.
     seed: int, optional
-        Random seed so the same points are sampled on every run.
+        Random seed so the sampled locations are reproducible.
 
     Output
     ------

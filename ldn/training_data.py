@@ -101,18 +101,18 @@ PACIFIC_TRAINING_TILES = [
 
 # Same as PACIFIC_TRAINING_TILES, but for non-Pacific region
 NON_PACIFIC_TRAINING_TILES = [
-    ("334_92", "non-pacific", {"Timor-Leste", "TLS"}),  # Very remote
+    ("334_92", "non-pacific", {"Timor-Leste": "TLS"}),  # Very remote
     ("312_105", "non-pacific", {"Singapore": "SGP"}),  # very built-up
     ("281_104", "non-pacific", {"Maldives": "MDV"}),  # barely islands
-    ("266_77", "non-pacific", {"Mauritius", "MUS"}),  # Indian Ocean
-    ("193_119", "non-pacific", {"Guinea-Bissau", "GNB"}),  # African
-    ("251_88", "non-pacific", {"Comoros", "COM"}),  # probably unique in some way?
+    ("266_77", "non-pacific", {"Mauritius": "MUS"}),  # Indian Ocean
+    ("193_119", "non-pacific", {"Guinea-Bissau": "GNB"}),  # African
+    ("251_88", "non-pacific", {"Comoros": "COM"}),  # probably unique in some way?
     ("185_125", "non-pacific", {"Cabo Verde": "CPV"}),  # bright and bare
-    ("149_113", "non-pacific", {"Guyana", "GUY"}),  # Forest and big river delta
-    ("146_124", "non-pacific", {"Dominica", "DMA"}),  # small Caribbean island
-    ("130_127", "non-pacific", {"Jamaica", "JAM"}),  # medium Carribean island
-    ("126_133", "non-pacific", {"Cuba", "CUB"}),  # big Caribbean isalnd
-    ("119_126", "non-pacific", {"Belize", "BLZ"}),  # non-island in Caribbean
+    ("149_113", "non-pacific", {"Guyana": "GUY"}),  # Forest and big river delta
+    ("146_124", "non-pacific", {"Dominica": "DMA"}),  # small Caribbean island
+    ("130_127", "non-pacific", {"Jamaica": "JAM"}),  # medium Carribean island
+    ("126_133", "non-pacific", {"Cuba": "CUB"}),  # big Caribbean isalnd
+    ("119_126", "non-pacific", {"Belize": "BLZ"}),  # non-island in Caribbean
 ]
 TRAINING_TILES = PACIFIC_TRAINING_TILES + NON_PACIFIC_TRAINING_TILES
 
@@ -138,7 +138,7 @@ PACIFIC_TEST_TILES = [
     ("115_014", "pacific", {"French Polynesia": "PYF"}),
 ]
 NON_PACIFIC_TEST_TILES = [
-    ("335_92", "non-pacific", {"Timor-Leste", "TLS"}),
+    ("335_92", "non-pacific", {"Timor-Leste": "TLS"}),
     ("312_106", "non-pacific", {"Singapore": "SGP"}),
     ("128_132", "non-pacific", {"Cuba": "CUB"}),
     ("131_135", "non-pacific", {"Bahamas": "BHS"}),
@@ -814,6 +814,10 @@ def make_training_data(
             crs=WGS84,
         )
         country_wgs84_buffered = country_wgs84_buffered[
+            # TODO: FIX: UserWarning: GeoSeries.notna() previously returned False for both missing (None) and empty
+            # geometries. Now, it only returns False for missing values. Since the calling GeoSeries contains empty
+            # geometries, the result has changed compared to previous versions of GeoPandas.
+            # Given a GeoSeries 's', you can use '~s.is_empty & s.notna()' to get back the old behaviour.
             country_wgs84_buffered.geometry.notna() & ~country_wgs84_buffered.is_empty
         ]
         if country_wgs84_buffered.empty:
