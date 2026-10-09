@@ -4,7 +4,7 @@
 # Workflow:
 # 1. Run GeoMAD for all tiles/years
 # 2. Run index GeoMAD (STAC-Geoparquet)
-# 3. Make training data (in notebooks/training_data/0_Generate_Training_Points.ipynb)
+# 3. Make training data
 # 4. Train model (in notebooks/training_data/1_Train_Model.ipynb)
 # 5. Run LULC prediction for all tiles/years
 # 6. Run index LULC (STAC-Geoparquet)
@@ -26,6 +26,9 @@ LULC_VERSION := $(shell python3 -c "from ldn.utils import LULC_VERSION; print(LU
 
 # Training and test tiles for both regions
 TRAINING_TILES := $(shell python3 -c "from ldn.training_data import TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TRAINING_TILES]))");
+PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.training_data import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))");
+NON_PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.training_data import NON_PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in NON_PACIFIC_TRAINING_TILES]))");
+
 TEST_TILES := $(shell python3 -c "from ldn.training_data import TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TEST_TILES]))");
 
 DECIMATED ?= --no-decimated;
@@ -125,8 +128,8 @@ make-mosaics-geomad:
 
 
 #### Training Data
-# Geomad version: 0-2-1 in DEP staging, 0-3-0 in DEP public.
-training-data-generate:
+# Geomad version: 0-2-1 in DEP staging and Source.Coop. 0-3-0 in DEP public. # TODO: Should we use prod?
+training-data-generate-pacific:
 	for site in $(PACIFIC_TRAINING_TILES) do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
 		region=$$(echo $$site | cut -d: -f2); \
@@ -142,6 +145,24 @@ training-data-generate:
 			--output-bucket dep-public-staging \
 			--single-region \
 			--product-owner dep \
+			--no-overwrite; \
+	done;
+training-data-generate-non-pacific:
+	for site in $(NON_PACIFIC_TRAINING_TILES) do \
+		tile_id=$$(echo $$site | cut -d: -f1); \
+		region=$$(echo $$site | cut -d: -f2); \
+		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
+		country_code=$$(echo $$site | cut -d: -f4); \
+		ldn training generate-training-data \
+			--tile-id $$tile_id \
+			--region $$region \
+			--country-name "$$country_name" \
+			--country-code "$$country_code" \
+			--geomad-version 0-2-1 \
+			--geomad-bucket us-west-2.opendata.source.coop \
+			--output-bucket dep-public-staging \
+			--no-single-region \
+			--product-owner ci \
 			--no-overwrite; \
 	done;
 
