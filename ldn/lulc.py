@@ -11,6 +11,7 @@ import typer
 import xarray as xr
 from dask.distributed import Client as DaskClient
 from dep_tools.loaders import OdcLoader
+from dep_tools.namers import GenericItemPath
 from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
 from dep_tools.utils import _fix_geometry
@@ -26,7 +27,6 @@ from ldn.aws import configure_s3_access_profile, s3_client
 from ldn.grids import get_gridspec
 from ldn.raster import (
     GEOMAD_BANDS,
-    PrefixedS3ItemPath,
     build_pipeline_components,
     calculate_indices,
     load_dem_terrain,
@@ -490,18 +490,17 @@ def run_classify_task(
         return  # Skip due to no overwrite.
     itempath, stac_creator, writer = components
 
-    # Same ID construction as the GeoMAD writer (itempath.basename).
-    geomad_itempath = PrefixedS3ItemPath(
-        prefix=owner,
-        bucket=geomad_bucket,
+    # Same ID construction as the GeoMAD writer (itempath.basename), without its bucket region lookup.
+    geomad_item_id = GenericItemPath(
         sensor=sensor,
         dataset_id=GEOMAD_DATASET_ID,
         version=geomad_version,
         time=year,
-    )
+        prefix=owner,
+    ).basename(tile_id_tuple)
     searcher = StacGeoparquetSearcher(
         stac_geoparquet_url=geomad_stac_geoparquet_url,
-        item_id=geomad_itempath.basename(tile_id_tuple),
+        item_id=geomad_item_id,
     )
 
     # GeopolygonOdcLoader converts the geobox to an AM-fixed WGS84
