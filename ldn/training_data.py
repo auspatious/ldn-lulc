@@ -690,68 +690,6 @@ def get_buffered_country(
     return gpd.GeoDataFrame(geometry=rows, crs=WGS84)
 
 
-# get_tile_year_geomad_dem_indices uses a lot of the code in search_and_load_geomad_indices_dem,
-# but the training data notebook needs the extra country clipping so they are separate functions.
-def get_tile_year_geomad_dem_indices(
-    tile_id: str,
-    year: str,
-    region: Literal["pacific", "non-pacific"],
-    country_wgs84_buffered: gpd.GeoDataFrame,
-    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
-    product_owner: str | None,
-    single_region: bool,
-    bucket: str,
-    geomad_version: str,
-    sensor: str,
-) -> xr.Dataset:
-    """Load GeoMAD + DEM features for a tile, clipped to buffered country.
-
-    Delegates to search_and_load_geomad_indices_dem for the shared search/load/scale/
-    indices/DEM logic, then clips to the intersection of the tile extent
-    and the buffered country geometry.
-
-    Args:
-        tile_id: Grid tile identifier (e.g. "058_043").
-        year: Temporal filter used for GeoMAD item search (e.g. "2020").
-        region: Grid region, either "pacific" or "non-pacific".
-        country_wgs84_buffered: Buffered country geometry in WGS84.
-        analysis_crs: Projected CRS string (e.g. "EPSG:3832").
-        product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
-        single_region: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
-        geomad_version: Optional GeoMAD version override.
-
-    Returns:
-        Dataset with GeoMAD bands, spectral indices, elevation, slope,
-        and aspect, clipped to the tile-country intersection.
-    """
-    merged = search_and_load_geomad_indices_dem(
-        tile_id=tile_id,
-        year=year,
-        region=region,
-        analysis_crs=analysis_crs,
-        geopolygon=country_wgs84_buffered,
-        product_owner=product_owner,
-        single_region=single_region,
-        geomad_version=geomad_version,
-        bucket=bucket,
-        sensor=sensor,
-    )
-
-    # Clip to intersection of tile extent and buffered country
-    country_prj = country_wgs84_buffered.to_crs(merged.odc.geobox.crs)
-    tile_extent = merged.odc.geobox.extent
-    country_union = country_prj.union_all()
-    intersection = tile_extent.geom.intersection(country_union)
-    clip_geom = Geometry(
-        intersection,
-        crs=merged.odc.geobox.crs,
-    )
-    merged = merged.odc.crop(clip_geom, apply_mask=True, all_touched=True)
-
-    logger.info(f"Merged GeoMAD/DEM shape (after country clip): {merged.dims}")
-    return merged
-
-
 def make_training_data(
     tile_id: str,
     year: str,
@@ -803,7 +741,7 @@ def make_training_data(
 
     # Clip country geometry to this tile's footprint before any data loading.
     # Critical for countries like Kiribati that span huge parts of the Pacific —
-    # passing the full country geometry into get_tile_year_geomad_dem_indices
+    # passing the full country geometry into search_and_load_geomad_indices_dem
     # causes Dask to materialise a massive array, leading to OOM kills.
     # Skip for AM-crossing tiles: their WGS84 footprint straddles ±180° and
     # intersects incorrectly with standard WGS84 country geometries.
@@ -832,7 +770,7 @@ def make_training_data(
         logger.info("Clipped country geometry to tile footprint")
 
     logger.info("Loading GeoMAD, DEM, and indices")
-    geomad_dem_indices = get_tile_year_geomad_dem_indices(
+    geomad_dem_indices = search_and_load_geomad_indices_dem(
         tile_id,
         year,
         region=region,
@@ -1009,8 +947,8 @@ def search_and_load_geomad_indices_dem(
     tile_id: str,
     year: str,
     region: Literal["pacific", "non-pacific"],
+    country_wgs84_buffered: gpd.GeoDataFrame,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
-    geopolygon: gpd.GeoDataFrame,
     product_owner: str | None,
     single_region: bool,
     bucket: str,
@@ -1018,14 +956,14 @@ def search_and_load_geomad_indices_dem(
     sensor: str,
 ) -> xr.Dataset:
     """Search, load, scale, and merge GeoMAD bands, spectral indices, and DEM terrain for a tile.
-        Supports antimeridian-crossing tiles.
+        Supports antimeridian-crossing tiles. The result is clipped to the buffered country.
 
     Args:
         tile_id: Grid tile identifier (e.g. "058_043").
         year: Year string for the GeoMAD item search (e.g. "2020").
         region: Grid region, either "pacific" or "non-pacific".
+        country_wgs84_buffered: Buffered country geometry in WGS84. Constrains the stac_load extent and the final clip.
         analysis_crs: The expected CRS of the GeoMAD data (either "EPSG:3832" or "EPSG:6933").
-        geopolygon: GeoDataFrame used to constrain the stac_load extent (the country geom).
         product_owner: Optional owner override (e.g. "dep" or "ci").
         single_region: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
         bucket: S3 bucket name where the GeoMAD data is stored.
@@ -1033,7 +971,7 @@ def search_and_load_geomad_indices_dem(
 
     Returns:
         Merged dataset with GeoMAD bands, spectral indices, elevation,
-        slope, and aspect, clipped to the tile proj:bbox.
+        slope, and aspect, clipped to the intersection of the tile proj:bbox and the buffered country.
     """
     logger.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}.")
     if GEOMAD_VERSION != geomad_version:
@@ -1060,7 +998,7 @@ def search_and_load_geomad_indices_dem(
         chunks={},  # Force lazy.
         bands=bands,
         fail_on_error=True,  # We control the data so it shouldn't fail.
-        geopolygon=geopolygon,
+        geopolygon=country_wgs84_buffered,
     )
 
     if geomad_ds.odc.crs.epsg != int(analysis_crs.split(":")[1]):
@@ -1098,4 +1036,17 @@ def search_and_load_geomad_indices_dem(
     dem_ds = dem_ds.assign_coords(x=geomad_ds.x, y=geomad_ds.y)
     merged = xr.merge([geomad_ds, dem_ds], join="override")  # Override prefers geomad
     logger.info(f"Merged GeoMAD+DEM shape: {merged.dims}")
+
+    # Clip to intersection of tile extent and buffered country
+    country_prj = country_wgs84_buffered.to_crs(merged.odc.geobox.crs)
+    tile_extent = merged.odc.geobox.extent
+    country_union = country_prj.union_all()
+    intersection = tile_extent.geom.intersection(country_union)
+    clip_geom = Geometry(
+        intersection,
+        crs=merged.odc.geobox.crs,
+    )
+    merged = merged.odc.crop(clip_geom, apply_mask=True, all_touched=True)
+
+    logger.info(f"Merged GeoMAD/DEM shape (after country clip): {merged.dims}")
     return merged
