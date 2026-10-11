@@ -760,9 +760,10 @@ def make_training_data(
     geomad_bucket: str,
     output_bucket: str,
     country_of_interest: dict[str, str],
-    product_owner: str | None,
+    product_owner_geomad: str | None,
     single_region_geomad: bool,
     file_prefix: str,
+    output_key: str,
     n: int,
     min_sample_per_class_n: int,
     sensor: str,
@@ -787,8 +788,10 @@ def make_training_data(
             If None, uses all countries in the tile.
         n: Total number of sample points.
         min_sample_per_class_n: Minimum samples per class.
-        product_owner: Optional override for the product owner.
+        product_owner_geomad: Optional owner override for the GeoMAD data (e.g. "dep" or "ci").
         single_region_geomad: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
+        file_prefix: Local path prefix for the output files, relative to ldn/.
+        output_key: S3 key for the output CSV.
         seed: Random seed for reproducible sampling. None for non-reproducible sampling.
 
     Returns:
@@ -829,14 +832,13 @@ def make_training_data(
         logger.info("Clipped country geometry to tile footprint")
 
     logger.info("Loading GeoMAD, DEM, and indices")
-    owner = owner_for_region(region, product_owner)
     geomad_dem_indices = get_tile_year_geomad_dem_indices(
         tile_id,
         year,
         region=region,
         country_wgs84_buffered=country_wgs84_buffered,
         analysis_crs=analysis_crs,
-        product_owner=product_owner,
+        product_owner=product_owner_geomad,
         single_region=single_region_geomad,
         bucket=geomad_bucket,
         geomad_version=geomad_version,
@@ -873,8 +875,7 @@ def make_training_data(
     samples.to_csv(f"{out_fname_local}.csv", index=False)
     logger.info(f"Saved training data to {out_fname_local}")
 
-    out_fname_s3 = f"{dataset_prefix(owner, sensor, LULC_DATASET_ID)}/{file_prefix}.csv"
-    _upload_dataframe_csv_to_s3(samples, output_bucket, f"{out_fname_s3}")
+    _upload_dataframe_csv_to_s3(samples, output_bucket, output_key)
 
 
 @cli_training_app.command()
@@ -901,18 +902,21 @@ def generate_training_data(
     n: int = typer.Option(2100, help="Total number of sample points"),
     min_sample_per_class_n: int = typer.Option(300, help="Minimum samples per class"),
     overwrite: bool = typer.Option(False, help="Whether to overwrite existing data in S3"),
-    # TODO: product_owner and single_region need to be seperate for geomad and output buckets.
-    product_owner: str | None = typer.Option(None, help="Override the default product owner"),
+    product_owner_geomad: str | None = typer.Option(
+        None, help="Override the region's default owner prefix (e.g. 'dep') for the GeoMAD data"
+    ),
+    product_owner_output: str | None = typer.Option(
+        None, help="Override the region's default owner prefix (e.g. 'dep') for the output data"
+    ),
     single_region_geomad: bool = typer.Option(
         ...,
         help="Whether to use the single region prefix (e.g. 'dep_ls_geomad') "
         "or the generic prefix (e.g. 'ls_geomad') when accessing GeoMAD data.",
     ),
-    # TODO: use single_region_output
     single_region_output: bool = typer.Option(
         ...,
         help="Whether to use the single region prefix (e.g. 'dep_ls_lulc') "
-        "or the generic prefix (e.g. 'ls_training_data') when accessing output training data.",
+        "or the generic prefix (e.g. 'ls_lulc') when writing output training data.",
     ),
     sensor: str = typer.Option(help="Sensor name (e.g. 'ls')", default=SENSOR),
     split: Literal["train", "test"] = typer.Option(
@@ -931,8 +935,8 @@ def generate_training_data(
         f"Creating training data for tile {tile_id}, year {year}, region {region}, geomad_bucket "
         f"{geomad_bucket}, output_bucket {output_bucket}, country {country_of_interest}, n={n}, "
         f"min_sample_per_class_n={min_sample_per_class_n}, overwrite={overwrite}, "
-        f"product_owner={product_owner} training_data_version={training_data_version}, geomad_version={geomad_version},"
-        f" sensor={sensor}"
+        f"product_owner_geomad={product_owner_geomad}, product_owner_output={product_owner_output}, "
+        f"training_data_version={training_data_version}, geomad_version={geomad_version}, sensor={sensor}"
     )
     if training_data_version != TRAINING_DATA_VERSION:
         logger.info(
@@ -968,11 +972,12 @@ def generate_training_data(
     if _is_bucket_source_coop:
         raise NotImplementedError("Writing training data to Source.Coop is not supported.")
         # file_prefix = f"{SOURCE_COOP_PREFIX_LULC}/{file_prefix}"
-    # logger.info(f"Checking if object exists at s3://{output_bucket}/{file_prefix}")
+    output_owner = owner_for_region(region, product_owner_output) if single_region_output else None
+    output_key = f"{dataset_prefix(output_owner, sensor, LULC_DATASET_ID)}/{file_prefix}.csv"
 
     if not overwrite:
-        logger.info("Overwrite is False, checking for existing object")
-        exists = object_exists(output_bucket, f"{file_prefix}.csv")
+        logger.info(f"Overwrite is False, checking if object exists at s3://{output_bucket}/{output_key}")
+        exists = object_exists(output_bucket, output_key)
         if exists:
             logger.info("Item already exists and overwrite is False. Skipping.")
             return
@@ -989,9 +994,10 @@ def generate_training_data(
         geomad_bucket,
         output_bucket,
         country_of_interest,
-        product_owner,
+        product_owner_geomad,
         single_region_geomad,
         file_prefix,
+        output_key,
         n,
         min_sample_per_class_n,
         sensor,
