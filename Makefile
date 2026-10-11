@@ -176,8 +176,8 @@ training-data-generate-non-pacific:
 
 #### Make the model using ldn-lulc/notebooks/1_Train_Model.ipynb
 
-# Frozen held-out test set. Never train on this. (needs the non-Pacific
-# GeoMAD bucket and product owner flags).
+# Frozen held-out test set. Never train on this. Uses the same GeoMAD source and output
+# flags as the matching training-data target, so both regions are written under dep_ls_lulc/test_data/.
 test-data-generate-pacific:
 	for site in $(PACIFIC_TEST_TILES) do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
@@ -199,7 +199,7 @@ test-data-generate-pacific:
 			--split test \
 			--no-overwrite; \
 	done;
-# TODO: Update params for the non-pacific. Can we do conditional logic in a single iteration?
+# TODO: Do both regions in a single iteration with conditional logic?
 test-data-generate-non-pacific:
 	for site in $(NON_PACIFIC_TEST_TILES) do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
