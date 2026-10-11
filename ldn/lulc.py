@@ -28,9 +28,7 @@ from ldn.grids import get_gridspec
 from ldn.raster import (
     GEOMAD_BANDS,
     build_pipeline_components,
-    calculate_indices,
-    load_dem_terrain,
-    scale_offset_landsat,
+    make_features,
 )
 from ldn.raster import (
     AwsStacTask as Task,
@@ -310,7 +308,7 @@ class LulcProcessor(Processor):
         self._year = year
 
     def process(self, input_data: xr.Dataset) -> xr.Dataset:
-        """Scale GeoMAD, compute indices, load DEM terrain, and predict/classify LULC.
+        """Build features (scaled GeoMAD, indices, DEM terrain) and predict/classify LULC.
 
         Args:
             input_data: GeoMAD dataset loaded by GeopolygonOdcLoader.
@@ -318,23 +316,8 @@ class LulcProcessor(Processor):
         Returns:
             Dataset with classification and probability bands.
         """
-        self._logger.info("Scaling GeoMAD reflectance bands")
-        scaled_data = scale_offset_landsat(input_data).squeeze(drop=True)
-
-        self._logger.info("Computing spectral indices")
-        data = calculate_indices(scaled_data)
-
-        # Load DEM aligned to the GeoMAD grid
-        self._logger.info("Loading DEM and computing terrain features")
-        dem_ds = load_dem_terrain(data.odc.geobox)
-
-        # Drop spatial_ref from DEM to avoid WKT encoding conflicts with
-        # the GeoMAD spatial_ref during merge (odc vs rioxarray encodings).
-        if "spatial_ref" in dem_ds.coords:
-            dem_ds = dem_ds.drop_vars("spatial_ref")
-
-        # Merge GeoMAD features with terrain features (override join to prefer GeoMAD coords and metadata).
-        merged = xr.merge([data, dem_ds], join="override")
+        self._logger.info("Building features: scaling GeoMAD, computing indices, loading DEM terrain")
+        merged = make_features(input_data)
 
         # Compute before prediction: sklearn needs eager numpy arrays,
         # and sending a large lazy graph to Dask workers is slow.

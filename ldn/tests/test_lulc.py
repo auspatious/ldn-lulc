@@ -1,7 +1,8 @@
 import numpy as np
 import xarray as xr
 
-from ldn.lulc import calculate_indices, geomad_searcher, scale_offset_landsat
+from ldn.lulc import geomad_searcher
+from ldn.raster import calculate_indices, scale_offset_landsat
 
 
 def _make_dataset(values: dict[str, list[list[float]]]) -> xr.Dataset:

@@ -36,7 +36,7 @@ from ldn.aws import s3_client
 from ldn.grids import get_gadm, get_gridspec
 from ldn.lulc import geomad_searcher
 from ldn.random_sampling import random_sampling
-from ldn.raster import calculate_indices, load_dem_terrain, scale_offset_landsat
+from ldn.raster import make_features
 from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
     CLASS_ATTR,
@@ -1022,19 +1022,7 @@ def search_and_load_geomad_indices_dem(
     geomad_ds = geomad_ds.odc.crop(tile_geom, apply_mask=False)
     logger.info(f"GeoMAD shape (after tile clip): {geomad_ds.dims}")
 
-    geomad_ds = scale_offset_landsat(geomad_ds)
-    geomad_ds = calculate_indices(geomad_ds)
-
-    dem_ds = load_dem_terrain(geomad_ds.odc.geobox)
-
-    # Drop spatial_ref from DEM to avoid WKT encoding conflicts with
-    # the GeoMAD spatial_ref during merge (odc vs rioxarray encodings).
-    if "spatial_ref" in dem_ds.coords:
-        dem_ds = dem_ds.drop_vars("spatial_ref")
-
-    # Fix: assign GeoMAD coords to DEM before merge
-    dem_ds = dem_ds.assign_coords(x=geomad_ds.x, y=geomad_ds.y)
-    merged = xr.merge([geomad_ds, dem_ds], join="override")  # Override prefers geomad
+    merged = make_features(geomad_ds)
     logger.info(f"Merged GeoMAD+DEM shape: {merged.dims}")
 
     # Clip to intersection of tile extent and buffered country

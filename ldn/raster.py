@@ -282,6 +282,33 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     return _compute_terrain(dem["elevation"])
 
 
+def make_features(geomad: xr.Dataset) -> xr.Dataset:
+    """Build the model features from a GeoMAD dataset: scaled bands, spectral indices and DEM terrain.
+
+    Used for both training data and prediction, so the model always sees features computed the same way.
+
+    Args:
+        geomad: Raw GeoMAD dataset for one tile and year (a single time step).
+
+    Returns:
+        Dataset with scaled GeoMAD bands, spectral indices, elevation, slope and aspect on the GeoMAD grid.
+    """
+    data = calculate_indices(scale_offset_landsat(geomad.squeeze(drop=True)))
+
+    # Load DEM aligned to the GeoMAD grid
+    dem = load_dem_terrain(data.odc.geobox)
+
+    # Drop spatial_ref from DEM to avoid WKT encoding conflicts with
+    # the GeoMAD spatial_ref during merge (odc vs rioxarray encodings).
+    if "spatial_ref" in dem.coords:
+        dem = dem.drop_vars("spatial_ref")
+
+    # Assign GeoMAD coords to DEM before merge
+    dem = dem.assign_coords(x=data.x, y=data.y)
+    # Override join prefers GeoMAD coords and metadata
+    return xr.merge([data, dem], join="override")
+
+
 # This is needed to support Source.Coop prefix.
 # PrefixedS3ItemPath needs the key_prefix thing for Source.Coop.
 class PrefixedS3ItemPath(S3ItemPath):
