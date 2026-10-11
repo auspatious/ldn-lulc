@@ -22,10 +22,9 @@ from odc.geo.geom import Geometry
 from odc.geo.geom import box as odc_box
 from odc.stac import load, stac_load
 from planetary_computer import sign_url
-from pystac import Item, ItemCollection
+from pystac import ItemCollection
 from pystac.client import Client
 from rasterio.enums import Resampling
-from rustac import search_sync
 from scipy.ndimage import minimum_filter
 from scipy.spatial.distance import cdist
 from shapely.geometry import box
@@ -35,12 +34,12 @@ from sklearn.preprocessing import StandardScaler
 
 from ldn.aws import s3_client
 from ldn.grids import get_gadm, get_gridspec
+from ldn.lulc import geomad_searcher
 from ldn.random_sampling import random_sampling
 from ldn.raster import calculate_indices, load_dem_terrain, scale_offset_landsat
 from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
     CLASS_ATTR,
-    GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     LULC_DATASET_ID,
     SENSOR,
@@ -53,8 +52,6 @@ from ldn.utils import (
     get_analysis_epsg,
     get_env_var,
     get_public_url_base,
-    get_stac_geoparquet_key,
-    get_stac_geoparquet_url,
     is_bucket_source_coop,
     owner_for_region,
     parse_tile_id,
@@ -698,9 +695,11 @@ def get_buffered_country(
 def get_tile_year_geomad_dem_indices(
     tile_id: str,
     year: str,
+    region: Literal["pacific", "non-pacific"],
     country_wgs84_buffered: gpd.GeoDataFrame,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
-    product_owner: str,
+    product_owner: str | None,
+    single_region: bool,
     bucket: str,
     geomad_version: str,
     sensor: str,
@@ -718,6 +717,7 @@ def get_tile_year_geomad_dem_indices(
         country_wgs84_buffered: Buffered country geometry in WGS84.
         analysis_crs: Projected CRS string (e.g. "EPSG:3832").
         product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
+        single_region: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
         geomad_version: Optional GeoMAD version override.
 
     Returns:
@@ -727,9 +727,11 @@ def get_tile_year_geomad_dem_indices(
     merged = search_and_load_geomad_indices_dem(
         tile_id=tile_id,
         year=year,
+        region=region,
         analysis_crs=analysis_crs,
         geopolygon=country_wgs84_buffered,
         product_owner=product_owner,
+        single_region=single_region,
         geomad_version=geomad_version,
         bucket=bucket,
         sensor=sensor,
@@ -759,6 +761,7 @@ def make_training_data(
     output_bucket: str,
     country_of_interest: dict[str, str],
     product_owner: str | None,
+    single_region_geomad: bool,
     file_prefix: str,
     n: int,
     min_sample_per_class_n: int,
@@ -785,6 +788,7 @@ def make_training_data(
         n: Total number of sample points.
         min_sample_per_class_n: Minimum samples per class.
         product_owner: Optional override for the product owner.
+        single_region_geomad: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
         seed: Random seed for reproducible sampling. None for non-reproducible sampling.
 
     Returns:
@@ -829,9 +833,11 @@ def make_training_data(
     geomad_dem_indices = get_tile_year_geomad_dem_indices(
         tile_id,
         year,
+        region=region,
         country_wgs84_buffered=country_wgs84_buffered,
         analysis_crs=analysis_crs,
-        product_owner=owner,
+        product_owner=product_owner,
+        single_region=single_region_geomad,
         bucket=geomad_bucket,
         geomad_version=geomad_version,
         sensor=sensor,
@@ -897,11 +903,16 @@ def generate_training_data(
     overwrite: bool = typer.Option(False, help="Whether to overwrite existing data in S3"),
     # TODO: product_owner and single_region need to be seperate for geomad and output buckets.
     product_owner: str | None = typer.Option(None, help="Override the default product owner"),
-    # TODO: single_region is not used
-    single_region: bool = typer.Option(
+    single_region_geomad: bool = typer.Option(
         ...,
         help="Whether to use the single region prefix (e.g. 'dep_ls_geomad') "
         "or the generic prefix (e.g. 'ls_geomad') when accessing GeoMAD data.",
+    ),
+    # TODO: use single_region_output
+    single_region_output: bool = typer.Option(
+        ...,
+        help="Whether to use the single region prefix (e.g. 'dep_ls_lulc') "
+        "or the generic prefix (e.g. 'ls_training_data') when accessing output training data.",
     ),
     sensor: str = typer.Option(help="Sensor name (e.g. 'ls')", default=SENSOR),
     split: Literal["train", "test"] = typer.Option(
@@ -979,6 +990,7 @@ def generate_training_data(
         output_bucket,
         country_of_interest,
         product_owner,
+        single_region_geomad,
         file_prefix,
         n,
         min_sample_per_class_n,
@@ -987,33 +999,14 @@ def generate_training_data(
     )
 
 
-def make_geomad_item_id(
-    tile_id: str,
-    sensor: str,
-    year: str,
-    product_owner: str,
-) -> str:
-    """Build the STAC item ID for a GeoMAD tile.
-
-    Args:
-        region: Either "pacific" or "non-pacific".
-        tile_id: Grid tile identifier (e.g. "058_043").
-        year: Year string (e.g. "2020").
-        product_owner: Owner (e.g. "dep" or "ci", or override) for the region.
-
-    Returns:
-        The full STAC item ID string.
-    """
-    prefix = dataset_prefix(product_owner, sensor, GEOMAD_DATASET_ID)
-    return f"{prefix}_{tile_id}_{year}"
-
-
 def search_and_load_geomad_indices_dem(
     tile_id: str,
     year: str,
+    region: Literal["pacific", "non-pacific"],
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     geopolygon: gpd.GeoDataFrame,
-    product_owner: str,
+    product_owner: str | None,
+    single_region: bool,
     bucket: str,
     geomad_version: str,
     sensor: str,
@@ -1027,7 +1020,8 @@ def search_and_load_geomad_indices_dem(
         region: Grid region, either "pacific" or "non-pacific".
         analysis_crs: The expected CRS of the GeoMAD data (either "EPSG:3832" or "EPSG:6933").
         geopolygon: GeoDataFrame used to constrain the stac_load extent (the country geom).
-        product_owner: Owner (e.g. "dep" or "ci", or override).
+        product_owner: Optional owner override (e.g. "dep" or "ci").
+        single_region: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
         bucket: S3 bucket name where the GeoMAD data is stored.
         geomad_version: GeoMAD version string (e.g. "0-3-0").
 
@@ -1035,29 +1029,17 @@ def search_and_load_geomad_indices_dem(
         Merged dataset with GeoMAD bands, spectral indices, elevation,
         slope, and aspect, clipped to the tile proj:bbox.
     """
-    geomad_stac_geoparquet_key = get_stac_geoparquet_key(
-        bucket, product_owner, sensor, GEOMAD_DATASET_ID, geomad_version
-    )
-    geomad_stac_geoparquet_url = get_stac_geoparquet_url(bucket, geomad_stac_geoparquet_key)
-    item_id = make_geomad_item_id(tile_id, sensor, year, product_owner)
-
     logger.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}.")
     if GEOMAD_VERSION != geomad_version:
         logger.info(f"Using overridden GeoMAD version {geomad_version} instead of default {GEOMAD_VERSION}")
     else:
         logger.info(f"Using latest GeoMAD version {GEOMAD_VERSION}")
 
-    geomad_items = search_sync(
-        geomad_stac_geoparquet_url,
-        ids=item_id,
-        # max_items=1
-    )
-    geomad_items = [Item.from_dict(doc) for doc in geomad_items]
-    geomad_items_n = len(geomad_items)
-    logger.info(f"Found {geomad_items_n} GeoMAD items for tile {tile_id} and year {year}")
-
-    if geomad_items_n != 1:
-        raise LdnError(f"Must find exactly 1 GeoMAD item for this tile and year, found {geomad_items_n} instead.")
+    # Raises unless exactly 1 item is found
+    geomad_items = geomad_searcher(
+        bucket, region, product_owner, single_region, sensor, geomad_version, year, parse_tile_id(tile_id)
+    ).search()
+    logger.info(f"Found GeoMAD item {geomad_items[0].id} for tile {tile_id} and year {year}")
 
     proj_bbox = geomad_items[0].properties.get("proj:bbox")
     if proj_bbox is None:

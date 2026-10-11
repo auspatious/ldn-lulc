@@ -86,6 +86,47 @@ class StacGeoparquetSearcher(Searcher):
         return ItemCollection(items)
 
 
+def geomad_searcher(
+    geomad_bucket: str,
+    region: Literal["pacific", "non-pacific"],
+    product_owner: str | None,
+    single_region: bool,
+    sensor: str,
+    geomad_version: str,
+    year: str,
+    tile_id_tuple: tuple[int, int],
+) -> StacGeoparquetSearcher:
+    """Return a searcher for one GeoMAD tile and year, using the same item ID as the GeoMAD writer.
+
+    Args:
+        geomad_bucket: S3 bucket where the GeoMAD data is stored.
+        region: Grid region, either "pacific" or "non-pacific".
+        product_owner: Override the region-derived owner prefix.
+        single_region: If True, search the owner's single region index (e.g. 'dep_ls_geomad'), otherwise the
+            many-region index (e.g. 'ls_geomad').
+        sensor: Sensor name (e.g. 'ls').
+        geomad_version: GeoMAD version string (e.g. "0-3-0").
+        year: Year string (e.g. "2020").
+        tile_id_tuple: Grid tile index (x, y).
+
+    Returns:
+        A StacGeoparquetSearcher for the item.
+    """
+    owner = owner_for_region(region, product_owner)
+    key = get_stac_geoparquet_key(
+        geomad_bucket, owner if single_region else None, sensor, GEOMAD_DATASET_ID, geomad_version
+    )
+    # Same ID construction as the GeoMAD writer (itempath.basename), without its bucket region lookup.
+    item_id = GenericItemPath(
+        sensor=sensor,
+        dataset_id=GEOMAD_DATASET_ID,
+        version=geomad_version,
+        time=year,
+        prefix=owner,
+    ).basename(tile_id_tuple)
+    return StacGeoparquetSearcher(stac_geoparquet_url=get_stac_geoparquet_url(geomad_bucket, key), item_id=item_id)
+
+
 class GeopolygonOdcLoader(OdcLoader):
     """OdcLoader that uses geopolygon instead of geobox for AM-safe loading.
 
@@ -435,11 +476,6 @@ def run_classify_task(
         )
     owner = owner_for_region(region, product_owner)
 
-    geomad_stac_geoparquet_key = get_stac_geoparquet_key(
-        geomad_bucket, product_owner, sensor, GEOMAD_DATASET_ID, geomad_version
-    )
-    geomad_stac_geoparquet_url = get_stac_geoparquet_url(geomad_bucket, geomad_stac_geoparquet_key)
-
     tile_id_tuple = parse_tile_id(tile_id)
 
     analysis_crs = get_analysis_epsg(region)
@@ -490,17 +526,16 @@ def run_classify_task(
         return  # Skip due to no overwrite.
     itempath, stac_creator, writer = components
 
-    # Same ID construction as the GeoMAD writer (itempath.basename), without its bucket region lookup.
-    geomad_item_id = GenericItemPath(
-        sensor=sensor,
-        dataset_id=GEOMAD_DATASET_ID,
-        version=geomad_version,
-        time=year,
-        prefix=owner,
-    ).basename(tile_id_tuple)
-    searcher = StacGeoparquetSearcher(
-        stac_geoparquet_url=geomad_stac_geoparquet_url,
-        item_id=geomad_item_id,
+    # A product owner override means the single region index (e.g. 'dep_ls_geomad').
+    searcher = geomad_searcher(
+        geomad_bucket,
+        region,
+        product_owner,
+        product_owner is not None,
+        sensor,
+        geomad_version,
+        year,
+        tile_id_tuple,
     )
 
     # GeopolygonOdcLoader converts the geobox to an AM-fixed WGS84
