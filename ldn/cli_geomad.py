@@ -175,7 +175,7 @@ def run(
 
     grid = get_gridspec(region=region)
     geobox = grid.tile_geobox(tile_id_tuple)
-    # This owner doesn't respect single_region because geomad always writes to an owner.
+    # GeoMAD output is always written under an owner prefix (e.g. 'dep_ls_geomad').
     owner = owner_for_region(region, product_owner)
 
     if decimated:
@@ -209,7 +209,7 @@ def run(
         year,
         version,
         bucket,
-        owner,  # This owner respects single_region because geomad always writes to an owner.
+        owner,
         GEOMAD_DATASET_ID,
         SOURCE_COOP_PREFIX_GEOMAD if _is_source_coop else None,
         overwrite,

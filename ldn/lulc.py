@@ -439,7 +439,6 @@ def run_classify_task(
         memory_limit: Per-worker Dask memory limit.
         n_workers: Number of Dask workers.
         threads_per_worker: Number of threads per Dask worker.
-        single_region: If True, use the single region prefix (e.g. 'dep_ls_geomad') for GeoMAD data.
         sensor: Sensor to use for LULC classification e.g. 'ls'.
         collection_url_root: Override the default collection URL root for STAC metadata.
     """
@@ -457,7 +456,6 @@ def run_classify_task(
         logger.info(
             f"Overriding the latest LULC prediction version ({LULC_VERSION}) with the specified version ({version})."
         )
-    owner = owner_for_region(region, product_owner)
 
     tile_id_tuple = parse_tile_id(tile_id)
 
@@ -497,7 +495,7 @@ def run_classify_task(
         year,
         version,
         output_bucket,
-        owner,  # This owner respects single_region because geomad always writes to an owner.
+        owner,  # LULC output is always written under an owner prefix (e.g. 'dep_ls_lulc').
         LULC_DATASET_ID,
         SOURCE_COOP_PREFIX_LULC if _is_source_coop else None,
         overwrite,

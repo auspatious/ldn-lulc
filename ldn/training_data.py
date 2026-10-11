@@ -901,8 +901,6 @@ def generate_training_data(
         else ("training_data", training_data_version, None)
     )
 
-    # TODO: Does this exists check work with Source.Coop and normal S3 buckets?
-    # TODO: I think it needs source coop prefix prefixed.
     # Zero padded indexes
     file_prefix = f"{data_dir}/{data_version}/{region}/{tile_id_x:03d}/{tile_id_y:03d}/{year}/samples"
     # Training data shouldn't be written to source.coop, but supported just in case.
