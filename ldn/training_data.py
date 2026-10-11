@@ -758,13 +758,8 @@ def make_training_data(
             geometry=country_wgs84_buffered.intersection(tile_footprint_wgs84.union_all()),
             crs=WGS84,
         )
-        country_wgs84_buffered = country_wgs84_buffered[
-            # TODO: FIX: UserWarning: GeoSeries.notna() previously returned False for both missing (None) and empty
-            # geometries. Now, it only returns False for missing values. Since the calling GeoSeries contains empty
-            # geometries, the result has changed compared to previous versions of GeoPandas.
-            # Given a GeoSeries 's', you can use '~s.is_empty & s.notna()' to get back the old behaviour.
-            country_wgs84_buffered.geometry.notna() & ~country_wgs84_buffered.is_empty
-        ]
+        # Drop parts of the country outside the tile. Intersection gives empty (never missing) geometries.
+        country_wgs84_buffered = country_wgs84_buffered[~country_wgs84_buffered.is_empty]
         if country_wgs84_buffered.empty:
             raise LdnError(f"Country geometry does not overlap tile {tile_id}")
         logger.info("Clipped country geometry to tile footprint")
