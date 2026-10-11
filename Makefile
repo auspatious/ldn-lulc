@@ -1,15 +1,14 @@
-# Here we will store commands for working with the grid, GeoMAD, training data, and ML models.
+# Commands for working with the grids, GeoMAD, training data, and LULC classification.
 
-# Workflow for 2 regions writing to different buckets/paths.
-# Workflow:
+# Workflow for 2 regions writing to different buckets/paths:
 # 1. Run GeoMAD for all tiles/years
 # 2. Run index GeoMAD (STAC-Geoparquet)
-# 3. Make training data
-# 4. Train model (in notebooks/training_data/1_Train_Model.ipynb)
-# 5. Run LULC prediction for all tiles/years
+# 3. Make training data for many tiles for 2020
+# 4. Train a single model for both regions (in notebooks/training_data/1_Train_Model.ipynb)
+# 5. Run LULC classification for all tiles/years
 # 6. Run index LULC (STAC-Geoparquet)
-# 7. Run make-mosaic for geomad and LULC datasets
-# 8. Visualisation app will update automatically when mosaics are updated (unless version/path is different).
+# 7. Create collection JSONs per dataset
+# 8. Visualisation app directly reads STAC-Geoparquets and COGs
 
 # You need to manually set AWS_PROFILE first.
 -include .env
@@ -222,9 +221,9 @@ test-data-generate-non-pacific:
 	done;
 
 
-# ###### LULC Classification/Prediction
+###### LULC Classification/Prediction
 
-# # Predict LULC for the test tiles and one year (2025).
+# Predict LULC
 
 print-tasks-lulc-2000-non-pacific:
 	ldn print-tasks \
@@ -236,7 +235,7 @@ print-tasks-lulc-2000-non-pacific:
 		--bucket dep-public-staging;
 
 
-# # Classify
+# Classify
 lulc-predict-test-pacific:
 	ldn lulc run \
 		--tile-id 028_030 \
@@ -247,6 +246,7 @@ lulc-predict-test-pacific:
 		--geomad-bucket dep-public-staging \
 		--output-bucket dep-public-staging \
 		--product-owner dep \
+		--single-region-geomad \
 		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 		--no-overwrite;
 
@@ -264,26 +264,27 @@ lulc-predict-test-2:
 				--geomad-bucket dep-public-staging \
 				--output-bucket dep-public-staging \
 				--product-owner dep \
+				--single-region-geomad \
 				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 				--no-overwrite;
 		done;
 	done;
 
-# TODO: Use Pacific model?
-# TODO: Read from Source Coop.
-# lulc-predict-test-non-pacific:
-# 	ldn lulc run \
-# 		--tile-id 312_106 \
-# 		--year 2000 \
-# 		--region non-pacific \
-# 		--version 0-0-9 \
-# 		--geomad-version 0-2-1 \
-# 		--geomad-bucket us-west-2.opendata.source.coop \
-# 		--output-bucket dep-public-staging \
-# 				--product-owner TODO? \
-# 		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
-# 		--no-overwrite;
-# # 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+# Non-Pacific GeoMAD is read from the many-region index on Source.Coop. Output goes to ci_ls_lulc.
+lulc-predict-test-non-pacific:
+	ldn lulc run \
+		--tile-id 312_106 \
+		--year 2000 \
+		--region non-pacific \
+		--version 0-0-9 \
+		--geomad-version 0-2-1 \
+		--geomad-bucket us-west-2.opendata.source.coop \
+		--output-bucket dep-public-staging \
+		--product-owner ci \
+		--no-single-region-geomad \
+		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+		--no-overwrite;
+# 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
 
 
 index-lulc-test-dep-staging:

@@ -53,7 +53,7 @@ spec:
       - name: collection-url-root
         # value: "https://stac.staging.digitalearthpacific.io/collections" # DEP Staging
         value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
-        # value: None # For Source Coop, let collection-url-root default.
+        # value: "" # For Source Coop, leave empty so collection-url-root defaults. "None" would be used as the URL.
       - name: overwrite
         value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
       - name: decimated

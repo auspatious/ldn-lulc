@@ -34,6 +34,11 @@ def run(
     geomad_bucket: Annotated[str | None, typer.Option(help="S3 bucket for GeoMAD data.")] = None,
     output_bucket: Annotated[str | None, typer.Option(help="S3 bucket to write LULC data to.")] = None,
     product_owner: str | None = typer.Option(None, help="Override the region-derived owner prefix."),
+    single_region_geomad: bool = typer.Option(
+        ...,
+        help="Whether to read GeoMAD from the owner's single region index (e.g. 'dep_ls_geomad') "
+        "or the many-region index (e.g. 'ls_geomad', as on Source.Coop).",
+    ),
     model_path: str = typer.Option(
         # TODO: defaults to pacific. Later have per region/time period models.
         "https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib",
@@ -90,6 +95,7 @@ def run(
         geomad_bucket=geomad_bucket,
         output_bucket=output_bucket,
         product_owner=product_owner,
+        single_region_geomad=single_region_geomad,
         model_path=model_path,
         xy_chunk_size=xy_chunk_size,
         decimated=decimated,

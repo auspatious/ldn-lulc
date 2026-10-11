@@ -402,6 +402,7 @@ def run_classify_task(
     geomad_bucket: str,
     output_bucket: str,
     product_owner: str | None,
+    single_region_geomad: bool,
     model_path: str,
     xy_chunk_size: int,
     decimated: bool,
@@ -429,6 +430,7 @@ def run_classify_task(
         geomad_bucket: S3 bucket for input GeoMAD source data.
         output_bucket: S3 bucket for output COGs and STAC metadata.
         product_owner: Override the region-derived owner prefix.
+        single_region_geomad: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
         decimated: If True, use 10x lower resolution (for testing).
@@ -507,12 +509,11 @@ def run_classify_task(
         return  # Skip due to no overwrite.
     itempath, stac_creator, writer = components
 
-    # A product owner override means the single region index (e.g. 'dep_ls_geomad').
     searcher = geomad_searcher(
         geomad_bucket,
         region,
         product_owner,
-        product_owner is not None,
+        single_region_geomad,
         sensor,
         geomad_version,
         year,
