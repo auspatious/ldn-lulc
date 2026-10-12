@@ -67,8 +67,12 @@ class StacGeoparquetSearcher(Searcher):
         self._url = stac_geoparquet_url
         self._item_id = item_id
 
-    def search(self) -> ItemCollection:
+    def search(self, area: GeoBox | None = None) -> ItemCollection:
         """Search for the item with the configured ID.
+
+        Args:
+            area: Unused, because the item ID already identifies the tile. Accepted so this matches the dep_tools
+                Searcher interface that AwsStacTask calls with the tile area.
 
         Returns:
             A pystac ItemCollection containing exactly one item.
