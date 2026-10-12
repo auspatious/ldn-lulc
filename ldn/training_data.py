@@ -133,7 +133,7 @@ PACIFIC_TEST_TILES = [
     ("073_019", "pacific", {"Tonga": "TON"}),
     ("089_016", "pacific", {"Cook Islands": "COK"}),
     ("094_035", "pacific", {"Kiribati": "KIR"}),
-    ("104_022", "pacific", {"French Polynesia": "PYF"}),
+    ("104_022", "pacific", {"French Polynesia": "PYF"}),  # TODO: Replace 104_022. It has very few samples. No land?
     ("115_014", "pacific", {"French Polynesia": "PYF"}),
 ]
 NON_PACIFIC_TEST_TILES = [

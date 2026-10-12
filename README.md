@@ -186,7 +186,7 @@ Tiles crossing the antimeridian (e.g. parts of Kiribati, Fiji) are handled speci
 
 https://dep-public-staging.s3.us-west-2.amazonaws.com/index.html?prefix=dep_ls_lulc/test_data/
 
-A frozen set of held-out tiles (`TEST_TILES` in `ldn/training_data.py`) is used only to compare data and model versions. It is never used to train a model, and `--split train` refuses to generate these tiles. It is generated with `make test-data-generate-pacific` and `make test-data-generate-non-pacific` (`--split test`), uses a fixed random seed, is written to `dep_ls_lulc/test_data/{TEST_DATA_VERSION}/{region}/`, and cannot be overwritten. Change `TEST_DATA_VERSION` to deliberately regenerate it. Human or AI validation of the LULC outputs is a separate, later dataset.
+A frozen set of held-out tiles (`TEST_TILES` in `ldn/training_data.py`) is used only to compare data and model versions. It is never used to train a model, and `--split train` refuses to generate these tiles. It is generated with `make test-data-generate` (`--split test`), uses a fixed random seed, is written to `dep_ls_lulc/test_data/{TEST_DATA_VERSION}/{region}/`, and cannot be overwritten. Change `TEST_DATA_VERSION` to deliberately regenerate it. Human or AI validation of the LULC outputs is a separate, later dataset.
 
 How many tiles to use (Pacific has about 517 tiles and non-Pacific about 300, all containing SIDS land):
 
