@@ -171,13 +171,13 @@ Details to come.
 
 #### 3. Validation data
 
-[Collect Earth Online](https://www.collect.earth/) is used to create the validation data. The notebook `notebooks/Generate_Plots_For_Countries.ipynb` is used to create the plots/samples for the CEO project. There is one project per country. These plot files are here for example: notebooks/country_plots/Fiji_plots.shp.zip. To use this file in a CEO project, on the "Project Boundary" tab select "Define AOI from plots file", then on the "Plot Generation" tab upload the zipped shapefile (wait until the `check-plot-file` request succeeds before proceeding), and finally on the "Sample Design" tab select "Center". Do not worry if the map shows a different dataset. This is a CEO bug.
+[Collect Earth Online](https://www.collect.earth/) is used to create the validation data. The notebook `notebooks/Generate_Plots_For_Countries.ipynb` is used to create the plots/samples for the CEO project. There is one project per country. These plot files are stored [here](https://drive.google.com/drive/folders/16HU7nQj0cu45jTSjFXZIJN52mIhRTq8x). To use the zipped shapefile file in a new CEO project for another country, on the "Project Boundary" tab select "Define AOI from plots file", then on the "Plot Generation" tab upload the zipped shapefile (wait until the `check-plot-file` request succeeds in the network tab before proceeding), and finally on the "Sample Design" tab select "Center". Do not worry if the map shows a different dataset. This is a CEO bug.
 
 The Fiji project has ~3500 equal stratified random points (aligned to actual 30m pixel centers):  https://app.collect.earth/project-wizard?projectId=64287&institutionId=7195. We will work with local partners to create the validation dataset from these.
 
-The data that is made in CEO is stored here. As the data is tagged, we can export it and store it here for safekeeping and use in the validation process:
-- notebooks/country_plots/ceo-Fiji-LULC-Validation-plot-data-2026-10-09.csv
-- notebooks/country_plots/ceo-Fiji-LULC-Validation-sample-data-2026-10-09.csv
+The data that is made in CEO is stored in [the same place](https://drive.google.com/drive/folders/16HU7nQj0cu45jTSjFXZIJN52mIhRTq8x). As the data is tagged, we can export it and store it for safekeeping and use in the validation process:
+- ceo-Fiji-LULC-Validation-plot-data-2026-10-09.csv
+- ceo-Fiji-LULC-Validation-sample-data-2026-10-09.csv
 
 #### Model & Prediction
 
