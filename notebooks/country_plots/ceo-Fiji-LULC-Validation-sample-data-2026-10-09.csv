@@ -1,6 +1,9 @@
-﻿plotid,sampleid,sample_internal_id,lon,lat,email,flagged,collection_time,analysis_duration,used_geodash,used_kml,imagery_title,imagery_attributions,sample_geom,confidence,confidence_comment,pl_extrainfo,Primary Level-1 class (largest cover fraction within the 30 m pixel),Wetland Level-2 class,Reason unlabelled,Grassland Level-2 class,Primary class cover within pixel,Secondary class,Confidence in primary class,Temporary condition observed,Notes, Guest Interpreters
-1,1,1170184861,178.09225031227825,-18.40346514072235,,,,,,,,,POINT(178.09225031227825 -18.40346514072235),,,Fiji,,,,,,,,,,
-2,2,1170184862,178.52101619738852,-17.819516664222732,,,,,,,,,POINT(178.52101619738852 -17.819516664222732),,,Fiji,,,,,,,,,,
-3,3,1170184863,178.59782215418076,-18.073335447402695,,,,,,,,,POINT(178.59782215418076 -18.073335447402695),,,Fiji,,,,,,,,,,
+﻿plotid,sampleid,sample_internal_id,lon,lat,email,flagged,collection_time,analysis_duration,used_geodash,used_kml,imagery_title,imagery_attributions,sample_geom,confidence,confidence_comment,pl_extrainfo,Primary Level-1 class (largest cover fraction within the 30 m pixel),Wetland Level-2 class,Reason unlabelled,Grassland Level-2 class,Primary class cover within pixel,Secondary class,Confidence in primary class,Temporary condition observed,Notes,Year of imagery used, Guest Interpreters
+1,1,1170184861,178.09225031227825,-18.40346514072235,,,,,,,,,POINT(178.09225031227825 -18.40346514072235),,,Fiji,,,,,,,,,,,
+2,2,1170184862,178.52101619738852,-17.819516664222732,,,,,,,,,POINT(178.52101619738852 -17.819516664222732),,,Fiji,,,,,,,,,,,
+3,3,1170184863,178.59782215418076,-18.073335447402695,,,,,,,,,POINT(178.59782215418076 -18.073335447402695),,,Fiji,,,,,,,,,,,
+...
+1738,1738,1170186593,-178.4692682746974,-18.443850697881878,will@auspatious.com,false,2026-10-12 23:43,32.0 secs,false,false,CEO: Sentinel 2,,POINT(-178.4692682746974 -18.443850697881878),100,,Fiji,Tree cover,,,,≥75%,None,High,None,,2025,
+...
 
 // TODO: Once this data is collected in CEO, store it here for use in the LULC training/validation.
