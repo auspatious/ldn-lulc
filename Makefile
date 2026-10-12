@@ -25,12 +25,8 @@ LULC_VERSION := $(shell python3 -c "from ldn.utils import LULC_VERSION; print(LU
 
 # Training and test tiles for both regions
 TRAINING_TILES := $(shell python3 -c "from ldn.training_data import TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TRAINING_TILES]))");
-PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.training_data import PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TRAINING_TILES]))");
-NON_PACIFIC_TRAINING_TILES := $(shell python3 -c "from ldn.training_data import NON_PACIFIC_TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in NON_PACIFIC_TRAINING_TILES]))");
 
 TEST_TILES := $(shell python3 -c "from ldn.training_data import TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TEST_TILES]))");
-PACIFIC_TEST_TILES := $(shell python3 -c "from ldn.training_data import PACIFIC_TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in PACIFIC_TEST_TILES]))");
-NON_PACIFIC_TEST_TILES := $(shell python3 -c "from ldn.training_data import NON_PACIFIC_TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in NON_PACIFIC_TEST_TILES]))");
 
 DECIMATED ?= --no-decimated;
 
@@ -132,95 +128,43 @@ make-mosaics-geomad:
 # Geomad version: 0-2-1 in DEP staging and Source.Coop. 0-3-0 in DEP public.
 # TODO: read from prod because it is more up-to-date than staging, should we use prod?
 # Or read from and write to the same env?
-training-data-generate-pacific:
-	for site in $(PACIFIC_TRAINING_TILES) do \
+# Training and test samples for a list of tiles (both regions). Both regions are written under dep_ls_lulc.
+# Pacific GeoMAD is read from dep_ls_geomad. Non-Pacific GeoMAD is read from the many-region index on Source.Coop.
+# Usage: $(call generate_samples,<tiles>,<train|test>)
+define generate_samples
+	for site in $(1) do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
 		region=$$(echo $$site | cut -d: -f2); \
 		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
 		country_code=$$(echo $$site | cut -d: -f4); \
+		if [ "$$region" = pacific ]; then \
+			geomad_args="--geomad-bucket dep-public-staging --single-region-geomad --product-owner-geomad dep"; \
+		else \
+			geomad_args="--geomad-bucket us-west-2.opendata.source.coop --no-single-region-geomad"; \
+		fi; \
 		ldn training generate-training-data \
 			--tile-id $$tile_id \
 			--region $$region \
 			--country-name "$$country_name" \
 			--country-code "$$country_code" \
 			--geomad-version 0-2-1 \
-			--geomad-bucket dep-public-staging \
+			$$geomad_args \
 			--output-bucket dep-public-staging \
-			--single-region-geomad \
-			--single-region-output \
-			--product-owner-geomad dep \
-			--product-owner-output dep \
-			--split train \
-			--no-overwrite; \
-	done;
-# TODO: Do both regions in a single iteration with conditional logic?
-training-data-generate-non-pacific:
-	for site in $(NON_PACIFIC_TRAINING_TILES) do \
-		tile_id=$$(echo $$site | cut -d: -f1); \
-		region=$$(echo $$site | cut -d: -f2); \
-		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
-		country_code=$$(echo $$site | cut -d: -f4); \
-		ldn training generate-training-data \
-			--tile-id $$tile_id \
-			--region $$region \
-			--country-name "$$country_name" \
-			--country-code "$$country_code" \
-			--geomad-version 0-2-1 \
-			--geomad-bucket us-west-2.opendata.source.coop \
-			--output-bucket dep-public-staging \
-			--no-single-region-geomad \
 			--single-region-output \
 			--product-owner-output dep \
-			--split train \
+			--split $(2) \
 			--no-overwrite; \
 	done;
+endef
+
+training-data-generate:
+	$(call generate_samples,$(TRAINING_TILES),train)
 
 #### Make the model using ldn-lulc/notebooks/1_Train_Model.ipynb
 
-# Frozen held-out test set. Never train on this. Uses the same GeoMAD source and output
-# flags as the matching training-data target, so both regions are written under dep_ls_lulc/test_data/.
-test-data-generate-pacific:
-	for site in $(PACIFIC_TEST_TILES) do \
-		tile_id=$$(echo $$site | cut -d: -f1); \
-		region=$$(echo $$site | cut -d: -f2); \
-		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
-		country_code=$$(echo $$site | cut -d: -f4); \
-		ldn training generate-training-data \
-			--tile-id $$tile_id \
-			--region $$region \
-			--country-name "$$country_name" \
-			--country-code "$$country_code" \
-			--geomad-version 0-2-1 \
-			--geomad-bucket dep-public-staging \
-			--output-bucket dep-public-staging \
-			--single-region-geomad \
-			--single-region-output \
-			--product-owner-geomad dep \
-			--product-owner-output dep \
-			--split test \
-			--no-overwrite; \
-	done;
-# TODO: Do both regions in a single iteration with conditional logic?
-test-data-generate-non-pacific:
-	for site in $(NON_PACIFIC_TEST_TILES) do \
-		tile_id=$$(echo $$site | cut -d: -f1); \
-		region=$$(echo $$site | cut -d: -f2); \
-		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
-		country_code=$$(echo $$site | cut -d: -f4); \
-		ldn training generate-training-data \
-			--tile-id $$tile_id \
-			--region $$region \
-			--country-name "$$country_name" \
-			--country-code "$$country_code" \
-			--geomad-version 0-2-1 \
-			--geomad-bucket us-west-2.opendata.source.coop \
-			--output-bucket dep-public-staging \
-			--no-single-region-geomad \
-			--single-region-output \
-			--product-owner-output dep \
-			--split test \
-			--no-overwrite; \
-	done;
+# Frozen held-out test set. Never train on this. Written to dep_ls_lulc/test_data/.
+test-data-generate:
+	$(call generate_samples,$(TEST_TILES),test)
 
 
 ###### LULC Classification
@@ -237,11 +181,19 @@ print-tasks-lulc-2000-non-pacific:
 
 # Classify
 
+# Classify all test tiles for 2020, the year of the test labels (score with notebooks/LULC_Testing/LULC_Test.ipynb).
+# Pacific GeoMAD is read from dep_ls_geomad and written to dep_ls_lulc. Non-Pacific GeoMAD is read from the
+# many-region index on Source.Coop and written to ci_ls_lulc.
 # Use local model to avoid 1GB download from S3 per tile
-lulc-predict-test-pacific:
-	for site in $(PACIFIC_TEST_TILES) do \
+lulc-predict-test:
+	for site in $(TEST_TILES) do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
 		region=$$(echo $$site | cut -d: -f2); \
+		if [ "$$region" = pacific ]; then \
+			geomad_args="--geomad-bucket dep-public-staging --product-owner dep --single-region-geomad"; \
+		else \
+			geomad_args="--geomad-bucket us-west-2.opendata.source.coop --product-owner ci --no-single-region-geomad"; \
+		fi; \
 		for year in 2020; do \
 			ldn lulc run \
 				--tile-id $$tile_id \
@@ -249,47 +201,24 @@ lulc-predict-test-pacific:
 				--region $$region \
 				--version 0-1-1 \
 				--geomad-version 0-2-1 \
-				--geomad-bucket dep-public-staging \
+				$$geomad_args \
 				--output-bucket dep-public-staging \
-				--product-owner dep \
-				--single-region-geomad \
 				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
 				--no-overwrite; \
 		done; \
 	done;
 
-# # Non-Pacific GeoMAD is read from the many-region index on Source.Coop. Output goes to ci_ls_lulc.
-# TODO: update. Probably outdated
-# lulc-predict-test-non-pacific:
-# 	ldn lulc run \
-# 		--tile-id 312_106 \
-# 		--year 2020 \
-# 		--region non-pacific \
-# 		--version 0-1-1 \
-# 		--geomad-version 0-2-1 \
-# 		--geomad-bucket us-west-2.opendata.source.coop \
-# 		--output-bucket dep-public-staging \
-# 		--product-owner ci \
-# 		--no-single-region-geomad \
-# 		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
-# 		--no-overwrite;
-# # 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
-
 
 index-lulc-test-dep-staging:
 	ldn index-to-stac-geoparquet \
 	--dataset lulc \
- 	--geomad-version 0-2-1 \
 	--lulc-version 0-1-1 \
 	--single-region \
 	--product-owner dep \
 	--bucket dep-public-staging;
-
-
-index-lulc-test-ci-staging:
+index-lulc-test-dep-staging-ci:
 	ldn index-to-stac-geoparquet \
 	--dataset lulc \
- 	--geomad-version 0-2-1 \
 	--lulc-version 0-1-1 \
 	--single-region \
 	--product-owner ci \
