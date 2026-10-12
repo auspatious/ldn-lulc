@@ -36,7 +36,7 @@ spec:
       - name: image-tag
         value: "latest"
       - name: lulc-version
-        value: "0-0-9"
+        value: "0-1-1"
       - name: geomad-version
         value: "0-2-1"
       - name: geomad-bucket
@@ -45,8 +45,7 @@ spec:
         value: "dep-public-staging" # DEP Staging
         # value: "dep-public-data" # DEP Prod
       - name: region
-        # Just run Pacific in DEP Argo instance.
-        value: "non-pacific" # "all", "pacific", or "non-pacific"
+        value: "all" # "all", "pacific", or "non-pacific"
       - name: years
         value: "2000,2025"
         # Training data is 2020 but predicting on 2025 because there are less gaps than 2020.
@@ -58,7 +57,8 @@ spec:
         # value: "" # For Source Coop, leave empty so collection-url-root defaults. "None" would be used as the URL.
       - name: product-owner # Owner prefix for the LULC output and the GeoMAD item IDs
         # value: "dep" # Pacific: output to dep_ls_lulc
-        value: "ci" # Non-Pacific: output to ci_ls_lulc
+        # value: "ci" # Non-Pacific: output to ci_ls_lulc
+        value: "" # None for both regions
       - name: single-region-geomad
         # value: "--single-region-geomad" # Pacific: GeoMAD from the dep_ls_geomad index (e.g. dep-public-staging)
         value: "--no-single-region-geomad" # Non-Pacific: GeoMAD from the many-region ls_geomad index on Source.Coop
