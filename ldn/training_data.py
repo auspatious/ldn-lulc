@@ -14,6 +14,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rioxarray  # noqa: F401
+import shapely
 import typer
 import xarray as xr
 from antimeridian import fix_multi_polygon, fix_polygon
@@ -685,6 +686,8 @@ def get_buffered_country(
         # Buffering gives clockwise exteriors. fix_winding=True reverses them as before, without warning.
         fix = fix_multi_polygon if geom.geom_type == "MultiPolygon" else fix_polygon
         fixed = fix(geom, fix_winding=True)
+        # The antimeridian fix can return self-intersecting polygons (e.g. Belize), which break later intersections.
+        fixed = shapely.make_valid(fixed, method="structure", keep_collapsed=False)
         if fixed.geom_type == "MultiPolygon":
             rows.extend(fixed.geoms)  # one row per polygon (east/west of AM)
         else:
