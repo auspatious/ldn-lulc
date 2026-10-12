@@ -16,8 +16,9 @@ import pandas as pd
 import rioxarray  # noqa: F401
 import typer
 import xarray as xr
+from antimeridian import fix_multi_polygon, fix_polygon
 from dep_tools.aws import object_exists
-from dep_tools.utils import _fix_geometry, bbox_across_180, search_across_180
+from dep_tools.utils import bbox_across_180, search_across_180
 from odc.geo.geom import Geometry
 from odc.geo.geom import box as odc_box
 from odc.stac import load, stac_load
@@ -681,7 +682,9 @@ def get_buffered_country(
     # Do antimeridian fix. Needed for Fiji.
     rows = []
     for geom in country_gadm.geometry:
-        fixed = _fix_geometry(geom)
+        # Buffering gives clockwise exteriors. fix_winding=True reverses them as before, without warning.
+        fix = fix_multi_polygon if geom.geom_type == "MultiPolygon" else fix_polygon
+        fixed = fix(geom, fix_winding=True)
         if fixed.geom_type == "MultiPolygon":
             rows.extend(fixed.geoms)  # one row per polygon (east/west of AM)
         else:
