@@ -113,18 +113,18 @@ NON_PACIFIC_TRAINING_TILES = [
 ]
 TRAINING_TILES = PACIFIC_TRAINING_TILES + NON_PACIFIC_TRAINING_TILES
 
-# Held-out tiles used only to compare data and model versions. Never train on these.
+# Held-out tiles used only to compare training data and model versions. Never train on these.
 # Picked with a fixed seed, stratified by country (allocation proportional to the square root of each country's tile
 # count), excluding the training tiles and their 8 neighbours. Roughly 3% of the tiles in each region.
 # TODO: Check these tiles together contain all classes (especially wetland and cropland), swap tiles if not.
 PACIFIC_TEST_TILES = [
-    ("010_047", "pacific", {"Palau": "PLW"}),
-    ("025_064", "pacific", {"Northern Mariana Islands": "MNP"}),
-    ("027_050", "pacific", {"Micronesia": "FSM"}),
+    ("050_041", "pacific", {"Nauru": "NRU"}),
+    ("026_059", "pacific", {"Northern Mariana Islands": "MNP"}),
+    ("040_049", "pacific", {"Micronesia": "FSM"}),
     ("032_028", "pacific", {"Papua New Guinea": "PNG"}),
     ("033_031", "pacific", {"Papua New Guinea": "PNG"}),
     ("050_029", "pacific", {"Solomon Islands": "SLB"}),
-    ("050_052", "pacific", {"Marshall Islands": "MHL"}),
+    ("051_052", "pacific", {"Marshall Islands": "MHL"}),
     ("051_017", "pacific", {"New Caledonia": "NCL"}),
     ("064_032", "pacific", {"Tuvalu": "TUV"}),
     ("067_016", "pacific", {"Fiji": "FJI"}),
