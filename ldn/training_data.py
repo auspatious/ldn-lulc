@@ -146,7 +146,7 @@ NON_PACIFIC_TEST_TILES = [
     ("151_106", "non-pacific", {"Suriname": "SUR"}),
     ("183_123", "non-pacific", {"Cabo Verde": "CPV"}),
     ("193_120", "non-pacific", {"Guinea-Bissau": "GNB"}),
-    ("262_096", "non-pacific", {"Seychelles": "SYC"}),
+    ("264_097", "non-pacific", {"Seychelles": "SYC"}),
     ("281_109", "non-pacific", {"Maldives": "MDV"}),
 ]
 TEST_TILES = PACIFIC_TEST_TILES + NON_PACIFIC_TEST_TILES
