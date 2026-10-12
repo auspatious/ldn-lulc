@@ -122,7 +122,7 @@ make-mosaics-geomad:
 	ldn make-mosaics \
 	--dataset geomad \
 	--geomad-version 0-3-0 \
-	--lulc-version 0-0-9 \
+	--lulc-version 0-1-1 \
 	--single-region \
 	--product-owner dep \
 	--bucket dep-public-staging;
@@ -223,9 +223,7 @@ test-data-generate-non-pacific:
 	done;
 
 
-###### LULC Classification/Prediction
-
-# Predict LULC
+###### LULC Classification
 
 print-tasks-lulc-2000-non-pacific:
 	ldn print-tasks \
@@ -238,62 +236,51 @@ print-tasks-lulc-2000-non-pacific:
 
 
 # Classify
-lulc-predict-test-pacific:
-	ldn lulc run \
-		--tile-id 028_030 \
-		--year 2000 \
-		--region pacific \
-		--version 0-0-9 \
-		--geomad-version 0-2-1 \
-		--geomad-bucket dep-public-staging \
-		--output-bucket dep-public-staging \
-		--product-owner dep \
-		--single-region-geomad \
-		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
-		--no-overwrite;
 
-lulc-predict-test-2:
-	for site in $(PACIFIC_TRAINING_TILES) do \
+# Use local model to avoid 1GB download from S3 per tile
+lulc-predict-test-pacific:
+	for site in $(PACIFIC_TEST_TILES) do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
 		region=$$(echo $$site | cut -d: -f2); \
-		for year in 2000 2025; do \
+		for year in 2020; do \
 			ldn lulc run \
 				--tile-id $$tile_id \
 				--year $$year \
 				--region $$region \
-				--version 0-0-9 \
+				--version 0-1-1 \
 				--geomad-version 0-2-1 \
 				--geomad-bucket dep-public-staging \
 				--output-bucket dep-public-staging \
 				--product-owner dep \
 				--single-region-geomad \
 				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
-				--no-overwrite;
-		done;
+				--no-overwrite; \
+		done; \
 	done;
 
-# Non-Pacific GeoMAD is read from the many-region index on Source.Coop. Output goes to ci_ls_lulc.
-lulc-predict-test-non-pacific:
-	ldn lulc run \
-		--tile-id 312_106 \
-		--year 2000 \
-		--region non-pacific \
-		--version 0-0-9 \
-		--geomad-version 0-2-1 \
-		--geomad-bucket us-west-2.opendata.source.coop \
-		--output-bucket dep-public-staging \
-		--product-owner ci \
-		--no-single-region-geomad \
-		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
-		--no-overwrite;
-# 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
+# # Non-Pacific GeoMAD is read from the many-region index on Source.Coop. Output goes to ci_ls_lulc.
+# TODO: update. Probably outdated
+# lulc-predict-test-non-pacific:
+# 	ldn lulc run \
+# 		--tile-id 312_106 \
+# 		--year 2020 \
+# 		--region non-pacific \
+# 		--version 0-1-1 \
+# 		--geomad-version 0-2-1 \
+# 		--geomad-bucket us-west-2.opendata.source.coop \
+# 		--output-bucket dep-public-staging \
+# 		--product-owner ci \
+# 		--no-single-region-geomad \
+# 		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
+# 		--no-overwrite;
+# # 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
 
 
 index-lulc-test-dep-staging:
 	ldn index-to-stac-geoparquet \
 	--dataset lulc \
  	--geomad-version 0-2-1 \
-	--lulc-version 0-0-9 \
+	--lulc-version 0-1-1 \
 	--single-region \
 	--product-owner dep \
 	--bucket dep-public-staging;
@@ -303,7 +290,7 @@ index-lulc-test-ci-staging:
 	ldn index-to-stac-geoparquet \
 	--dataset lulc \
  	--geomad-version 0-2-1 \
-	--lulc-version 0-0-9 \
+	--lulc-version 0-1-1 \
 	--single-region \
 	--product-owner ci \
 	--bucket dep-public-staging;
@@ -313,7 +300,7 @@ make-mosaics-lulc-dep:
 	ldn make-mosaics \
 	--dataset lulc \
 	--geomad-version 0-2-1 \
-	--lulc-version 0-0-9 \
+	--lulc-version 0-1-1 \
 	--single-region \
 	--product-owner dep \
 	--bucket dep-public-staging;
@@ -322,7 +309,7 @@ make-mosaics-lulc-ci:
 	ldn make-mosaics \
 	--dataset lulc \
 	--geomad-version 0-2-1 \
-	--lulc-version 0-0-9 \
+	--lulc-version 0-1-1 \
 	--single-region \
 	--product-owner ci \
 	--bucket dep-public-staging;
