@@ -129,7 +129,9 @@ make-mosaics-geomad:
 
 
 #### Training Data
-# Geomad version: 0-2-1 in DEP staging and Source.Coop. 0-3-0 in DEP public. # TODO: Should we use prod?
+# Geomad version: 0-2-1 in DEP staging and Source.Coop. 0-3-0 in DEP public.
+# TODO: read from prod because it is more up-to-date than staging, should we use prod?
+# Or read from and write to the same env?
 training-data-generate-pacific:
 	for site in $(PACIFIC_TRAINING_TILES) do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
