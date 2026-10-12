@@ -249,7 +249,7 @@ lulc-predict-test-pacific:
 		--output-bucket dep-public-staging \
 		--product-owner dep \
 		--single-region-geomad \
-		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
 		--no-overwrite;
 
 lulc-predict-test-2:
@@ -267,7 +267,7 @@ lulc-predict-test-2:
 				--output-bucket dep-public-staging \
 				--product-owner dep \
 				--single-region-geomad \
-				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
 				--no-overwrite;
 		done;
 	done;
@@ -284,9 +284,9 @@ lulc-predict-test-non-pacific:
 		--output-bucket dep-public-staging \
 		--product-owner ci \
 		--no-single-region-geomad \
-		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+		--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
 		--no-overwrite;
-# 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib" \
+# 		--model-path="https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-1-1/2020/lulc_random_forest_model_2020.joblib" \
 
 
 index-lulc-test-dep-staging:

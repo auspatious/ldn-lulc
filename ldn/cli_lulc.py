@@ -40,8 +40,7 @@ def run(
         "or the many-region index (e.g. 'ls_geomad', as on Source.Coop).",
     ),
     model_path: str = typer.Option(
-        # TODO: defaults to pacific. Later have per region/time period models.
-        "https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-0-9/pacific/2020/lulc_random_forest_model_pacific_2020.joblib",
+        "https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-1-1/2020/lulc_random_forest_model_2020.joblib",
         help="Model to use for LULC classification.",
     ),
     decimated: bool = typer.Option(
