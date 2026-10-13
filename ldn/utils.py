@@ -72,7 +72,7 @@ SIDS_COUNTRIES_AND_CODES = {
     "Tonga": "TON",
     "Tuvalu": "TUV",
     "Vanuatu": "VUT",
-    # Africa, Indian Ocean, Mediterranean, South China Sea (AIMS)
+    # Africa, Indian Ocean and Singapore
     "Cabo Verde": "CPV",
     "Comoros": "COM",
     "Guinea-Bissau": "GNB",
