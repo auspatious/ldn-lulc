@@ -107,6 +107,8 @@ NON_PACIFIC_TRAINING_TILES = [
     ("193_119", "non-pacific", {"Guinea-Bissau": "GNB"}),  # African
     ("251_088", "non-pacific", {"Comoros": "COM"}),  # probably unique in some way?
     ("185_125", "non-pacific", {"Cabo Verde": "CPV"}),  # bright and bare
+    # TODO: Add 183_126 in v0-1-2. This should improve LULC for worst test tile 183_123.
+    # ("183_126", "non-pacific", {"Cabo Verde": "CPV"}), # very different to 185_125. greener and darker
     ("149_113", "non-pacific", {"Guyana": "GUY"}),  # Forest and big river delta
     ("146_124", "non-pacific", {"Dominica": "DMA"}),  # small Caribbean island
     ("130_127", "non-pacific", {"Jamaica": "JAM"}),  # medium Carribean island
@@ -133,7 +135,9 @@ PACIFIC_TEST_TILES = [
     ("073_019", "pacific", {"Tonga": "TON"}),
     ("089_016", "pacific", {"Cook Islands": "COK"}),
     ("094_035", "pacific", {"Kiribati": "KIR"}),
-    ("104_022", "pacific", {"French Polynesia": "PYF"}),  # TODO: Replace 104_022. It has very few samples. No land?
+    # TODO: Replace 104_022 with 104_023 in v0-1-2 because it has very little land so
+    # few samples so is unsuitable for testing.
+    ("104_022", "pacific", {"French Polynesia": "PYF"}),
     ("115_014", "pacific", {"French Polynesia": "PYF"}),
 ]
 NON_PACIFIC_TEST_TILES = [
