@@ -132,7 +132,7 @@ make-mosaics-geomad:
 # Pacific GeoMAD is read from dep_ls_geomad. Non-Pacific GeoMAD is read from the many-region index on Source.Coop.
 # Usage: $(call generate_samples,<tiles>,<train|test>)
 define generate_samples
-	for site in $(1) do \
+	for site in $(1); do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
 		region=$$(echo $$site | cut -d: -f2); \
 		country_name=$$(echo $$site | cut -d: -f3 | tr '_' ' '); \
@@ -185,8 +185,10 @@ print-tasks-lulc-2000-non-pacific:
 # Pacific GeoMAD is read from dep_ls_geomad and written to dep_ls_lulc. Non-Pacific GeoMAD is read from the
 # many-region index on Source.Coop and written to ci_ls_lulc.
 # Use local model to avoid 1GB download from S3 per tile
+
+# 	for site in $(TEST_TILES) do \
 lulc-predict-test:
-	for site in $(TEST_TILES) do \
+	for site in 050_041:pacific; do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
 		region=$$(echo $$site | cut -d: -f2); \
 		if [ "$$region" = pacific ]; then \
@@ -194,7 +196,7 @@ lulc-predict-test:
 		else \
 			geomad_args="--geomad-bucket us-west-2.opendata.source.coop --product-owner ci --no-single-region-geomad"; \
 		fi; \
-		for year in 2020; do \
+		for year in 2000 2001 2002 2003 2004 2005 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018 2019 2020 2021 2022 2023 2024 2025; do \
 			ldn lulc run \
 				--tile-id $$tile_id \
 				--year $$year \
