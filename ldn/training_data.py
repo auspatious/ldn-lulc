@@ -117,6 +117,9 @@ NON_PACIFIC_TRAINING_TILES = [
 ]
 TRAINING_TILES = PACIFIC_TRAINING_TILES + NON_PACIFIC_TRAINING_TILES
 
+# TODO: Design test (and validation) data to cover all classes and different land cover changes.
+# TODO: Need to know where real change of different types happened. Get this from local experts.
+
 # Held-out tiles used only to compare training data and model versions. Never train on these.
 # Picked with a fixed seed, stratified by country (allocation proportional to the square root of each country's tile
 # count), excluding the training tiles and their 8 neighbours. Roughly 3% of the tiles in each region.
