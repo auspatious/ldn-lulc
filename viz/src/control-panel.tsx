@@ -150,7 +150,12 @@ export function ControlPanel({
       title={
         <Flex align="center" gap="2">
           <a href="https://auspatious.com" target="_blank" rel="noreferrer">
-            <img src="/favicon.svg" alt="Auspatious" width={60} height={66} />
+            <img
+              src={`${import.meta.env.BASE_URL}favicon.svg`}
+              alt="Auspatious"
+              width={60}
+              height={66}
+            />
           </a>
           Small Island developing States Land Use/Land Cover
         </Flex>
