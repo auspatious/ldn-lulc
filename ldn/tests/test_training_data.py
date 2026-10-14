@@ -53,39 +53,44 @@ class TestItemCentroidLon:
 
 
 class TestWcQualityFilter:
-    def _make_ds(self, q1_vals, q2_vals, q3_vals):
-        """Helper to create a dataset with quality bands."""
+    def _make_ds(self, q1_vals, q2_vals):
+        """Helper to create a dataset with the Sentinel-1 and Sentinel-2 count bands."""
         return xr.Dataset(
             {
                 "input_quality.1": xr.DataArray(q1_vals, dims="x"),
                 "input_quality.2": xr.DataArray(q2_vals, dims="x"),
-                "input_quality.3": xr.DataArray(q3_vals, dims="x"),
             }
         )
 
-    def test_all_seasons_valid(self):
-        """Pixel passes when all 3 seasons have observations."""
-        ds = self._make_ds([5, 5], [3, 3], [2, 2])
-        result = _wc_quality_filter(ds)
-        assert result.all()
+    def test_both_counts_positive_passes(self):
+        """Pixel passes with Sentinel-1 and enough Sentinel-2 observations."""
+        ds = self._make_ds([5, 60], [3, 20])
+        assert _wc_quality_filter(ds).all()
 
-    def test_two_seasons_valid(self):
-        """Pixel passes with 2 valid seasons."""
-        ds = self._make_ds([5], [0], [2])
-        result = _wc_quality_filter(ds)
-        assert result.item()
+    def test_zero_s1_fails(self):
+        """Pixel fails with a known Sentinel-1 count of 0."""
+        ds = self._make_ds([0], [3])
+        assert not _wc_quality_filter(ds).item()
 
-    def test_one_season_valid_fails(self):
-        """Pixel fails with only 1 valid season."""
-        ds = self._make_ds([5], [0], [0])
-        result = _wc_quality_filter(ds)
-        assert not result.item()
+    def test_low_s2_fails(self):
+        """Pixel fails with a known Sentinel-2 count of 0 or 1."""
+        ds = self._make_ds([5, 5], [0, 1])
+        assert not _wc_quality_filter(ds).any()
+
+    def test_two_s2_passes(self):
+        """Pixel passes with 2 Sentinel-2 observations."""
+        ds = self._make_ds([5], [2])
+        assert _wc_quality_filter(ds).item()
+
+    def test_undocumented_minus_two_is_nodata(self):
+        """Pixel passes when Sentinel-2 is -2, as in the northern Fiji WorldCover files."""
+        ds = self._make_ds([60], [-2])
+        assert _wc_quality_filter(ds).item()
 
     def test_all_nodata_passes(self):
-        """Pixel passes when all quality bands are nodata (negative)."""
-        ds = self._make_ds([-1], [-1], [-1])
-        result = _wc_quality_filter(ds)
-        assert result.item()
+        """Pixel passes when both bands are nodata (negative)."""
+        ds = self._make_ds([-1], [-1])
+        assert _wc_quality_filter(ds).item()
 
 
 class TestCciQualityFilter:
