@@ -18,8 +18,7 @@
 | flip_rate | more than 4 year-to-year changes |
 | flicker | A -> B -> A where B lasts at most 3 years |
 | implausible | any transition in the implausible list below |
-| low_modal_share | modal class covers less than 80% of years |
-| many_classes | more than 3 distinct classes |
+| long_reversal_or_drift | modal class covers less than 80% of years, more than one change and no flicker |
 
 Implausible transitions: Built-up -> Tree cover, Built-up -> Grassland, Built-up -> Cropland, Built-up -> Wetland, Built-up -> Water, Water -> Built-up, Wetland -> Cropland, Cropland -> Wetland.
 
@@ -27,15 +26,15 @@ Implausible transitions: Built-up -> Tree cover, Built-up -> Grassland, Built-up
 
 A pixel can fail several tests, so the test columns do not sum to `any`. `valid` is the number of pixels tested.
 
-| tile | flip_rate | flicker | implausible | low_modal_share | many_classes | any | valid |
-| - | - | - | - | - | - | - | - |
-| 063_020 | 0 | 0 | 21920 | 824877 | 0 | 824877 | 10064255 |
+| tile | flip_rate | flicker | implausible | long_reversal_or_drift | any | valid |
+| - | - | - | - | - | - | - |
+| 063_020 | 0 | 0 | 21920 | 0 | 21920 | 10064255 |
 
 ## Unstable pixels per tile (% of valid pixels)
 
-| tile | flip_rate | flicker | implausible | low_modal_share | many_classes | any |
-| - | - | - | - | - | - | - |
-| 063_020 | 0.0 | 0.0 | 0.2 | 8.2 | 0.0 | 8.2 |
+| tile | flip_rate | flicker | implausible | long_reversal_or_drift | any |
+| - | - | - | - | - | - |
+| 063_020 | 0.0 | 0.0 | 0.2 | 0.0 | 0.2 |
 
 ## Unstable pixel map
 
@@ -50,6 +49,25 @@ Each A -> B -> A event is found at the first year the pixel returns to A.
 ## Implausible transitions
 
 ![Implausible transitions 063_020](implausible_transitions_063_020.png)
+
+## Class stability
+
+Mean share of years each pixel is in its modal class, grouped by modal class. Lower values mean pixels of that class
+spend more years in other classes, from real change or misclassification.
+
+| tile | class | pixels | mean_modal_share |
+| - | - | - | - |
+| 063_020 | Tree cover | 6125579 | 0.942 |
+| 063_020 | Grassland | 604735 | 0.928 |
+| 063_020 | Cropland | 101823 | 0.894 |
+| 063_020 | Wetland | 33405 | 0.925 |
+| 063_020 | Built-up | 29621 | 0.957 |
+| 063_020 | Water | 3167894 | 1.0 |
+| 063_020 | Other | 1198 | 1.0 |
+
+## Distinct classes per pixel
+
+![Distinct classes 063_020](distinct_classes_063_020.png)
 
 ## Class area time series
 
