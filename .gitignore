@@ -222,14 +222,8 @@ ldn/**/samples.geojson
 ldn/**/samples.csv
 notebooks/training_data/debug/*
 
-# Visualisation Terraform files.
-visualisation/infra/.terraform/
-visualisation/infra/.terraform.lock.hcl
-visualisation/infra/terraform.tfstate*
 tasks.json
 viz/node_modules/
 
 # Model files
 *.joblib
-
-visualisation/static/sids_all_tiles.geojson

@@ -489,7 +489,7 @@ uv add "datacube-compute @ git+https://github.com/auspatious/datacube-compute.gi
 
 ```bash
 uv run pytest                              # all tests
-uv run pytest ldn/tests/test_mosaic.py     # single file
+uv run pytest ldn/tests/test_geomad.py     # single file
 ```
 
 **Pre-commit hooks** (formats Python, YAML, and JSON):
@@ -549,7 +549,7 @@ These workflows use the built image in GHCR, which packages the LDN Python toolk
 
 ---
 
-## Visualisation (TODO: Update to Vite app is WIP)
+## Visualisation (WIP)
 
 TODO: This is close to being redeployed as a Vite app which reads COGs straight from S3 and renders them in the client with Deck.gl-raster.
 
