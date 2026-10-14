@@ -1,84 +1,39 @@
-import { LoadingWidget } from "@deck.gl/widgets";
-import type { MultiCOGLayerProps } from "@developmentseed/deck.gl-geotiff";
-import { MosaicLayer, MultiCOGLayer } from "@developmentseed/deck.gl-geotiff";
-import type { RasterModule } from "@developmentseed/deck.gl-raster";
-import type { Device } from "@luma.gl/core";
-import { DeckGlOverlay, loadingWidgetProps } from "./shared/index.js";
 import "@deck.gl/widgets/stylesheet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Map as MaplibreMap } from "react-map-gl/maplibre";
-import type { DatasetState } from "./control-panel.js";
+import type { RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { MapRef, ViewStateChangeEvent } from "react-map-gl/maplibre";
 import { ControlPanel } from "./control-panel.js";
 import type { DatasetId } from "./datasets.js";
-import { createLulcPaletteTexture, DATASETS } from "./datasets.js";
-import { epsgResolver } from "./proj.js";
-import type { StacItem } from "./stac.js";
+import { DATASETS } from "./datasets.js";
+import { MapPane } from "./map-pane.js";
+import type { DatasetStates, SideConfig } from "./side.js";
+import { DATASET_IDS } from "./side.js";
 import { loadStacItems } from "./stac.js";
-
-// ponytail: fixed per-item cache budgets, so worst-case GPU memory is about
-// MAX_CACHED_ITEMS * MAX_ITEM_CACHE_BYTES. Tune if memory or reloads are a problem.
-/** Items whose opened COGs and textures stay alive after leaving the view. */
-const MAX_CACHED_ITEMS = 50;
-/** Texture budget per item, in bytes. */
-const MAX_ITEM_CACHE_BYTES = 16 * 1024 ** 2;
-
-const DATASET_IDS = Object.keys(DATASETS) as DatasetId[];
-
-/**
- * Per-item MultiCOGLayer `sources` objects. MultiCOGLayer re-opens every COG
- * when `sources` changes identity, so it must be stable across renders.
- */
-const cogSourcesCache = new WeakMap<StacItem, MultiCOGLayerProps["sources"]>();
-
-/** Get the cached MultiCOGLayer sources for an item's bands. */
-function getCogSources(item: StacItem, bands: string[]) {
-  let sources = cogSourcesCache.get(item);
-  if (!sources) {
-    sources = Object.fromEntries(
-      bands.map((band) => [band, { url: item.assets[band] }]),
-    );
-    cogSourcesCache.set(item, sources);
-  }
-  return sources;
-}
+import { SwipeHandle } from "./swipe-handle.js";
+import type { MapView } from "./url-state.js";
+import { readUrlState, writeUrlState } from "./url-state.js";
 
 export default function App() {
-  const [enabled, setEnabled] = useState<Record<DatasetId, boolean>>({
-    geomad: false,
-    lulc: true,
-  });
-  const [opacity, setOpacity] = useState<Record<DatasetId, number>>({
-    geomad: 1,
-    lulc: 1,
-  });
-  const [states, setStates] = useState<
-    Partial<Record<DatasetId, DatasetState>>
-  >({});
-  const [year, setYear] = useState<number | null>(null);
-  const [device, setDevice] = useState<Device | null>(null);
+  // Restore a shared map from the URL on first load.
+  const [initial] = useState(readUrlState);
+  const [left, setLeft] = useState<SideConfig>(initial.left);
+  const [right, setRight] = useState<SideConfig>(initial.right);
+  const [compare, setCompare] = useState(initial.compare);
+  const [split, setSplit] = useState(initial.split);
+  const [states, setStates] = useState<DatasetStates>({});
   // Datasets whose items have been requested, so each parquet is read once.
   const requested = useRef(new Set<DatasetId>());
+  const leftMap = useRef<MapRef>(null);
+  const rightMap = useRef<MapRef>(null);
+  // Set while mirroring a move, so the mirrored map's move event is ignored.
+  const syncing = useRef(false);
 
-  // Built once per device so layer props stay referentially stable.
-  const pipelines = useMemo(() => {
-    if (!device) {
-      return null;
-    }
-    const palette = createLulcPaletteTexture(device);
-    return Object.fromEntries(
-      DATASET_IDS.map((id) => [id, DATASETS[id].renderPipeline(palette)]),
-    ) as Record<DatasetId, RasterModule[]>;
-  }, [device]);
-  const loadingWidget = useMemo(
-    () => new LoadingWidget(loadingWidgetProps),
-    [],
-  );
-
-  // Load each dataset's items the first time it is enabled.
+  // Load each dataset's items the first time either side enables it.
   useEffect(() => {
     for (const id of DATASET_IDS) {
-      if (!enabled[id] || requested.current.has(id)) {
+      const wanted = left.enabled[id] || (compare && right.enabled[id]);
+      if (!wanted || requested.current.has(id)) {
         continue;
       }
       requested.current.add(id);
@@ -93,81 +48,89 @@ export default function App() {
           setStates((s) => ({ ...s, [id]: { status: "error", error } }));
         });
     }
-  }, [enabled]);
+  }, [left, right, compare]);
 
-  const loadedItems = (id: DatasetId) => {
-    const state = states[id];
-    return enabled[id] && state?.status === "loaded" ? state.items : [];
+  /** The left map's current camera, or the initial one before it mounts. */
+  const currentView = (): MapView => {
+    const map = leftMap.current?.getMap();
+    if (!map) {
+      return initial.view;
+    }
+    const { lng, lat } = map.getCenter();
+    return {
+      longitude: lng,
+      latitude: lat,
+      zoom: map.getZoom(),
+      bearing: map.getBearing(),
+      pitch: map.getPitch(),
+    };
   };
 
-  // Union of years across enabled datasets. Default to the latest.
-  const years = [
-    ...new Set(DATASET_IDS.flatMap((id) => loadedItems(id).map((i) => i.year))),
-  ].sort((a, b) => a - b);
-  const activeYear =
-    year !== null && years.includes(year)
-      ? year
-      : (years[years.length - 1] ?? null);
+  /** Save the current view and layer settings to the URL. */
+  const saveUrl = () =>
+    writeUrlState({ view: currentView(), left, right, compare, split });
 
-  const layers = [];
-  for (const id of DATASET_IDS) {
-    const dataset = DATASETS[id];
-    const sources = loadedItems(id).filter((i) => i.year === activeYear);
-    if (sources.length === 0 || !pipelines) {
-      continue;
+  // Rewrite the URL whenever layer or compare settings change.
+  useEffect(saveUrl, [left, right, compare, split]);
+
+  /** Mirror one map's camera onto the other without re-rendering React. */
+  const syncTo =
+    (target: RefObject<MapRef | null>) => (e: ViewStateChangeEvent) => {
+      const map = target.current;
+      if (syncing.current || !map) {
+        return;
+      }
+      const { longitude, latitude, zoom, bearing, pitch } = e.viewState;
+      syncing.current = true;
+      map.jumpTo({ center: [longitude, latitude], zoom, bearing, pitch });
+      syncing.current = false;
+    };
+
+  /** Start the right side from the left side's settings. */
+  const handleCompareChange = (on: boolean) => {
+    if (on) {
+      setRight(left);
     }
-    layers.push(
-      new MosaicLayer<StacItem>({
-        id: `${id}-${activeYear}`,
-        sources,
-        maxCacheSize: MAX_CACHED_ITEMS,
-        renderSource: (item, { signal }) =>
-          new MultiCOGLayer({
-            id: `cog-${item.id}`,
-            sources: getCogSources(item, dataset.bands),
-            composite: dataset.composite,
-            renderPipeline: pipelines[id],
-            epsgResolver,
-            opacity: opacity[id],
-            maxCacheByteSize: MAX_ITEM_CACHE_BYTES,
-            signal,
-          }),
-        // @ts-expect-error beforeId is injected by @deck.gl/mapbox; LayerProps
-        // doesn't know about it.
-        beforeId: "boundary_country_outline",
-      }),
-    );
-  }
+    setCompare(on);
+  };
+
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <MaplibreMap
-        initialViewState={{ longitude: 0, latitude: 0, zoom: 3 }}
-        mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-      >
-        <DeckGlOverlay
-          layers={layers}
-          // With no layers, deck never redraws, so the widget would keep its
-          // initial loading state forever.
-          widgets={
-layers.length > 0 ? [loadingWidget] : []
-          }
-          interleaved
-          onDeviceInitialized={setDevice}
-        />
-      </MaplibreMap>
+      <MapPane
+        side={left}
+        states={states}
+        mapRef={leftMap}
+        initialViewState={initial.view}
+        onMove={syncTo(rightMap)}
+        // Right map moves are mirrored here, so this covers both sides.
+        onMoveEnd={saveUrl}
+      />
+      {compare ? (
+        <>
+          <MapPane
+            side={right}
+            states={states}
+            mapRef={rightMap}
+            // Start where the left map currently is.
+            initialViewState={currentView()}
+            onMove={syncTo(leftMap)}
+            // Clipped areas don't receive pointer events, so each side
+            // drives its own map.
+            style={{ clipPath: `inset(0 0 0 ${split * 100}%)` }}
+          />
+          <SwipeHandle split={split} onChange={setSplit} />
+        </>
+      ) : null}
 
       <ControlPanel
-        enabled={enabled}
-        onEnabledChange={(id, on) => setEnabled((e) => ({ ...e, [id]: on }))}
-        opacity={opacity}
-        onOpacityChange={(id, value) =>
-          setOpacity((o) => ({ ...o, [id]: value }))
-        }
+        left={left}
+        onLeftChange={setLeft}
+        right={right}
+        onRightChange={setRight}
+        compare={compare}
+        onCompareChange={handleCompareChange}
         states={states}
-        years={years}
-        year={activeYear}
-        onYearChange={setYear}
       />
     </div>
   );

@@ -10,28 +10,8 @@ import {
 import type { DatasetId } from "./datasets.js";
 import { DATASETS, LULC_CLASSES } from "./datasets.js";
 import { Field, ControlPanel as SharedControlPanel } from "./shared/index.js";
-import type { StacItem } from "./stac.js";
-
-/** Load state of one dataset's STAC items. */
-export type DatasetState =
-  | { status: "loading" }
-  | { status: "error"; error: string }
-  | { status: "loaded"; items: StacItem[] };
-
-export interface ControlPanelProps {
-  /** Which datasets are shown. */
-  enabled: Record<DatasetId, boolean>;
-  onEnabledChange: (id: DatasetId, enabled: boolean) => void;
-  /** Layer opacity per dataset, 0 to 1. */
-  opacity: Record<DatasetId, number>;
-  onOpacityChange: (id: DatasetId, opacity: number) => void;
-  /** Load state per dataset, absent until first enabled. */
-  states: Partial<Record<DatasetId, DatasetState>>;
-  /** Years available across the enabled datasets. */
-  years: number[];
-  year: number | null;
-  onYearChange: (year: number) => void;
-}
+import type { DatasetState, DatasetStates, SideConfig } from "./side.js";
+import { DATASET_IDS, sideYears } from "./side.js";
 
 /** Describe a dataset's load state and item count for the selected year. */
 function statusText(state: DatasetState | undefined, year: number | null) {
@@ -48,34 +28,31 @@ function statusText(state: DatasetState | undefined, year: number | null) {
   return count > 0 ? `${count} items` : `no data for ${year}`;
 }
 
-/** Dataset toggles and year picker, plus a class legend for LULC. */
-export function ControlPanel({
-  enabled,
-  onEnabledChange,
-  opacity,
-  onOpacityChange,
-  states,
-  years,
-  year,
-  onYearChange,
-}: ControlPanelProps) {
-  // List top-drawn datasets first.
-  const ids = (Object.keys(DATASETS) as DatasetId[]).reverse();
-  return (
-    <SharedControlPanel
-      title={
-        <Flex align="center" gap="2">
-          <a href="https://auspatious.com" target="_blank" rel="noreferrer">
-            <img src="/favicon.svg" alt="Auspatious" width={60} height={66} />
-          </a>
-          Small Island developing States Land Use/Land Cover
-        </Flex>
-      }
-    >
-      <Text mb="3" color="gray.600">
-        Tiles crossing the antimeridian are not shown.
-      </Text>
+interface SideControlsProps {
+  /** Heading above the controls, used in compare mode. */
+  title?: string;
+  side: SideConfig;
+  onChange: (side: SideConfig) => void;
+  states: DatasetStates;
+}
 
+/** Dataset toggles with opacity, and a year picker, for one map side. */
+function SideControls({ title, side, onChange, states }: SideControlsProps) {
+  const { years, activeYear } = sideYears(side, states);
+  // List top-drawn datasets first.
+  const ids = [...DATASET_IDS].reverse();
+  const setEnabled = (id: DatasetId, on: boolean) =>
+    onChange({ ...side, enabled: { ...side.enabled, [id]: on } });
+  const setOpacity = (id: DatasetId, value: number) =>
+    onChange({ ...side, opacity: { ...side.opacity, [id]: value } });
+
+  return (
+    <Box mb="3">
+      {title ? (
+        <Text fontWeight="semibold" mb="2">
+          {title}
+        </Text>
+      ) : null}
       {/* Not a Field: Field shares one input id, which breaks multiple checkboxes. */}
       <Text fontSize="xs" color="gray.600" mb="1.5">
         Datasets
@@ -84,22 +61,22 @@ export function ControlPanel({
         {ids.map((id) => (
           <Box key={id}>
             <Checkbox.Root
-              checked={enabled[id]}
-              onCheckedChange={(d) => onEnabledChange(id, d.checked === true)}
+              checked={side.enabled[id]}
+              onCheckedChange={(d) => setEnabled(id, d.checked === true)}
             >
               <Checkbox.HiddenInput />
               <Checkbox.Control />
               <Checkbox.Label>
                 {DATASETS[id].label}{" "}
                 <Text as="span" color="gray.500">
-                  {enabled[id] ? statusText(states[id], year) : ""}
+                  {side.enabled[id] ? statusText(states[id], activeYear) : ""}
                 </Text>
               </Checkbox.Label>
             </Checkbox.Root>
-            {enabled[id] ? (
+            {side.enabled[id] ? (
               <Flex align="center" gap="3" pl="7" mt="1">
                 <Text fontSize="xs" color="gray.600" whiteSpace="nowrap">
-                  Opacity {Math.round(opacity[id] * 100)}%
+                  Opacity {Math.round(side.opacity[id] * 100)}%
                 </Text>
                 <Slider.Root
                   size="sm"
@@ -107,8 +84,8 @@ export function ControlPanel({
                   min={0}
                   max={1}
                   step={0.01}
-                  value={[opacity[id]]}
-                  onValueChange={(d) => onOpacityChange(id, d.value[0] ?? 1)}
+                  value={[side.opacity[id]]}
+                  onValueChange={(d) => setOpacity(id, d.value[0] ?? 1)}
                   aria-label={[`${DATASETS[id].label} opacity`]}
                 >
                   <Slider.Control>
@@ -129,8 +106,8 @@ export function ControlPanel({
       <Field label="Year">
         <NativeSelect.Root>
           <NativeSelect.Field
-            value={year ?? ""}
-            onChange={(e) => onYearChange(Number(e.target.value))}
+            value={activeYear ?? ""}
+            onChange={(e) => onChange({ ...side, year: Number(e.target.value) })}
           >
             {years.map((y) => (
               <option key={y} value={y}>
@@ -141,8 +118,75 @@ export function ControlPanel({
           <NativeSelect.Indicator />
         </NativeSelect.Root>
       </Field>
+    </Box>
+  );
+}
 
-      {enabled.lulc
+export interface ControlPanelProps {
+  /** The main map, or the left side in compare mode. */
+  left: SideConfig;
+  onLeftChange: (side: SideConfig) => void;
+  /** The right side in compare mode. */
+  right: SideConfig;
+  onRightChange: (side: SideConfig) => void;
+  compare: boolean;
+  onCompareChange: (compare: boolean) => void;
+  states: DatasetStates;
+}
+
+/** Layer controls per side, a compare toggle, and the LULC legend. */
+export function ControlPanel({
+  left,
+  onLeftChange,
+  right,
+  onRightChange,
+  compare,
+  onCompareChange,
+  states,
+}: ControlPanelProps) {
+  const showLegend = left.enabled.lulc || (compare && right.enabled.lulc);
+  return (
+    <SharedControlPanel
+      title={
+        <Flex align="center" gap="2">
+          <a href="https://auspatious.com" target="_blank" rel="noreferrer">
+            <img src="/favicon.svg" alt="Auspatious" width={60} height={66} />
+          </a>
+          Small Island developing States Land Use/Land Cover
+        </Flex>
+      }
+    >
+      <Text mb="3" color="gray.600">
+        Tiles crossing the antimeridian are not shown.
+        The swipe compare duplicates map creation which may impact performance.
+      </Text>
+
+      <Checkbox.Root
+        mb="3"
+        checked={compare}
+        onCheckedChange={(d) => onCompareChange(d.checked === true)}
+      >
+        <Checkbox.HiddenInput />
+        <Checkbox.Control />
+        <Checkbox.Label>Compare (swipe)</Checkbox.Label>
+      </Checkbox.Root>
+
+      <SideControls
+        title={compare ? "Left" : undefined}
+        side={left}
+        onChange={onLeftChange}
+        states={states}
+      />
+      {compare ? (
+        <SideControls
+          title="Right"
+          side={right}
+          onChange={onRightChange}
+          states={states}
+        />
+      ) : null}
+
+      {showLegend
         ? LULC_CLASSES.map(({ value, label, color }) => (
             <Flex key={value} align="center" gap="2">
               <Box w="3" h="3" bg={`rgb(${color.join(",")})`} />
