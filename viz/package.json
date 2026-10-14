@@ -16,8 +16,7 @@
     "@deck.gl/widgets": "^9.4.0",
     "@developmentseed/deck.gl-geotiff": "^0.8.1",
     "@developmentseed/deck.gl-raster": "^0.8.1",
-    "@developmentseed/geotiff": "^0.8.1",
-    "@devseed-ui/collecticons-chakra": "^4.0.0",
+    "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
     "@luma.gl/core": "^9.4.2",
     "@luma.gl/shadertools": "^9.4.2",
     "maplibre-gl": "^5.24.0",
@@ -30,7 +29,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
-    "vite": "^8.3.1",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vite": "^8.3.1"
   }
 }

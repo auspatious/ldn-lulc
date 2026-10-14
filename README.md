@@ -551,7 +551,51 @@ These workflows use the built image in GHCR, which packages the LDN Python toolk
 
 ## Visualisation (WIP)
 
-TODO: This is close to being redeployed as a Vite app which reads COGs straight from S3 and renders them in the client with Deck.gl-raster.
+A Vite app which renders COGs straight from S3 with deck.gl-raster. Lists from STAC-Geoparquets.
+
+### Quickstart
+
+```
+cd viz
+pnpm install
+pnpm dev
+```
+
+
+### Deployment
+
+Not yet deployed. Old titiler version here: https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
+
+
+### Features
+
+This is for agents to read so new features don't cause regressions.
+
+#### Done:
+
+- Display GeoMAD (render bottom) and LULC (render top) COGs directly in the browser. List from STAC-Geoparquet files.
+- Display LULC legend.
+- For each layer have an opacity (slider) and visibility (checkbox) control. Default to both visible, both 100% opaque.
+- Allow user to select year to visualise.
+- Allow user to swipe/compare different datasets and years.
+- Add layer config and map view into url parameters.
+
+#### WIP:
+
+3 main problems:
+1. antimeridian-spanning or am-near COGs render badly or not at all
+2. need to render world copies so we see data on both sides of the antimeridian
+3. geomad needs nearest, not linear sampling so it is crisp and artifact-free.
+
+https://github.com/willjnz/deck.gl-raster/tree/willjnz/frankenstein solves all of the problems, but I don't want to vendor a fork. Wait for main package support.
+
+- Add tiles json layer (above raster data). https://raw.githubusercontent.com/auspatious/ldn-lulc/refs/heads/main/ldn/sids_all_tiles.geojson
+
+- Make the ui nicer. e.g. map controls and logo etc.
+- Add basemap switcher
+
+- Need to add compare slider funcitonality.
+
 
 ---
 

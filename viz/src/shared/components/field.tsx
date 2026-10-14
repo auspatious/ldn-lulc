@@ -11,7 +11,7 @@ export interface FieldProps {
 }
 
 /**
- * A labeled form field — Chakra's `Field` with the example panel's small,
+ * A labeled form field, Chakra's `Field` with the example panel's small,
  * muted label styling.
  */
 export function Field({ label, helperText, children }: FieldProps) {
