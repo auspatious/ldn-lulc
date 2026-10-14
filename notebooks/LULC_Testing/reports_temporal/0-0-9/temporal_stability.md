@@ -39,7 +39,17 @@ A pixel can fail several tests, so the test columns do not sum to `any`. `valid`
 
 ## Unstable pixel map
 
-![Unstable pixels](unstable_pixels.png)
+![Unstable pixels 063_020](unstable_pixels_063_020.png)
+
+## Flicker classes
+
+Each A -> B -> A event is found at the first year the pixel returns to A.
+
+![Flicker classes 063_020](flicker_classes_063_020.png)
+
+## Implausible transitions
+
+![Implausible transitions 063_020](implausible_transitions_063_020.png)
 
 ## Class area time series
 
