@@ -4,7 +4,7 @@ const config = defineConfig({
   theme: {
     tokens: {
       colors: {
-        // deck.gl-raster brand blue. A minimal scale — only the shades the
+        // deck.gl-raster brand blue. A minimal scale, only the shades the
         // shared components reference today. Expand as needed.
         brand: {
           500: { value: "#1e7bc6" },
