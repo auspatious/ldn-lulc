@@ -582,7 +582,7 @@ This is for agents to read so new features don't cause regressions.
 
 
 3 main problems:
-1. antimeridian-spanning or am-near COGs render badly or not at all
+1. antimeridian-spanning or am-near COGs render badly or not at all. This will be released in the next version (v0.8.2?) now that this PR is merged https://github.com/developmentseed/deck.gl-raster/pull/716
 2. need to render world copies so we see data on both sides of the antimeridian
 3. geomad needs nearest, not linear sampling so it is crisp and artifact-free.
 
