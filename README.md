@@ -575,7 +575,7 @@ This is for agents to read so new features don't cause regressions.
 - Display LULC legend.
 - For each layer have an opacity (slider) and visibility (checkbox) control. Default to both visible, both 100% opaque.
 - Allow user to select year to visualise.
-- Allow user to swipe/compare different datasets and years.
+- Allow user to swipe/compare different datasets, versions of the same dataset, and years.
 - Add layer config and map view into url parameters or similar so the map view can be shared.
 - Add tiles json layer (above raster data). https://raw.githubusercontent.com/auspatious/ldn-lulc/refs/heads/main/ldn/sids_all_tiles.geojson
 - Add basemap switcher. Default to positron.
