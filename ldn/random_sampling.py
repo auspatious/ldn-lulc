@@ -146,7 +146,7 @@ def random_sampling(
 
             # # Random sample each classes
             # try:
-            #     sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
+            #     sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)), random_state=seed)
             #     logger.info('Class '+ str(_class)+ ': sampling at '+ str(round(no_of_points)) + ' locations')
             #     samples.append(sample_loc)
 
@@ -191,7 +191,7 @@ def random_sampling(
                     samples.append(sample_loc)
 
                     # try:
-                    #     sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)))
+                    #     sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)),random_state=seed)
                     #     logger.info('Class '+ str(_class)+ ': sampled at '+ str(round(no_of_points)) + ' locations')
                     #     samples.append(sample_loc)
 

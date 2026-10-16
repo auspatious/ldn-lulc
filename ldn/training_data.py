@@ -14,18 +14,19 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rioxarray  # noqa: F401
+import shapely
 import typer
 import xarray as xr
+from antimeridian import fix_multi_polygon, fix_polygon
 from dep_tools.aws import object_exists
-from dep_tools.utils import _fix_geometry, bbox_across_180, search_across_180
+from dep_tools.utils import bbox_across_180, search_across_180
 from odc.geo.geom import Geometry
 from odc.geo.geom import box as odc_box
 from odc.stac import load, stac_load
 from planetary_computer import sign_url
-from pystac import Item, ItemCollection
+from pystac import ItemCollection
 from pystac.client import Client
 from rasterio.enums import Resampling
-from rustac import search_sync
 from scipy.ndimage import minimum_filter
 from scipy.spatial.distance import cdist
 from shapely.geometry import box
@@ -35,15 +36,16 @@ from sklearn.preprocessing import StandardScaler
 
 from ldn.aws import s3_client
 from ldn.grids import get_gadm, get_gridspec
+from ldn.lulc import geomad_searcher
 from ldn.random_sampling import random_sampling
-from ldn.raster import calculate_indices, load_dem_terrain, scale_offset_landsat
+from ldn.raster import make_features
 from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
     CLASS_ATTR,
-    GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     LULC_DATASET_ID,
     SENSOR,
+    TEST_DATA_VERSION,
     TRAINING_DATA_VERSION,
     TRAINING_DATA_YEAR,
     WGS84,
@@ -52,8 +54,6 @@ from ldn.utils import (
     get_analysis_epsg,
     get_env_var,
     get_public_url_base,
-    get_stac_geoparquet_key,
-    get_stac_geoparquet_url,
     is_bucket_source_coop,
     owner_for_region,
     parse_tile_id,
@@ -68,8 +68,9 @@ PC_CLIENT = None
 
 product_nodata_value = 255
 
-# These tiles are representative of different environments e.g. forest, atoll, volcanic, elevated, urban, beach,
-# wetland, grassland, cropland, etc, Give me more if more than 5 are needed
+# TODO: Increase to 20-25 Pacific training tiles
+# These tiles are for training the random forest classifier. They are representative of different environments e.g.
+# forest, atoll, volcanic, elevated, urban, beach, wetland, grassland, cropland, etc.
 PACIFIC_TRAINING_TILES = [
     # Papua New Guinea: Dense tropical rainforest & highland montane forest.
     ("028_030", "pacific", {"Papua New Guinea": "PNG"}),  # Capital city and coast.
@@ -96,10 +97,70 @@ PACIFIC_TRAINING_TILES = [
     # New Caledonia for maquis shrubland / lagoon
     ("050_015", "pacific", {"New Caledonia": "NCL"}),
 ]
-# PACIFIC_TRAINING_TILES are for training and validation.
 
-# MODEL_TEST_TILES = [] # TODO: define this. It should have all classes! Maybe pick 2.
-# Classify using a model (not trained on these). Compare output against LULC agreeing classes.
+# Same as PACIFIC_TRAINING_TILES, but for non-Pacific region
+NON_PACIFIC_TRAINING_TILES = [
+    ("334_092", "non-pacific", {"Timor-Leste": "TLS"}),  # Very remote
+    ("312_105", "non-pacific", {"Singapore": "SGP"}),  # very built-up
+    ("281_104", "non-pacific", {"Maldives": "MDV"}),  # barely islands
+    ("266_077", "non-pacific", {"Mauritius": "MUS"}),  # Indian Ocean
+    ("193_119", "non-pacific", {"Guinea-Bissau": "GNB"}),  # African
+    ("251_088", "non-pacific", {"Comoros": "COM"}),  # probably unique in some way?
+    ("185_125", "non-pacific", {"Cabo Verde": "CPV"}),  # bright and bare
+    # TODO: Add 183_126 in v0-1-2. This should improve LULC for worst test tile 183_123.
+    # ("183_126", "non-pacific", {"Cabo Verde": "CPV"}), # very different to 185_125. greener and darker
+    ("149_113", "non-pacific", {"Guyana": "GUY"}),  # Forest and big river delta
+    ("146_124", "non-pacific", {"Dominica": "DMA"}),  # small Caribbean island
+    ("130_127", "non-pacific", {"Jamaica": "JAM"}),  # medium Carribean island
+    ("126_133", "non-pacific", {"Cuba": "CUB"}),  # big Caribbean isalnd
+    ("119_126", "non-pacific", {"Belize": "BLZ"}),  # non-island in Caribbean
+]
+TRAINING_TILES = PACIFIC_TRAINING_TILES + NON_PACIFIC_TRAINING_TILES
+
+# TODO: Design test (and validation) data to cover all classes and different land cover changes.
+# TODO: Need to know where real change of different types happened. Get this from local experts.
+
+# Held-out tiles used only to compare training data and model versions. Never train on these.
+# Picked with a fixed seed, stratified by country (allocation proportional to the square root of each country's tile
+# count), excluding the training tiles and their 8 neighbours. Roughly 3% of the tiles in each region.
+# TODO: Check these tiles together contain all classes (especially wetland and cropland), swap tiles if not.
+PACIFIC_TEST_TILES = [
+    ("050_041", "pacific", {"Nauru": "NRU"}),
+    ("026_059", "pacific", {"Northern Mariana Islands": "MNP"}),
+    ("040_049", "pacific", {"Micronesia": "FSM"}),
+    ("032_028", "pacific", {"Papua New Guinea": "PNG"}),
+    ("033_031", "pacific", {"Papua New Guinea": "PNG"}),
+    ("050_029", "pacific", {"Solomon Islands": "SLB"}),
+    ("051_052", "pacific", {"Marshall Islands": "MHL"}),
+    ("051_017", "pacific", {"New Caledonia": "NCL"}),
+    ("064_032", "pacific", {"Tuvalu": "TUV"}),
+    ("067_016", "pacific", {"Fiji": "FJI"}),
+    ("073_019", "pacific", {"Tonga": "TON"}),
+    ("089_016", "pacific", {"Cook Islands": "COK"}),
+    ("094_035", "pacific", {"Kiribati": "KIR"}),
+    # TODO: Replace 104_022 with 104_023 in v0-1-2 because it has very little land so
+    # few samples so is unsuitable for testing.
+    ("104_022", "pacific", {"French Polynesia": "PYF"}),
+    ("115_014", "pacific", {"French Polynesia": "PYF"}),
+]
+NON_PACIFIC_TEST_TILES = [
+    ("335_092", "non-pacific", {"Timor-Leste": "TLS"}),
+    ("312_106", "non-pacific", {"Singapore": "SGP"}),
+    ("128_132", "non-pacific", {"Cuba": "CUB"}),
+    ("131_135", "non-pacific", {"Bahamas": "BHS"}),
+    ("133_128", "non-pacific", {"Haiti": "HTI"}),
+    ("138_129", "non-pacific", {"Dominican Republic": "DOM"}),
+    ("149_107", "non-pacific", {"Guyana": "GUY"}),
+    ("151_106", "non-pacific", {"Suriname": "SUR"}),
+    ("183_123", "non-pacific", {"Cabo Verde": "CPV"}),
+    ("193_120", "non-pacific", {"Guinea-Bissau": "GNB"}),
+    ("264_097", "non-pacific", {"Seychelles": "SYC"}),
+    ("281_109", "non-pacific", {"Maldives": "MDV"}),
+]
+TEST_TILES = PACIFIC_TEST_TILES + NON_PACIFIC_TEST_TILES
+
+# Fixed so the test points are identical every time they are generated.
+TEST_DATA_SEED = 0
 
 
 def _get_pc_client():
@@ -396,6 +457,7 @@ def generate_samples(
     geomad_dem_indices: xr.Dataset,
     n: int,
     min_sample_per_class_n: int,
+    seed: int | None,
 ) -> gpd.GeoDataFrame:
     """Generate stratified random samples from the agreement map.
 
@@ -404,6 +466,7 @@ def generate_samples(
         geomad_dem_indices: GeoMAD dataset (used to mask nodata areas).
         n: Total number of sample points.
         min_sample_per_class_n: Minimum samples per class.
+        seed: Random seed for reproducible sampling. None for non-reproducible sampling.
 
     Returns:
         GeoDataFrame of sample points with class labels.
@@ -435,6 +498,7 @@ def generate_samples(
         da=agree_for_sampling,
         n=n,
         min_sample_n=min_sample_per_class_n,
+        seed=seed,
     )
     logger.info(f"Generated {len(samples)} samples")
     return samples
@@ -626,70 +690,17 @@ def get_buffered_country(
     # Do antimeridian fix. Needed for Fiji.
     rows = []
     for geom in country_gadm.geometry:
-        fixed = _fix_geometry(geom)
+        # Buffering gives clockwise exteriors. fix_winding=True reverses them as before, without warning.
+        fix = fix_multi_polygon if geom.geom_type == "MultiPolygon" else fix_polygon
+        fixed = fix(geom, fix_winding=True)
+        # The antimeridian fix can return self-intersecting polygons (e.g. Belize), which break later intersections.
+        fixed = shapely.make_valid(fixed, method="structure", keep_collapsed=False)
         if fixed.geom_type == "MultiPolygon":
             rows.extend(fixed.geoms)  # one row per polygon (east/west of AM)
         else:
             rows.append(fixed)
 
     return gpd.GeoDataFrame(geometry=rows, crs=WGS84)
-
-
-# get_tile_year_geomad_dem_indices uses a lot of the code in search_and_load_geomad_indices_dem,
-# but the training data notebook needs the extra country clipping so they are separate functions.
-def get_tile_year_geomad_dem_indices(
-    tile_id: str,
-    year: str,
-    country_wgs84_buffered: gpd.GeoDataFrame,
-    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
-    product_owner: str,
-    bucket: str,
-    geomad_version: str,
-    sensor: str,
-) -> xr.Dataset:
-    """Load GeoMAD + DEM features for a tile, clipped to buffered country.
-
-    Delegates to search_and_load_geomad_indices_dem for the shared search/load/scale/
-    indices/DEM logic, then clips to the intersection of the tile extent
-    and the buffered country geometry.
-
-    Args:
-        tile_id: Grid tile identifier (e.g. "058_043").
-        year: Temporal filter used for GeoMAD item search (e.g. "2020").
-        region: Grid region, either "pacific" or "non-pacific".
-        country_wgs84_buffered: Buffered country geometry in WGS84.
-        analysis_crs: Projected CRS string (e.g. "EPSG:3832").
-        product_owner: Optional owner override (e.g. "dep" or "ci") for both regions.
-        geomad_version: Optional GeoMAD version override.
-
-    Returns:
-        Dataset with GeoMAD bands, spectral indices, elevation, slope,
-        and aspect, clipped to the tile-country intersection.
-    """
-    merged = search_and_load_geomad_indices_dem(
-        tile_id=tile_id,
-        year=year,
-        analysis_crs=analysis_crs,
-        geopolygon=country_wgs84_buffered,
-        product_owner=product_owner,
-        geomad_version=geomad_version,
-        bucket=bucket,
-        sensor=sensor,
-    )
-
-    # Clip to intersection of tile extent and buffered country
-    country_prj = country_wgs84_buffered.to_crs(merged.odc.geobox.crs)
-    tile_extent = merged.odc.geobox.extent
-    country_union = country_prj.union_all()
-    intersection = tile_extent.geom.intersection(country_union)
-    clip_geom = Geometry(
-        intersection,
-        crs=merged.odc.geobox.crs,
-    )
-    merged = merged.odc.crop(clip_geom, apply_mask=True, all_touched=True)
-
-    logger.info(f"Merged GeoMAD/DEM shape (after country clip): {merged.dims}")
-    return merged
 
 
 def make_training_data(
@@ -700,11 +711,14 @@ def make_training_data(
     geomad_bucket: str,
     output_bucket: str,
     country_of_interest: dict[str, str],
-    product_owner: str | None,
+    product_owner_geomad: str | None,
+    single_region_geomad: bool,
     file_prefix: str,
+    output_key: str,
     n: int,
     min_sample_per_class_n: int,
     sensor: str,
+    seed: int | None,
 ):
     """Generate training data for a single tile and upload to S3 as CSV.
 
@@ -725,7 +739,11 @@ def make_training_data(
             If None, uses all countries in the tile.
         n: Total number of sample points.
         min_sample_per_class_n: Minimum samples per class.
-        product_owner: Optional override for the product owner.
+        product_owner_geomad: Optional owner override for the GeoMAD data (e.g. "dep" or "ci").
+        single_region_geomad: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
+        file_prefix: Local path prefix for the output files, relative to ldn/.
+        output_key: S3 key for the output CSV.
+        seed: Random seed for reproducible sampling. None for non-reproducible sampling.
 
     Returns:
         GeoDataFrame of final training samples.
@@ -736,7 +754,7 @@ def make_training_data(
 
     # Clip country geometry to this tile's footprint before any data loading.
     # Critical for countries like Kiribati that span huge parts of the Pacific —
-    # passing the full country geometry into get_tile_year_geomad_dem_indices
+    # passing the full country geometry into search_and_load_geomad_indices_dem
     # causes Dask to materialise a massive array, leading to OOM kills.
     # Skip for AM-crossing tiles: their WGS84 footprint straddles ±180° and
     # intersects incorrectly with standard WGS84 country geometries.
@@ -753,21 +771,21 @@ def make_training_data(
             geometry=country_wgs84_buffered.intersection(tile_footprint_wgs84.union_all()),
             crs=WGS84,
         )
-        country_wgs84_buffered = country_wgs84_buffered[
-            country_wgs84_buffered.geometry.notna() & ~country_wgs84_buffered.is_empty
-        ]
+        # Drop parts of the country outside the tile. Intersection gives empty (never missing) geometries.
+        country_wgs84_buffered = country_wgs84_buffered[~country_wgs84_buffered.is_empty]
         if country_wgs84_buffered.empty:
             raise LdnError(f"Country geometry does not overlap tile {tile_id}")
         logger.info("Clipped country geometry to tile footprint")
 
     logger.info("Loading GeoMAD, DEM, and indices")
-    owner = owner_for_region(region, product_owner)
-    geomad_dem_indices = get_tile_year_geomad_dem_indices(
+    geomad_dem_indices = search_and_load_geomad_indices_dem(
         tile_id,
         year,
+        region=region,
         country_wgs84_buffered=country_wgs84_buffered,
         analysis_crs=analysis_crs,
-        product_owner=owner,
+        product_owner=product_owner_geomad,
+        single_region=single_region_geomad,
         bucket=geomad_bucket,
         geomad_version=geomad_version,
         sensor=sensor,
@@ -783,7 +801,9 @@ def make_training_data(
     agreed = find_agreement(wc, cci, io_ds)
 
     logger.info("Generating samples")
-    samples = generate_samples(agreed, geomad_dem_indices, n=n, min_sample_per_class_n=min_sample_per_class_n)
+    samples = generate_samples(
+        agreed, geomad_dem_indices, n=n, min_sample_per_class_n=min_sample_per_class_n, seed=seed
+    )
 
     logger.info("Extracting GeoMAD values at sample points")
     samples = extract_geomad_dem_indices_values(samples, geomad_dem_indices, analysis_crs)
@@ -801,8 +821,7 @@ def make_training_data(
     samples.to_csv(f"{out_fname_local}.csv", index=False)
     logger.info(f"Saved training data to {out_fname_local}")
 
-    out_fname_s3 = f"{dataset_prefix(owner, sensor, LULC_DATASET_ID)}/{file_prefix}.csv"
-    _upload_dataframe_csv_to_s3(samples, output_bucket, f"{out_fname_s3}")
+    _upload_dataframe_csv_to_s3(samples, output_bucket, output_key)
 
 
 @cli_training_app.command()
@@ -829,17 +848,29 @@ def generate_training_data(
     n: int = typer.Option(2100, help="Total number of sample points"),
     min_sample_per_class_n: int = typer.Option(300, help="Minimum samples per class"),
     overwrite: bool = typer.Option(False, help="Whether to overwrite existing data in S3"),
-    # TODO: product_owner and single_region need to be seperate for geomad and output buckets.
-    product_owner: str | None = typer.Option(None, help="Override the default product owner"),
-    single_region: bool = typer.Option(
+    product_owner_geomad: str | None = typer.Option(
+        None, help="Override the region's default owner prefix (e.g. 'dep') for the GeoMAD data"
+    ),
+    product_owner_output: str | None = typer.Option(
+        None, help="Override the region's default owner prefix (e.g. 'dep') for the output data"
+    ),
+    single_region_geomad: bool = typer.Option(
         ...,
         help="Whether to use the single region prefix (e.g. 'dep_ls_geomad') "
         "or the generic prefix (e.g. 'ls_geomad') when accessing GeoMAD data.",
     ),
+    single_region_output: bool = typer.Option(
+        ...,
+        help="Whether to use the single region prefix (e.g. 'dep_ls_lulc') "
+        "or the generic prefix (e.g. 'ls_lulc') when writing output training data.",
+    ),
     sensor: str = typer.Option(help="Sensor name (e.g. 'ls')", default=SENSOR),
+    split: Literal["train", "test"] = typer.Option(
+        "train", help="'test' makes the frozen held-out test set (TEST_TILES) instead of training data"
+    ),
 ):
-    """Generate training data for LULC classification.
-    Read geomad from any bucket and write training data to any bucket.
+    """Generate training or test data for LULC classification.
+    Read geomad from any bucket and write the data to any bucket.
     """
     output_bucket = output_bucket or get_env_var("BUCKET")  # Default
     if not output_bucket or not geomad_bucket:
@@ -850,8 +881,8 @@ def generate_training_data(
         f"Creating training data for tile {tile_id}, year {year}, region {region}, geomad_bucket "
         f"{geomad_bucket}, output_bucket {output_bucket}, country {country_of_interest}, n={n}, "
         f"min_sample_per_class_n={min_sample_per_class_n}, overwrite={overwrite}, "
-        f"product_owner={product_owner} training_data_version={training_data_version}, geomad_version={geomad_version},"
-        f" sensor={sensor}"
+        f"product_owner_geomad={product_owner_geomad}, product_owner_output={product_owner_output}, "
+        f"training_data_version={training_data_version}, geomad_version={geomad_version}, sensor={sensor}"
     )
     if training_data_version != TRAINING_DATA_VERSION:
         logger.info(
@@ -865,20 +896,32 @@ def generate_training_data(
 
     tile_id_x, tile_id_y = parse_tile_id(tile_id)
 
-    # TODO: Does this exists check work with Source.Coop and normal S3 buckets?
-    # TODO: I think it needs source coop prefix prefixed.
+    is_test_tile = (tile_id_x, tile_id_y) in {parse_tile_id(t[0]) for t in TEST_TILES}
+    if split == "train" and is_test_tile:
+        raise LdnError(f"Tile {tile_id} is a test tile and must not be used for training data.")
+    if split == "test" and not is_test_tile:
+        raise LdnError(f"Tile {tile_id} is not in TEST_TILES.")
+    if split == "test" and overwrite:
+        raise LdnError("Test data is frozen and cannot be overwritten. Bump TEST_DATA_VERSION to regenerate it.")
+    data_dir, data_version, seed = (
+        ("test_data", TEST_DATA_VERSION, TEST_DATA_SEED)
+        if split == "test"
+        else ("training_data", training_data_version, None)
+    )
+
     # Zero padded indexes
-    file_prefix = f"training_data/{training_data_version}/{region}/{tile_id_x:03d}/{tile_id_y:03d}/{year}/samples"
+    file_prefix = f"{data_dir}/{data_version}/{region}/{tile_id_x:03d}/{tile_id_y:03d}/{year}/samples"
     # Training data shouldn't be written to source.coop, but supported just in case.
     _is_bucket_source_coop = is_bucket_source_coop(output_bucket)
     if _is_bucket_source_coop:
         raise NotImplementedError("Writing training data to Source.Coop is not supported.")
         # file_prefix = f"{SOURCE_COOP_PREFIX_LULC}/{file_prefix}"
-    # logger.info(f"Checking if object exists at s3://{output_bucket}/{file_prefix}")
+    output_owner = owner_for_region(region, product_owner_output) if single_region_output else None
+    output_key = f"{dataset_prefix(output_owner, sensor, LULC_DATASET_ID)}/{file_prefix}.csv"
 
     if not overwrite:
-        logger.info("Overwrite is False, checking for existing object")
-        exists = object_exists(output_bucket, f"{file_prefix}.csv")
+        logger.info(f"Overwrite is False, checking if object exists at s3://{output_bucket}/{output_key}")
+        exists = object_exists(output_bucket, output_key)
         if exists:
             logger.info("Item already exists and overwrite is False. Skipping.")
             return
@@ -895,85 +938,58 @@ def generate_training_data(
         geomad_bucket,
         output_bucket,
         country_of_interest,
-        product_owner,
+        product_owner_geomad,
+        single_region_geomad,
         file_prefix,
+        output_key,
         n,
         min_sample_per_class_n,
         sensor,
+        seed,
     )
-
-
-def make_geomad_item_id(
-    tile_id: str,
-    sensor: str,
-    year: str,
-    product_owner: str,
-) -> str:
-    """Build the STAC item ID for a GeoMAD tile.
-
-    Args:
-        region: Either "pacific" or "non-pacific".
-        tile_id: Grid tile identifier (e.g. "058_043").
-        year: Year string (e.g. "2020").
-        product_owner: Owner (e.g. "dep" or "ci", or override) for the region.
-
-    Returns:
-        The full STAC item ID string.
-    """
-    prefix = dataset_prefix(product_owner, sensor, GEOMAD_DATASET_ID)
-    return f"{prefix}_{tile_id}_{year}"
 
 
 def search_and_load_geomad_indices_dem(
     tile_id: str,
     year: str,
+    region: Literal["pacific", "non-pacific"],
+    country_wgs84_buffered: gpd.GeoDataFrame,
     analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
-    geopolygon: gpd.GeoDataFrame,
-    product_owner: str,
+    product_owner: str | None,
+    single_region: bool,
     bucket: str,
     geomad_version: str,
     sensor: str,
 ) -> xr.Dataset:
     """Search, load, scale, and merge GeoMAD bands, spectral indices, and DEM terrain for a tile.
-        Supports antimeridian-crossing tiles.
+        Supports antimeridian-crossing tiles. The result is clipped to the buffered country.
 
     Args:
         tile_id: Grid tile identifier (e.g. "058_043").
         year: Year string for the GeoMAD item search (e.g. "2020").
         region: Grid region, either "pacific" or "non-pacific".
+        country_wgs84_buffered: Buffered country geometry in WGS84. Constrains the stac_load extent and the final clip.
         analysis_crs: The expected CRS of the GeoMAD data (either "EPSG:3832" or "EPSG:6933").
-        geopolygon: GeoDataFrame used to constrain the stac_load extent (the country geom).
-        product_owner: Owner (e.g. "dep" or "ci", or override).
+        product_owner: Optional owner override (e.g. "dep" or "ci").
+        single_region: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
         bucket: S3 bucket name where the GeoMAD data is stored.
         geomad_version: GeoMAD version string (e.g. "0-3-0").
 
     Returns:
         Merged dataset with GeoMAD bands, spectral indices, elevation,
-        slope, and aspect, clipped to the tile proj:bbox.
+        slope, and aspect, clipped to the intersection of the tile proj:bbox and the buffered country.
     """
-    geomad_stac_geoparquet_key = get_stac_geoparquet_key(
-        bucket, product_owner, sensor, GEOMAD_DATASET_ID, geomad_version
-    )
-    geomad_stac_geoparquet_url = get_stac_geoparquet_url(bucket, geomad_stac_geoparquet_key)
-    item_id = make_geomad_item_id(tile_id, sensor, year, product_owner)
-
     logger.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}.")
     if GEOMAD_VERSION != geomad_version:
         logger.info(f"Using overridden GeoMAD version {geomad_version} instead of default {GEOMAD_VERSION}")
     else:
         logger.info(f"Using latest GeoMAD version {GEOMAD_VERSION}")
 
-    geomad_items = search_sync(
-        geomad_stac_geoparquet_url,
-        ids=item_id,
-        # max_items=1
-    )
-    geomad_items = [Item.from_dict(doc) for doc in geomad_items]
-    geomad_items_n = len(geomad_items)
-    logger.info(f"Found {geomad_items_n} GeoMAD items for tile {tile_id} and year {year}")
-
-    if geomad_items_n != 1:
-        raise LdnError(f"Must find exactly 1 GeoMAD item for this tile and year, found {geomad_items_n} instead.")
+    # Raises unless exactly 1 item is found
+    geomad_items = geomad_searcher(
+        bucket, region, product_owner, single_region, sensor, geomad_version, year, parse_tile_id(tile_id)
+    ).search()
+    logger.info(f"Found GeoMAD item {geomad_items[0].id} for tile {tile_id} and year {year}")
 
     proj_bbox = geomad_items[0].properties.get("proj:bbox")
     if proj_bbox is None:
@@ -988,7 +1004,7 @@ def search_and_load_geomad_indices_dem(
         chunks={},  # Force lazy.
         bands=bands,
         fail_on_error=True,  # We control the data so it shouldn't fail.
-        geopolygon=geopolygon,
+        geopolygon=country_wgs84_buffered,
     )
 
     if geomad_ds.odc.crs.epsg != int(analysis_crs.split(":")[1]):
@@ -1012,18 +1028,19 @@ def search_and_load_geomad_indices_dem(
     geomad_ds = geomad_ds.odc.crop(tile_geom, apply_mask=False)
     logger.info(f"GeoMAD shape (after tile clip): {geomad_ds.dims}")
 
-    geomad_ds = scale_offset_landsat(geomad_ds)
-    geomad_ds = calculate_indices(geomad_ds)
-
-    dem_ds = load_dem_terrain(geomad_ds.odc.geobox)
-
-    # Drop spatial_ref from DEM to avoid WKT encoding conflicts with
-    # the GeoMAD spatial_ref during merge (odc vs rioxarray encodings).
-    if "spatial_ref" in dem_ds.coords:
-        dem_ds = dem_ds.drop_vars("spatial_ref")
-
-    # Fix: assign GeoMAD coords to DEM before merge
-    dem_ds = dem_ds.assign_coords(x=geomad_ds.x, y=geomad_ds.y)
-    merged = xr.merge([geomad_ds, dem_ds], join="override")  # Override prefers geomad
+    merged = make_features(geomad_ds)
     logger.info(f"Merged GeoMAD+DEM shape: {merged.dims}")
+
+    # Clip to intersection of tile extent and buffered country
+    country_prj = country_wgs84_buffered.to_crs(merged.odc.geobox.crs)
+    tile_extent = merged.odc.geobox.extent
+    country_union = country_prj.union_all()
+    intersection = tile_extent.geom.intersection(country_union)
+    clip_geom = Geometry(
+        intersection,
+        crs=merged.odc.geobox.crs,
+    )
+    merged = merged.odc.crop(clip_geom, apply_mask=True, all_touched=True)
+
+    logger.info(f"Merged GeoMAD/DEM shape (after country clip): {merged.dims}")
     return merged

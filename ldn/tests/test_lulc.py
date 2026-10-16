@@ -1,7 +1,8 @@
 import numpy as np
 import xarray as xr
 
-from ldn.lulc import calculate_indices, scale_offset_landsat
+from ldn.lulc import geomad_searcher
+from ldn.raster import calculate_indices, scale_offset_landsat
 
 
 def _make_dataset(values: dict[str, list[list[float]]]) -> xr.Dataset:
@@ -197,6 +198,27 @@ class TestCalculateIndices:
         for band in ["ndvi", "ndwi", "mndwi", "ndti", "bsi"]:
             val = float(result[band].values[0, 0])
             assert np.isnan(val), f"{band} = {val}"
+
+
+class TestGeomadSearcher:
+    def test_many_region_index_with_padded_id(self):
+        """Non-Pacific tile without single region uses the combined index and the writer's zero-padded ID."""
+        searcher = geomad_searcher(
+            "us-west-2.opendata.source.coop", "non-pacific", "ci", False, "ls", "0-2-1", "2020", (334, 92)
+        )
+        assert searcher._item_id == "ci_ls_geomad_334_092_2020"
+        assert searcher._url.endswith("/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet")
+
+    def test_single_region_index(self):
+        """Single region uses the owner's own index."""
+        searcher = geomad_searcher("dep-public-staging", "pacific", "dep", True, "ls", "0-2-1", "2020", (58, 43))
+        assert searcher._item_id == "dep_ls_geomad_058_043_2020"
+        assert searcher._url.endswith("/dep-public-staging/dep_ls_geomad/0-2-1/dep_ls_geomad.parquet")
+
+    def test_region_owner_when_no_override(self):
+        """Without an owner override the ID uses the region's owner."""
+        searcher = geomad_searcher("dep-public-staging", "non-pacific", None, False, "ls", "0-2-1", "2020", (119, 126))
+        assert searcher._item_id == "ci_ls_geomad_119_126_2020"
 
 
 # TODO: Add tests for further prediction functions.

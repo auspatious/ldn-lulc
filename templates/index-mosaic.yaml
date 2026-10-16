@@ -41,7 +41,7 @@ spec:
       - name: geomad-version # Needed for both datasets because LULC depends on GeoMAD.
         value: "0-3-0"
       - name: lulc-version # Only needed for LULC dataset.
-        value: "0-0-4"
+        value: "0-0-9"
       - name: bucket
         # value: "dep-public-staging" # DEP Staging
         value: "dep-public-data" # DEP Prod
@@ -50,11 +50,11 @@ spec:
         # value: "--no-single-region" # For places with both regions e.g. Source Coop.
       - name: product-owner
         value: "dep" # required if single-region is true
-        # value: None # Leave as None for non-single-region products e.g. Source Coop.
+        # value: "" # Leave empty for non-single-region products e.g. Source Coop. "None" would be used as an owner.
       - name: collection-url-root
         # value: "https://stac.staging.digitalearthpacific.io/collections" # DEP Staging
         value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
-        # value: None # For Source Coop, let collection-url-root default.
+        # value: "" # For Source Coop, leave empty so collection-url-root defaults. "None" would be used as the URL.
 
   templates:
     - name: workflow-entrypoint

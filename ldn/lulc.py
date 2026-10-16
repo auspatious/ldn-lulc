@@ -11,6 +11,7 @@ import typer
 import xarray as xr
 from dask.distributed import Client as DaskClient
 from dep_tools.loaders import OdcLoader
+from dep_tools.namers import GenericItemPath
 from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
 from dep_tools.utils import _fix_geometry
@@ -26,11 +27,8 @@ from ldn.aws import configure_s3_access_profile, s3_client
 from ldn.grids import get_gridspec
 from ldn.raster import (
     GEOMAD_BANDS,
-    PrefixedS3ItemPath,
     build_pipeline_components,
-    calculate_indices,
-    load_dem_terrain,
-    scale_offset_landsat,
+    make_features,
 )
 from ldn.raster import (
     AwsStacTask as Task,
@@ -69,8 +67,12 @@ class StacGeoparquetSearcher(Searcher):
         self._url = stac_geoparquet_url
         self._item_id = item_id
 
-    def search(self) -> ItemCollection:
+    def search(self, area: GeoBox | None = None) -> ItemCollection:
         """Search for the item with the configured ID.
+
+        Args:
+            area: Unused, because the item ID already identifies the tile. Accepted so this matches the dep_tools
+                Searcher interface that AwsStacTask calls with the tile area.
 
         Returns:
             A pystac ItemCollection containing exactly one item.
@@ -84,6 +86,47 @@ class StacGeoparquetSearcher(Searcher):
             raise LdnError(f"Expected exactly one GeoMAD item with ID {self._item_id}, but found {len(items)}")
 
         return ItemCollection(items)
+
+
+def geomad_searcher(
+    geomad_bucket: str,
+    region: Literal["pacific", "non-pacific"],
+    product_owner: str | None,
+    single_region: bool,
+    sensor: str,
+    geomad_version: str,
+    year: str,
+    tile_id_tuple: tuple[int, int],
+) -> StacGeoparquetSearcher:
+    """Return a searcher for one GeoMAD tile and year, using the same item ID as the GeoMAD writer.
+
+    Args:
+        geomad_bucket: S3 bucket where the GeoMAD data is stored.
+        region: Grid region, either "pacific" or "non-pacific".
+        product_owner: Override the region-derived owner prefix.
+        single_region: If True, search the owner's single region index (e.g. 'dep_ls_geomad'), otherwise the
+            many-region index (e.g. 'ls_geomad').
+        sensor: Sensor name (e.g. 'ls').
+        geomad_version: GeoMAD version string (e.g. "0-3-0").
+        year: Year string (e.g. "2020").
+        tile_id_tuple: Grid tile index (x, y).
+
+    Returns:
+        A StacGeoparquetSearcher for the item.
+    """
+    owner = owner_for_region(region, product_owner)
+    key = get_stac_geoparquet_key(
+        geomad_bucket, owner if single_region else None, sensor, GEOMAD_DATASET_ID, geomad_version
+    )
+    # Same ID construction as the GeoMAD writer (itempath.basename), without its bucket region lookup.
+    item_id = GenericItemPath(
+        sensor=sensor,
+        dataset_id=GEOMAD_DATASET_ID,
+        version=geomad_version,
+        time=year,
+        prefix=owner,
+    ).basename(tile_id_tuple)
+    return StacGeoparquetSearcher(stac_geoparquet_url=get_stac_geoparquet_url(geomad_bucket, key), item_id=item_id)
 
 
 class GeopolygonOdcLoader(OdcLoader):
@@ -269,7 +312,7 @@ class LulcProcessor(Processor):
         self._year = year
 
     def process(self, input_data: xr.Dataset) -> xr.Dataset:
-        """Scale GeoMAD, compute indices, load DEM terrain, and predict/classify LULC.
+        """Build features (scaled GeoMAD, indices, DEM terrain) and predict/classify LULC.
 
         Args:
             input_data: GeoMAD dataset loaded by GeopolygonOdcLoader.
@@ -277,23 +320,8 @@ class LulcProcessor(Processor):
         Returns:
             Dataset with classification and probability bands.
         """
-        self._logger.info("Scaling GeoMAD reflectance bands")
-        scaled_data = scale_offset_landsat(input_data).squeeze(drop=True)
-
-        self._logger.info("Computing spectral indices")
-        data = calculate_indices(scaled_data)
-
-        # Load DEM aligned to the GeoMAD grid
-        self._logger.info("Loading DEM and computing terrain features")
-        dem_ds = load_dem_terrain(data.odc.geobox)
-
-        # Drop spatial_ref from DEM to avoid WKT encoding conflicts with
-        # the GeoMAD spatial_ref during merge (odc vs rioxarray encodings).
-        if "spatial_ref" in dem_ds.coords:
-            dem_ds = dem_ds.drop_vars("spatial_ref")
-
-        # Merge GeoMAD features with terrain features (override join to prefer GeoMAD coords and metadata).
-        merged = xr.merge([data, dem_ds], join="override")
+        self._logger.info("Building features: scaling GeoMAD, computing indices, loading DEM terrain")
+        merged = make_features(input_data)
 
         # Compute before prediction: sklearn needs eager numpy arrays,
         # and sending a large lazy graph to Dask workers is slow.
@@ -378,6 +406,7 @@ def run_classify_task(
     geomad_bucket: str,
     output_bucket: str,
     product_owner: str | None,
+    single_region_geomad: bool,
     model_path: str,
     xy_chunk_size: int,
     decimated: bool,
@@ -405,6 +434,7 @@ def run_classify_task(
         geomad_bucket: S3 bucket for input GeoMAD source data.
         output_bucket: S3 bucket for output COGs and STAC metadata.
         product_owner: Override the region-derived owner prefix.
+        single_region_geomad: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
         model_path: Path or URL to the trained joblib model.
         xy_chunk_size: Chunk size in pixels for lazy loading.
         decimated: If True, use 10x lower resolution (for testing).
@@ -415,7 +445,6 @@ def run_classify_task(
         memory_limit: Per-worker Dask memory limit.
         n_workers: Number of Dask workers.
         threads_per_worker: Number of threads per Dask worker.
-        single_region: If True, use the single region prefix (e.g. 'dep_ls_geomad') for GeoMAD data.
         sensor: Sensor to use for LULC classification e.g. 'ls'.
         collection_url_root: Override the default collection URL root for STAC metadata.
     """
@@ -433,12 +462,6 @@ def run_classify_task(
         logger.info(
             f"Overriding the latest LULC prediction version ({LULC_VERSION}) with the specified version ({version})."
         )
-    owner = owner_for_region(region, product_owner)
-
-    geomad_stac_geoparquet_key = get_stac_geoparquet_key(
-        geomad_bucket, product_owner, sensor, GEOMAD_DATASET_ID, geomad_version
-    )
-    geomad_stac_geoparquet_url = get_stac_geoparquet_url(geomad_bucket, geomad_stac_geoparquet_key)
 
     tile_id_tuple = parse_tile_id(tile_id)
 
@@ -478,7 +501,7 @@ def run_classify_task(
         year,
         version,
         output_bucket,
-        owner,  # This owner respects single_region because geomad always writes to an owner.
+        owner,  # LULC output is always written under an owner prefix (e.g. 'dep_ls_lulc').
         LULC_DATASET_ID,
         SOURCE_COOP_PREFIX_LULC if _is_source_coop else None,
         overwrite,
@@ -490,18 +513,15 @@ def run_classify_task(
         return  # Skip due to no overwrite.
     itempath, stac_creator, writer = components
 
-    # Same ID construction as the GeoMAD writer (itempath.basename).
-    geomad_itempath = PrefixedS3ItemPath(
-        prefix=owner,
-        bucket=geomad_bucket,
-        sensor=sensor,
-        dataset_id=GEOMAD_DATASET_ID,
-        version=geomad_version,
-        time=year,
-    )
-    searcher = StacGeoparquetSearcher(
-        stac_geoparquet_url=geomad_stac_geoparquet_url,
-        item_id=geomad_itempath.basename(tile_id_tuple),
+    searcher = geomad_searcher(
+        geomad_bucket,
+        region,
+        product_owner,
+        single_region_geomad,
+        sensor,
+        geomad_version,
+        year,
+        tile_id_tuple,
     )
 
     # GeopolygonOdcLoader converts the geobox to an AM-fixed WGS84

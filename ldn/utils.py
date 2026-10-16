@@ -72,7 +72,7 @@ SIDS_COUNTRIES_AND_CODES = {
     "Tonga": "TON",
     "Tuvalu": "TUV",
     "Vanuatu": "VUT",
-    # Africa, Indian Ocean, Mediterranean, South China Sea (AIMS)
+    # Africa, Indian Ocean and Singapore
     "Cabo Verde": "CPV",
     "Comoros": "COM",
     "Guinea-Bissau": "GNB",
@@ -90,10 +90,14 @@ ALL_COUNTRIES = {**SIDS_COUNTRIES_AND_CODES, **DEP_COUNTRIES_AND_CODES}
 NON_DEP_COUNTRIES = {k: v for k, v in SIDS_COUNTRIES_AND_CODES.items() if k not in DEP_COUNTRIES_AND_CODES}
 
 
+# TODO: Is GEOMAD_VERSION 0-3-0 very different to 0-2-1? We have either of those in the different environments.
 GEOMAD_VERSION = "0-3-0"
-LULC_VERSION = "0-0-9"
-MODEL_VERSION = "0-0-9"
-TRAINING_DATA_VERSION = "0-0-9"
+# Keep LULC, MODEL, and TRAINING_DATA versions aligned.
+LULC_VERSION = "0-1-1"
+MODEL_VERSION = "0-1-1"
+TRAINING_DATA_VERSION = "0-1-1"
+# TEST_DATA_VERSION is independent of the other versions and should not change.
+TEST_DATA_VERSION = "0-0-1"
 
 PACIFIC_OWNER = "dep"
 NON_PACIFIC_OWNER = "ci"
