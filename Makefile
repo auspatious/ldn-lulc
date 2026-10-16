@@ -114,16 +114,6 @@ collection-geomad-test-dep-staging:
 	--has-stac-api;
 
 
-make-mosaics-geomad:
-	ldn make-mosaics \
-	--dataset geomad \
-	--geomad-version 0-3-0 \
-	--lulc-version 0-1-1 \
-	--single-region \
-	--product-owner dep \
-	--bucket dep-public-staging;
-
-
 #### Training Data
 # Geomad version: 0-2-1 in DEP staging and Source.Coop. 0-3-0 in DEP public.
 # TODO: read from prod because it is more up-to-date than staging, should we use prod?
@@ -221,25 +211,6 @@ index-lulc-test-dep-staging:
 index-lulc-test-dep-staging-ci:
 	ldn index-to-stac-geoparquet \
 	--dataset lulc \
-	--lulc-version 0-1-1 \
-	--single-region \
-	--product-owner ci \
-	--bucket dep-public-staging;
-
-
-make-mosaics-lulc-dep:
-	ldn make-mosaics \
-	--dataset lulc \
-	--geomad-version 0-2-1 \
-	--lulc-version 0-1-1 \
-	--single-region \
-	--product-owner dep \
-	--bucket dep-public-staging;
-
-make-mosaics-lulc-ci:
-	ldn make-mosaics \
-	--dataset lulc \
-	--geomad-version 0-2-1 \
 	--lulc-version 0-1-1 \
 	--single-region \
 	--product-owner ci \
