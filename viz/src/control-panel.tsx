@@ -3,10 +3,13 @@ import {
   Checkbox,
   Flex,
   NativeSelect,
+  SimpleGrid,
   Slider,
   Stack,
+  StackSeparator,
   Text,
 } from "@chakra-ui/react";
+import type { ReactNode } from "react";
 import type { DatasetId } from "./datasets.js";
 import { DATASETS, LULC_CLASSES } from "./datasets.js";
 import { Field, ControlPanel as SharedControlPanel } from "./shared/index.js";
@@ -28,16 +31,54 @@ function statusText(state: DatasetState | undefined, year: number | null) {
   return count > 0 ? `${count} items` : `no data for ${year}`;
 }
 
+/** Small uppercase heading for a panel section. */
+function SectionHeading({ children }: { children: ReactNode }) {
+  return (
+    <Text
+      fontSize="xs"
+      fontWeight="semibold"
+      textTransform="uppercase"
+      letterSpacing="wider"
+      color="gray.500"
+      mb="2"
+    >
+      {children}
+    </Text>
+  );
+}
+
+/** Bordered block holding one side's controls in compare mode. */
+function SideBlock({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <Box
+      borderWidth="1px"
+      borderColor="gray.200"
+      borderRadius="md"
+      p="3"
+      bg="gray.50"
+    >
+      <Text fontWeight="semibold" mb="2">
+        {title}
+      </Text>
+      {children}
+    </Box>
+  );
+}
+
 interface SideControlsProps {
-  /** Heading above the controls, used in compare mode. */
-  title?: string;
   side: SideConfig;
   onChange: (side: SideConfig) => void;
   states: DatasetStates;
 }
 
 /** Dataset toggles with opacity, and a year picker, for one map side. */
-function SideControls({ title, side, onChange, states }: SideControlsProps) {
+function SideControls({ side, onChange, states }: SideControlsProps) {
   const { years, activeYear } = sideYears(side, states);
   // List top-drawn datasets first.
   const ids = [...DATASET_IDS].reverse();
@@ -47,12 +88,7 @@ function SideControls({ title, side, onChange, states }: SideControlsProps) {
     onChange({ ...side, opacity: { ...side.opacity, [id]: value } });
 
   return (
-    <Box mb="3">
-      {title ? (
-        <Text fontWeight="semibold" mb="2">
-          {title}
-        </Text>
-      ) : null}
+    <Box>
       {/* Not a Field: Field shares one input id, which breaks multiple checkboxes. */}
       <Text fontSize="xs" color="gray.600" mb="1.5">
         Datasets
@@ -107,7 +143,9 @@ function SideControls({ title, side, onChange, states }: SideControlsProps) {
         <NativeSelect.Root>
           <NativeSelect.Field
             value={activeYear ?? ""}
-            onChange={(e) => onChange({ ...side, year: Number(e.target.value) })}
+            onChange={(e) =>
+              onChange({ ...side, year: Number(e.target.value) })
+            }
           >
             {years.map((y) => (
               <option key={y} value={y}>
@@ -161,39 +199,63 @@ export function ControlPanel({
         </Flex>
       }
     >
-      <Checkbox.Root
-        mb="3"
-        checked={compare}
-        onCheckedChange={(d) => onCompareChange(d.checked === true)}
-      >
-        <Checkbox.HiddenInput />
-        <Checkbox.Control />
-        <Checkbox.Label>Compare (swipe)</Checkbox.Label>
-      </Checkbox.Root>
+      <Stack gap="4" separator={<StackSeparator />}>
+        {compare ? null : (
+          <Box>
+            <SectionHeading>Layers</SectionHeading>
+            <SideControls side={left} onChange={onLeftChange} states={states} />
+          </Box>
+        )}
 
-      <SideControls
-        title={compare ? "Left" : undefined}
-        side={left}
-        onChange={onLeftChange}
-        states={states}
-      />
-      {compare ? (
-        <SideControls
-          title="Right"
-          side={right}
-          onChange={onRightChange}
-          states={states}
-        />
-      ) : null}
+        <Box>
+          <SectionHeading>Compare</SectionHeading>
+          <Checkbox.Root
+            checked={compare}
+            onCheckedChange={(d) => onCompareChange(d.checked === true)}
+          >
+            <Checkbox.HiddenInput />
+            <Checkbox.Control />
+            <Checkbox.Label>Swipe between two maps</Checkbox.Label>
+          </Checkbox.Root>
+          {compare ? (
+            <Stack gap="3" mt="3">
+              <SideBlock title="Left">
+                <SideControls
+                  side={left}
+                  onChange={onLeftChange}
+                  states={states}
+                />
+              </SideBlock>
+              <SideBlock title="Right">
+                <SideControls
+                  side={right}
+                  onChange={onRightChange}
+                  states={states}
+                />
+              </SideBlock>
+            </Stack>
+          ) : null}
+        </Box>
 
-      {showLegend
-        ? LULC_CLASSES.map(({ value, label, color }) => (
-            <Flex key={value} align="center" gap="2">
-              <Box w="3" h="3" bg={`rgb(${color.join(",")})`} />
-              <Text fontSize="sm">{label}</Text>
-            </Flex>
-          ))
-        : null}
+        {showLegend ? (
+          <Box>
+            <SectionHeading>Land Use/Land Cover</SectionHeading>
+            <SimpleGrid columns={2} gapX="3" gapY="1.5">
+              {LULC_CLASSES.map(({ value, label, color }) => (
+                <Flex key={value} align="center" gap="2">
+                  <Box
+                    w="3"
+                    h="3"
+                    flexShrink="0"
+                    bg={`rgb(${color.join(",")})`}
+                  />
+                  <Text>{label}</Text>
+                </Flex>
+              ))}
+            </SimpleGrid>
+          </Box>
+        ) : null}
+      </Stack>
     </SharedControlPanel>
   );
 }
