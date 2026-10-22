@@ -54,12 +54,10 @@ export async function loadStacItems(
       year(datetime)::INTEGER AS year, ${hrefs}
     FROM read_parquet([${files}])
   `);
-  return table
-    .toArray()
-    .map((row) => ({
-      id: row.id,
-      bbox: [row.xmin, row.ymin, row.xmax, row.ymax],
-      year: row.year,
-      assets: Object.fromEntries(bands.map((b) => [b, row[b]])),
-    }));
+  return table.toArray().map((row) => ({
+    id: row.id,
+    bbox: [row.xmin, row.ymin, row.xmax, row.ymax],
+    year: row.year,
+    assets: Object.fromEntries(bands.map((b) => [b, row[b]])),
+  }));
 }

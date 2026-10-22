@@ -1,9 +1,14 @@
-import { ExampleProvider } from "./shared/index.js";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.js";
+import { ExampleProvider } from "./shared/index.js";
 
-createRoot(document.getElementById("root")!).render(
+const root = document.getElementById("root");
+if (!root) {
+  throw new Error("Missing #root element");
+}
+
+createRoot(root).render(
   <StrictMode>
     <ExampleProvider>
       <App />
