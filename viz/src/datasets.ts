@@ -70,7 +70,7 @@ type Dataset = {
 /** Render order: later entries draw on top. */
 export const DATASETS: Record<DatasetId, Dataset> = {
   geomad: {
-    label: "GeoMAD true colour",
+    label: "GeoMAD true colour (v0.2.1, Source.Coop)",
     urls: [
       "https://data.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet",
     ],
@@ -85,7 +85,7 @@ export const DATASETS: Record<DatasetId, Dataset> = {
     ],
   },
   lulc: {
-    label: "Land use / land cover",
+    label: "Land use / land cover (v0.0.9, DEP Staging)",
     urls: [
       "https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/0-0-9/dep_ls_lulc.parquet",
       "https://dep-public-staging.s3.us-west-2.amazonaws.com/ci_ls_lulc/0-0-9/ci_ls_lulc.parquet",
