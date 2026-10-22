@@ -556,10 +556,11 @@ A Vite app which renders COGs straight from S3 with deck.gl-raster. Lists from S
 ### Quickstart
 
 ```
-cd viz
-pnpm install
-pnpm dev
+make viz-install
+make viz-dev
 ```
+
+Also `make viz-build`, `make viz-lint` (formatting, lint and types) and `make viz-format`.
 
 
 ### Deployment
