@@ -215,3 +215,10 @@ index-lulc-test-dep-staging-ci:
 	--single-region \
 	--product-owner ci \
 	--bucket dep-public-staging;
+
+# Visualisation app: check formatting, lint and types, or apply fixes.
+viz-lint:
+	cd viz && pnpm lint && pnpm typecheck;
+
+viz-format:
+	cd viz && pnpm format;
