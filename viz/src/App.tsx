@@ -1,8 +1,7 @@
 import "@deck.gl/widgets/stylesheet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
-import type { MapRef, ViewStateChangeEvent } from "react-map-gl/maplibre";
+import type { MapRef } from "react-map-gl/maplibre";
 import { ControlPanel } from "./control-panel.js";
 import type { DatasetId } from "./datasets.js";
 import { DATASETS } from "./datasets.js";
@@ -24,10 +23,7 @@ export default function App() {
   const [states, setStates] = useState<DatasetStates>({});
   // Datasets whose items have been requested, so each parquet is read once.
   const requested = useRef(new Set<DatasetId>());
-  const leftMap = useRef<MapRef>(null);
-  const rightMap = useRef<MapRef>(null);
-  // Set while mirroring a move, so the mirrored map's move event is ignored.
-  const syncing = useRef(false);
+  const mapRef = useRef<MapRef>(null);
 
   // Load each dataset's items the first time either side enables it.
   useEffect(() => {
@@ -50,9 +46,9 @@ export default function App() {
     }
   }, [left, right, compare]);
 
-  /** The left map's current camera, or the initial one before it mounts. */
+  /** The map's current camera, or the initial one before it mounts. */
   const currentView = (): MapView => {
-    const map = leftMap.current?.getMap();
+    const map = mapRef.current?.getMap();
     if (!map) {
       return initial.view;
     }
@@ -73,19 +69,6 @@ export default function App() {
   // Rewrite the URL whenever layer or compare settings change.
   useEffect(saveUrl, [left, right, compare, split]);
 
-  /** Mirror one map's camera onto the other without re-rendering React. */
-  const syncTo =
-    (target: RefObject<MapRef | null>) => (e: ViewStateChangeEvent) => {
-      const map = target.current;
-      if (syncing.current || !map) {
-        return;
-      }
-      const { longitude, latitude, zoom, bearing, pitch } = e.viewState;
-      syncing.current = true;
-      map.jumpTo({ center: [longitude, latitude], zoom, bearing, pitch });
-      syncing.current = false;
-    };
-
   /** Start the right side from the left side's settings. */
   const handleCompareChange = (on: boolean) => {
     if (on) {
@@ -98,30 +81,15 @@ export default function App() {
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <MapPane
-        side={left}
+        left={left}
+        right={compare ? right : null}
+        split={split}
         states={states}
-        mapRef={leftMap}
+        mapRef={mapRef}
         initialViewState={initial.view}
-        onMove={syncTo(rightMap)}
-        // Right map moves are mirrored here, so this covers both sides.
         onMoveEnd={saveUrl}
       />
-      {compare ? (
-        <>
-          <MapPane
-            side={right}
-            states={states}
-            mapRef={rightMap}
-            // Start where the left map currently is.
-            initialViewState={currentView()}
-            onMove={syncTo(leftMap)}
-            // Clipped areas don't receive pointer events, so each side
-            // drives its own map.
-            style={{ clipPath: `inset(0 0 0 ${split * 100}%)` }}
-          />
-          <SwipeHandle split={split} onChange={setSplit} />
-        </>
-      ) : null}
+      {compare ? <SwipeHandle split={split} onChange={setSplit} /> : null}
 
       <ControlPanel
         left={left}
