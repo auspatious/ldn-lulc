@@ -564,29 +564,29 @@ pnpm dev
 
 ### Deployment
 
-Not yet deployed. Old titiler version here: https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
+Deployed to GitHub Pages at https://auspatious.github.io/ldn-lulc/ by `.github/workflows/viz-deploy-pages.yml` on push to `main` (and to `add-deck.gl-raster-app` until it is merged). Old titiler version here: https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
 
 
 ### Features
 
 This is for agents to read so new features don't cause regressions.
 
+Implemented:
+
 - Display GeoMAD (render bottom) and LULC (render top) COGs directly in the browser. List from STAC-Geoparquet files.
 - Display LULC legend.
 - For each layer have an opacity (slider) and visibility (checkbox) control. Default to both visible, both 100% opaque.
 - Allow user to select year to visualise.
-- Allow user to swipe/compare different datasets, versions of the same dataset, and years.
-- Add layer config and map view into url parameters or similar so the map view can be shared.
-- Add tiles json layer (above raster data). https://raw.githubusercontent.com/auspatious/ldn-lulc/refs/heads/main/ldn/sids_all_tiles.geojson
+- Allow user to swipe/compare different datasets, versions of the same dataset, and years. Both sides render on one map, each clipped to its side of the divider.
+- Store layer config and map view in URL parameters so the map view can be shared.
+- Render with nearest resampling so pixels show real data values.
+- Render COGs that span or are near the antimeridian (deck.gl-raster 0.9).
+
+Planned:
+
+- Add tiles GeoJSON layer (above raster data). https://raw.githubusercontent.com/auspatious/ldn-lulc/refs/heads/main/ldn/sids_all_tiles.geojson
 - Add basemap switcher. Default to positron.
 
-
-3 main problems:
-1. antimeridian-spanning or am-near COGs render badly or not at all. This will be released in the next version (v0.8.2?) now that this PR is merged https://github.com/developmentseed/deck.gl-raster/pull/716
-2. need to render world copies so we see data on both sides of the antimeridian
-3. geomad needs nearest, not linear sampling so it is crisp and artifact-free.
-
-https://github.com/willjnz/deck.gl-raster/tree/willjnz/frankenstein solves all of the problems, but I don't want to vendor a fork. Wait for main package support.
 
 ---
 
