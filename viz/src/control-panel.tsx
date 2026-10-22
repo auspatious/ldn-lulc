@@ -161,11 +161,6 @@ export function ControlPanel({
         </Flex>
       }
     >
-      <Text mb="3" color="gray.600">
-        Tiles crossing the antimeridian are not shown.
-        The swipe compare duplicates map creation which may impact performance.
-      </Text>
-
       <Checkbox.Root
         mb="3"
         checked={compare}
