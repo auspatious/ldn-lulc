@@ -74,7 +74,11 @@ export function ControlPanel({ title, children }: ControlPanelProps) {
         color="gray.600"
       >
         Data and app produced by{" "}
-        <ExternalLink href="https://auspatious.com">Auspatious</ExternalLink>
+        <ExternalLink href="https://auspatious.com">Auspatious</ExternalLink>.{" "}
+        See the code here:{" "}
+        <ExternalLink href="https://github.com/auspatious/ldn-lulc">
+          GitHub
+        </ExternalLink>
       </Box>
     </Box>
   );
