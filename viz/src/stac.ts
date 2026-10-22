@@ -14,14 +14,6 @@ export type StacItem = {
   assets: Record<string, string>;
 };
 
-/**
- * Whether an item is in Pacific (DEP) grid column 066, which crosses the
- * antimeridian. Ids look like `dep_ls_lulc_066_045_2000`.
- */
-function isAntimeridianTile(id: string): boolean {
-  return id.startsWith("dep_") && id.split("_").slice(-3)[0] === "066";
-}
-
 let connection: Promise<duckdb.AsyncDuckDBConnection> | null = null;
 
 /** Start DuckDB once and share the connection. */
@@ -64,7 +56,6 @@ export async function loadStacItems(
   `);
   return table
     .toArray()
-    .filter((row) => !isAntimeridianTile(row.id))
     .map((row) => ({
       id: row.id,
       bbox: [row.xmin, row.ymin, row.xmax, row.ymax],
