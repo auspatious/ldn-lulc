@@ -106,6 +106,8 @@ export function MapPane({
             sources: getCogSources(item, dataset.bands),
             composite: dataset.composite,
             renderPipeline: pipelines[id],
+            // Show source pixels values.
+            resampling: "nearest",
             epsgResolver,
             opacity: side.opacity[id],
             maxCacheByteSize: MAX_ITEM_CACHE_BYTES,
