@@ -1,6 +1,6 @@
 import "@deck.gl/widgets/stylesheet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MapRef } from "react-map-gl/maplibre";
 import { ControlPanel } from "./control-panel.js";
 import type { DatasetId } from "./datasets.js";
@@ -12,6 +12,22 @@ import { loadStacItems } from "./stac.js";
 import { SwipeHandle } from "./swipe-handle.js";
 import type { MapView } from "./url-state.js";
 import { readUrlState, writeUrlState } from "./url-state.js";
+
+/** A map's current camera, or `fallback` before the map mounts. */
+function mapView(ref: MapRef | null, fallback: MapView): MapView {
+  const map = ref?.getMap();
+  if (!map) {
+    return fallback;
+  }
+  const { lng, lat } = map.getCenter();
+  return {
+    longitude: lng,
+    latitude: lat,
+    zoom: map.getZoom(),
+    bearing: map.getBearing(),
+    pitch: map.getPitch(),
+  };
+}
 
 export default function App() {
   // Restore a shared map from the URL on first load.
@@ -46,28 +62,21 @@ export default function App() {
     }
   }, [left, right, compare]);
 
-  /** The map's current camera, or the initial one before it mounts. */
-  const currentView = (): MapView => {
-    const map = mapRef.current?.getMap();
-    if (!map) {
-      return initial.view;
-    }
-    const { lng, lat } = map.getCenter();
-    return {
-      longitude: lng,
-      latitude: lat,
-      zoom: map.getZoom(),
-      bearing: map.getBearing(),
-      pitch: map.getPitch(),
-    };
-  };
-
   /** Save the current view and layer settings to the URL. */
-  const saveUrl = () =>
-    writeUrlState({ view: currentView(), left, right, compare, split });
+  const saveUrl = useCallback(
+    () =>
+      writeUrlState({
+        view: mapView(mapRef.current, initial.view),
+        left,
+        right,
+        compare,
+        split,
+      }),
+    [initial.view, left, right, compare, split],
+  );
 
   // Rewrite the URL whenever layer or compare settings change.
-  useEffect(saveUrl, [left, right, compare, split]);
+  useEffect(saveUrl, [saveUrl]);
 
   /** Start the right side from the left side's settings. */
   const handleCompareChange = (on: boolean) => {
@@ -76,7 +85,6 @@ export default function App() {
     }
     setCompare(on);
   };
-
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>

@@ -15,10 +15,7 @@ export interface ControlPanelProps {
  * Manages its own open/closed state. The body collapses; the
  * Auspatious footer stays visible.
  */
-export function ControlPanel({
-  title,
-  children,
-}: ControlPanelProps) {
+export function ControlPanel({ title, children }: ControlPanelProps) {
   const [open, setOpen] = useState(true);
 
   return (

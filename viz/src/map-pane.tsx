@@ -61,7 +61,8 @@ function sideLayers(
     return [];
   }
   const { activeYear } = sideYears(side, states);
-  const clip = split === null ? {} : { extensions: CLIP[name], splitPosition: split };
+  const clip =
+    split === null ? {} : { extensions: CLIP[name], splitPosition: split };
   return DATASET_IDS.flatMap((id) => {
     const dataset = DATASETS[id];
     const sources = sideItems(side, states, id).filter(

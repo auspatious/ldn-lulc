@@ -22,6 +22,7 @@ export function SwipeHandle({ split, onChange }: SwipeHandleProps) {
   }
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: a draggable divider is an interactive separator, which <hr> can't be.
     <div
       onPointerDown={handlePointerDown}
       role="separator"
