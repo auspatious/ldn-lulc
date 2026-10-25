@@ -30,11 +30,11 @@ importers:
         specifier: ^9.4.0
         version: 9.4.0(@deck.gl/core@9.4.0(@luma.gl/webgpu@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2))))(@luma.gl/core@9.4.2)
       '@developmentseed/deck.gl-geotiff':
-        specifier: 0.9.0-beta.3
-        version: 0.9.0-beta.3(b8ece34f8876508c37cea05e3dbc6c63)
+        specifier: ^0.9.0
+        version: 0.9.0(b8ece34f8876508c37cea05e3dbc6c63)
       '@developmentseed/deck.gl-raster':
-        specifier: 0.9.0-beta.3
-        version: 0.9.0-beta.3(ba6493d6c2b33b6c3a3e2fdfbb3d228c)
+        specifier: ^0.9.0
+        version: 0.9.0(4c895b067fb91b3750b434b2d450187b)
       '@luma.gl/core':
         specifier: ^9.4.2
         version: 9.4.2
@@ -278,11 +278,11 @@ packages:
       '@deck.gl/core': ~9.4.0
       '@luma.gl/core': ~9.4.0
 
-  '@developmentseed/affine@0.9.0-beta.3':
-    resolution: {integrity: sha512-dbI7lxHhmfI0K8+Ru8Jxr844gqUcVh6vcJFNuM2X6DzhwcYCQp+EtY409Gk6o90UDrlHzTb79lLoDgX8hHDvKw==}
+  '@developmentseed/affine@0.9.0':
+    resolution: {integrity: sha512-b0lvZLBm/J9R36eIaLTaePxbfUXKQ8yhTtBDscSSxrCsqqgikMbHXNfqmdNHTcZ/7V3q59HCIx4UrU1TEQBwig==}
 
-  '@developmentseed/deck.gl-geotiff@0.9.0-beta.3':
-    resolution: {integrity: sha512-IWEydLBbzXCBIiQISPfUtL+1ns7yHSoBY8oDz+dwfvKr1CwIh3xK66xnmmXutPN2/irjdFbnfIQcv64m7CWnFw==}
+  '@developmentseed/deck.gl-geotiff@0.9.0':
+    resolution: {integrity: sha512-+twy5waw5vZbNY/Qecmvk8eNyYhV2VgXZ1M/46UDnAtMxUx1tehJIi17CDMpgU6lq82qZ/URV+egmFThQOA1KQ==}
     peerDependencies:
       '@deck.gl/core': ^9.4.0
       '@deck.gl/geo-layers': ^9.4.0
@@ -290,31 +290,31 @@ packages:
       '@deck.gl/mesh-layers': ^9.4.0
       '@luma.gl/core': ^9.4.0
 
-  '@developmentseed/deck.gl-raster@0.9.0-beta.3':
-    resolution: {integrity: sha512-/UyoHk3Bf0ld4qlABVNmbY5+gG/NliB3+G27DltdljSX1TQUIofr6PyRsutsWYS0wn0g/r/rFVZDkjpSq7Wvyg==}
+  '@developmentseed/deck.gl-raster@0.9.0':
+    resolution: {integrity: sha512-zXZ+W60Dk6mOsfMFD+S37Rm6Q1PWg67NA5LgH6i1cFOTb9fMPVOQb6AyaurWAucQUSwmiLpvG3OnEvBiF8ayCw==}
     peerDependencies:
       '@deck.gl/core': ^9.4.0
       '@deck.gl/geo-layers': ^9.4.0
       '@deck.gl/layers': ^9.4.0
       '@deck.gl/mesh-layers': ^9.4.0
-      '@developmentseed/morecantile': ^0.9.0-beta.3
+      '@developmentseed/morecantile': ^0.9.0
       '@luma.gl/core': ^9.4.0
       '@luma.gl/shadertools': ^9.4.0
 
-  '@developmentseed/geotiff@0.9.0-beta.3':
-    resolution: {integrity: sha512-CDz40TGN3PTLlazkn1uOvqBWUwGCcm+gCwCNCbvJch9xO3mt8/PrnLX93aDa5sJGge3ofl5Aebcm/ienI3Z98Q==}
+  '@developmentseed/geotiff@0.9.0':
+    resolution: {integrity: sha512-DPdHLjVQOaPHDqfwYl0Yb+3kuXKo8GXmStQW/Xgtl8VY+Intlk6AAWGkTAR49qUOA1bt19Gt/yxldoyhDQkpVw==}
 
   '@developmentseed/lzw-tiff-decoder@0.2.2':
     resolution: {integrity: sha512-bsBIdV1LyqcrtnYtIYu3C/297X2wxeYkmmhHzR02OOX823sGxT8GLGdenTmwoXvNWkozk3b+ptXtJeSUmNPaTA==}
 
-  '@developmentseed/morecantile@0.9.0-beta.3':
-    resolution: {integrity: sha512-Zz5K1YxIHotxvBk+28zlbUGHU4LvibWPvGE5+wzOPJOtEORwVlS0ysAapT1UXuGq0qyqXoCSUQ0nVyZvd2a/3w==}
+  '@developmentseed/morecantile@0.9.0':
+    resolution: {integrity: sha512-iNalvLZQOFd7mB77yC7lYIAppu+RNYolYpIiXIlzyMuAokOdblsTxTnIoWN1mjDUBkawSg5FAnix7r28T8kK+g==}
 
-  '@developmentseed/proj@0.9.0-beta.3':
-    resolution: {integrity: sha512-SYyyrGM6bLqBRkBDcRrrfLPqJt8Eesqw5TPU/MFvYbgEbr5rWSjN0eXfRpQvKFL1dgKHLR/cIk9MM3uf6BANQQ==}
+  '@developmentseed/proj@0.9.0':
+    resolution: {integrity: sha512-RdBdr9xjzKRQE+KIE52U9a+uDndwkpT6kyn+bxWG8GFkQd9QuRnouTCvEMVOmVIgNCBIEoni0QuIFZd5FLPy3A==}
 
-  '@developmentseed/raster-reproject@0.9.0-beta.3':
-    resolution: {integrity: sha512-dKhBZVYieMburH1BuBW3ZJtjhKT+0vxzEE4SBbF5urttYnvrgKUp3cWhoosg/NWeZ3kGSw7b3kvx5yTIdHWsuA==}
+  '@developmentseed/raster-reproject@0.9.0':
+    resolution: {integrity: sha512-qH9kvsJYO44WRDCafApZWI9V6UpCTBUvo79OFibbh5L8tSIBlv4TBvyTkz07SJTynwCkHhVD0DvhiQomQXO68g==}
 
   '@emotion/babel-plugin@11.13.5':
     resolution: {integrity: sha512-pxHCpT2ex+0q+HH91/zsdHkw/lXd468DIN2zvfvLtPKLLMo6gQj7oLObq8PhkrxOZb/gGCq03S3Z7PDhS8pduQ==}
@@ -2069,21 +2069,21 @@ snapshots:
     transitivePeerDependencies:
       - preact-render-to-string
 
-  '@developmentseed/affine@0.9.0-beta.3': {}
+  '@developmentseed/affine@0.9.0': {}
 
-  '@developmentseed/deck.gl-geotiff@0.9.0-beta.3(b8ece34f8876508c37cea05e3dbc6c63)':
+  '@developmentseed/deck.gl-geotiff@0.9.0(b8ece34f8876508c37cea05e3dbc6c63)':
     dependencies:
       '@cogeotiff/core': 9.5.0
       '@deck.gl/core': 9.4.0(@luma.gl/webgpu@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2)))
       '@deck.gl/geo-layers': 9.4.0(4812c3599c678c787a3931db28c54a1c)
       '@deck.gl/layers': 9.4.0(@deck.gl/core@9.4.0(@luma.gl/webgpu@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2))))(@loaders.gl/core@4.5.4)(@luma.gl/core@9.4.2)(@luma.gl/engine@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2)))
       '@deck.gl/mesh-layers': 9.4.0(@deck.gl/core@9.4.0(@luma.gl/webgpu@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2))))(@loaders.gl/core@4.5.4)(@luma.gl/core@9.4.2)(@luma.gl/engine@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2)))(@luma.gl/gltf@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/engine@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2)))(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2)))(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2))(texture-compressor@1.0.2)
-      '@developmentseed/affine': 0.9.0-beta.3
-      '@developmentseed/deck.gl-raster': 0.9.0-beta.3(ba6493d6c2b33b6c3a3e2fdfbb3d228c)
-      '@developmentseed/geotiff': 0.9.0-beta.3
-      '@developmentseed/morecantile': 0.9.0-beta.3
-      '@developmentseed/proj': 0.9.0-beta.3
-      '@developmentseed/raster-reproject': 0.9.0-beta.3
+      '@developmentseed/affine': 0.9.0
+      '@developmentseed/deck.gl-raster': 0.9.0(4c895b067fb91b3750b434b2d450187b)
+      '@developmentseed/geotiff': 0.9.0
+      '@developmentseed/morecantile': 0.9.0
+      '@developmentseed/proj': 0.9.0
+      '@developmentseed/raster-reproject': 0.9.0
       '@luma.gl/core': 9.4.2
       flatbush: 4.6.2
       proj4: 2.22.0
@@ -2091,16 +2091,16 @@ snapshots:
       - '@luma.gl/shadertools'
       - geotiff
 
-  '@developmentseed/deck.gl-raster@0.9.0-beta.3(ba6493d6c2b33b6c3a3e2fdfbb3d228c)':
+  '@developmentseed/deck.gl-raster@0.9.0(4c895b067fb91b3750b434b2d450187b)':
     dependencies:
       '@deck.gl/core': 9.4.0(@luma.gl/webgpu@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2)))
       '@deck.gl/geo-layers': 9.4.0(4812c3599c678c787a3931db28c54a1c)
       '@deck.gl/layers': 9.4.0(@deck.gl/core@9.4.0(@luma.gl/webgpu@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2))))(@loaders.gl/core@4.5.4)(@luma.gl/core@9.4.2)(@luma.gl/engine@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2)))
       '@deck.gl/mesh-layers': 9.4.0(@deck.gl/core@9.4.0(@luma.gl/webgpu@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2))))(@loaders.gl/core@4.5.4)(@luma.gl/core@9.4.2)(@luma.gl/engine@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2)))(@luma.gl/gltf@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/engine@9.4.2(@luma.gl/core@9.4.2)(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2)))(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2)))(@luma.gl/shadertools@9.4.2(@luma.gl/core@9.4.2))(texture-compressor@1.0.2)
-      '@developmentseed/affine': 0.9.0-beta.3
-      '@developmentseed/morecantile': 0.9.0-beta.3
-      '@developmentseed/proj': 0.9.0-beta.3
-      '@developmentseed/raster-reproject': 0.9.0-beta.3
+      '@developmentseed/affine': 0.9.0
+      '@developmentseed/morecantile': 0.9.0
+      '@developmentseed/proj': 0.9.0
+      '@developmentseed/raster-reproject': 0.9.0
       '@luma.gl/core': 9.4.2
       '@luma.gl/shadertools': 9.4.2(@luma.gl/core@9.4.2)
       '@math.gl/core': 4.1.0
@@ -2109,17 +2109,17 @@ snapshots:
     transitivePeerDependencies:
       - geotiff
 
-  '@developmentseed/geotiff@0.9.0-beta.3':
+  '@developmentseed/geotiff@0.9.0':
     dependencies:
       '@chunkd/middleware': 11.3.1
       '@chunkd/source': 11.4.1
       '@chunkd/source-http': 11.4.1
       '@chunkd/source-memory': 11.2.1
       '@cogeotiff/core': 9.5.0
-      '@developmentseed/affine': 0.9.0-beta.3
+      '@developmentseed/affine': 0.9.0
       '@developmentseed/lzw-tiff-decoder': 0.2.2
-      '@developmentseed/morecantile': 0.9.0-beta.3
-      '@developmentseed/proj': 0.9.0-beta.3
+      '@developmentseed/morecantile': 0.9.0
+      '@developmentseed/proj': 0.9.0
       fzstd: 0.1.1
       lerc: 4.2.0
       uuid: 14.0.3
@@ -2128,18 +2128,18 @@ snapshots:
 
   '@developmentseed/lzw-tiff-decoder@0.2.2': {}
 
-  '@developmentseed/morecantile@0.9.0-beta.3':
+  '@developmentseed/morecantile@0.9.0':
     dependencies:
-      '@developmentseed/affine': 0.9.0-beta.3
+      '@developmentseed/affine': 0.9.0
 
-  '@developmentseed/proj@0.9.0-beta.3':
+  '@developmentseed/proj@0.9.0':
     dependencies:
       proj4: 2.22.0
       wkt-parser: 1.5.6
     transitivePeerDependencies:
       - geotiff
 
-  '@developmentseed/raster-reproject@0.9.0-beta.3': {}
+  '@developmentseed/raster-reproject@0.9.0': {}
 
   '@emotion/babel-plugin@11.13.5':
     dependencies:
