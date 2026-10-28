@@ -2,6 +2,7 @@ import logging
 from typing import Literal
 
 import numpy as np
+import rioxarray  # noqa: F401  Registers the .rio accessor.
 import xarray as xr
 from antimeridian import fix_shape
 from dep_tools.aws import BaseClient, object_exists
