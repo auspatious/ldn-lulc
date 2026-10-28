@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC
 from datetime import datetime as dt
+from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -19,6 +20,7 @@ from geopandas import GeoDataFrame
 from joblib import load as joblib_load
 from odc.geo.geobox import GeoBox
 from pystac import Item, ItemCollection, Link
+from pystac.extensions.classification import ClassificationExtension
 from rustac import search_sync
 from sklearn.ensemble import RandomForestClassifier
 from typing_extensions import Annotated
@@ -34,6 +36,7 @@ from ldn.raster import (
 from ldn.raster import (
     AwsStacTask as Task,
 )
+from ldn.typology import stac_classes
 from ldn.utils import (
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
@@ -398,6 +401,18 @@ def _set_stac_properties(ds: xr.Dataset, year: str) -> xr.Dataset:
     return ds
 
 
+def _add_lulc_stac_metadata(item: Item, model_path: str, nodata_value: int) -> None:
+    """Link the model used and describe the classification classes on a LULC STAC item, in place.
+
+    Args:
+        item: LULC STAC item.
+        model_path: Path or URL to the model used for classification.
+        nodata_value: Integer nodata value of the classification band.
+    """
+    item.add_link(Link(rel="related", target=model_path, title="LULC classification model"))
+    ClassificationExtension.ext(item.assets["classification"], add_if_missing=True).classes = stac_classes(nodata_value)
+
+
 def run_classify_task(
     tile_id: Annotated[str, typer.Option()],
     year: Annotated[str, typer.Option()],
@@ -569,7 +584,7 @@ def run_classify_task(
                     "xarray",
                     "scikit-learn",
                 ],
-                links=[Link(rel="related", target=model_path, title="LULC classification model")],
+                update_item=partial(_add_lulc_stac_metadata, model_path=model_path, nodata_value=nodata_value),
                 logger=logger,
                 writer=writer,
                 stac_creator=stac_creator,

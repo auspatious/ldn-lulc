@@ -106,6 +106,7 @@ def _run_create_collection(
         )
     else:
         # TODO: Make a collection for LULC.
+        # TODO: Add classification and processing STAC extensions for LULC.
         raise NotImplementedError(f"Collection for dataset '{dataset}' is not implemented yet.")
 
 
