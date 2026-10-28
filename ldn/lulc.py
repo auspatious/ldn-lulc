@@ -16,8 +16,6 @@ from dep_tools.loaders import OdcLoader
 from dep_tools.namers import GenericItemPath
 from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
-from dep_tools.utils import _fix_geometry
-from geopandas import GeoDataFrame
 from joblib import load as joblib_load
 from odc.geo.geobox import GeoBox
 from pystac import Item, ItemCollection, Link
@@ -44,9 +42,7 @@ from ldn.utils import (
     LULC_DATASET_ID,
     LULC_VERSION,
     SOURCE_COOP_PREFIX_LULC,
-    WGS84,
     LdnError,
-    get_analysis_epsg,
     get_public_url_base,
     get_stac_geoparquet_key,
     get_stac_geoparquet_url,
@@ -132,60 +128,6 @@ def geomad_searcher(
         prefix=owner,
     ).basename(tile_id_tuple)
     return StacGeoparquetSearcher(stac_geoparquet_url=get_stac_geoparquet_url(geomad_bucket, key), item_id=item_id)
-
-
-class GeopolygonOdcLoader(OdcLoader):
-    """OdcLoader that uses geopolygon instead of geobox for AM-safe loading.
-
-    The standard OdcLoader passes geobox= to stac_load, which fails for
-    antimeridian-crossing tiles. This subclass converts the geobox to an
-    AM-fixed WGS84 geopolygon before loading.
-    """
-
-    def __init__(self, analysis_crs: Literal["EPSG:3832", "EPSG:6933"], **kwargs):
-        """Create a GeopolygonOdcLoader.
-
-        Args:
-            analysis_crs: The projected CRS string (either "EPSG:3832" or "EPSG:6933").
-            **kwargs: Additional arguments passed to OdcLoader.
-        """
-        super().__init__(**kwargs)
-        self._analysis_crs = analysis_crs
-
-    def load(self, items, areas):
-        """Load STAC items using geopolygon instead of geobox.
-
-        Converts the geobox to a WGS84 GeoDataFrame with AM-fixing,
-        then delegates to the parent OdcLoader. After loading, crops
-        to the original geobox so the output has exact tile dimensions
-        (geopolygon-based loading can pull in neighbouring tiles when the
-        WGS84 footprint slightly overlaps their extent).
-
-        Args:
-            items: The STAC items to load.
-            areas: A GeoBox or GeoDataFrame defining the load area.
-
-        Returns:
-            The loaded xarray Dataset or DataArray.
-        """
-        original_geobox = None
-        if isinstance(areas, GeoBox):
-            original_geobox = areas
-            tile_geom = areas.extent.geom
-            tile_gdf = GeoDataFrame(geometry=[tile_geom], crs=areas.crs).to_crs(WGS84)
-            fixed = _fix_geometry(tile_gdf.geometry.iloc[0])
-            areas = GeoDataFrame(geometry=[fixed], crs=WGS84)
-
-        result = super().load(items, areas)
-
-        # Crop to the original geobox extent. geopolygon-based loading
-        # may return a larger extent when the WGS84 footprint overlaps
-        # neighbouring STAC items at tile boundaries.
-        if original_geobox is not None and result.odc.geobox != original_geobox:
-            logger.info(f"Cropping loaded data from {result.odc.geobox.shape} to target geobox {original_geobox.shape}")
-            result = result.odc.crop(original_geobox.extent, apply_mask=False)
-
-        return result
 
 
 def reshape_array_to_2d(
@@ -320,7 +262,7 @@ class LulcProcessor(Processor):
         """Build features (scaled GeoMAD, indices, DEM terrain) and predict/classify LULC.
 
         Args:
-            input_data: GeoMAD dataset loaded by GeopolygonOdcLoader.
+            input_data: GeoMAD dataset loaded on the tile geobox.
 
         Returns:
             Dataset with classification and probability bands.
@@ -452,8 +394,8 @@ def run_classify_task(
 ) -> None:
     """Run LULC prediction for a single tile and year, writing results to S3.
 
-    Uses GeopolygonOdcLoader (geopolygon= with AM-fixing instead of
-    geobox=) so antimeridian-crossing tiles load correctly.
+    GeoMAD is loaded straight onto the tile geobox, which is the GeoMAD item's native grid, so no reprojection is
+    needed and antimeridian-crossing tiles load correctly.
 
     Args:
         tile_id: Grid tile identifier (e.g. "136_142").
@@ -494,8 +436,6 @@ def run_classify_task(
         )
 
     tile_id_tuple = parse_tile_id(tile_id)
-
-    analysis_crs = get_analysis_epsg(region)
 
     logger.info("Getting gridspec and geobox for tile")
     grid = get_gridspec(region)
@@ -554,10 +494,7 @@ def run_classify_task(
         tile_id_tuple,
     )
 
-    # GeopolygonOdcLoader converts the geobox to an AM-fixed WGS84
-    # geopolygon before calling stac_load, so AM-crossing tiles work.
-    loader = GeopolygonOdcLoader(
-        analysis_crs=analysis_crs,
+    loader = OdcLoader(
         bands=GEOMAD_BANDS,
         chunks={"x": xy_chunk_size, "y": xy_chunk_size},
         fail_on_error=True,  # We control the geomad data so it shouldn't fail.
