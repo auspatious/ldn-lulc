@@ -78,11 +78,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The version is set in pyproject.toml. Releases must be tagged v<version>.
       - name: Get version number
         id: get_version
         run: |
-          git fetch --all --tags
-          echo "VERSION=$(git describe --tags --always)" >> $GITHUB_OUTPUT
+          VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [[ "${{ github.event_name }}" == "release" && "${{ github.event.release.tag_name }}" != "v$VERSION" ]]; then
+            echo "Release tag ${{ github.event.release.tag_name }} does not match pyproject.toml version v$VERSION"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
       - name: Build test image
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
@@ -113,15 +119,15 @@ jobs:
       - name: Tag and push
         if: github.ref == 'refs/heads/main'
         run: |
-          docker tag ldn-lulc:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}
+          docker tag ldn-lulc:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}-${{ steps.get_version.outputs.SHORT_SHA }}
           docker tag ldn-lulc:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}-${{ steps.get_version.outputs.SHORT_SHA }}
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
       - name: Tag and push release
         if: github.event_name == 'release'
         run: |
-          docker tag ldn-lulc:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}
+          docker tag ldn-lulc:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}
           docker tag ldn-lulc:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest

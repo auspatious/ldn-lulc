@@ -206,7 +206,6 @@ __marimo__/
 
 # Data files
 data/
-ldn/_version.py
 
 ldn/gadm_sids*.gpkg
 ldn/gadm_sids.gpkg-shm
