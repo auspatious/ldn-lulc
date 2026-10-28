@@ -126,37 +126,34 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
 
 
 def _compute_terrain(dem_da: xr.DataArray) -> xr.Dataset:
-    """Compute slope and aspect from an elevation DataArray.
+    """Compute slope, northness and eastness from an elevation DataArray.
 
-    Uses Sobel filters to estimate terrain gradients. The pixel
-    resolution is assumed to be in meters (projected CRS).
+    Uses Horn's method (Sobel / 8) for terrain gradients. Coordinates are assumed to be in meters
+    (projected CRS). Northness and eastness are the cosine and sine of aspect (the downslope
+    bearing): 1 = north/east-facing, -1 = south/west-facing, 0 on flat ground. Unlike raw aspect,
+    they don't wrap from 359 to 0 degrees.
 
     Args:
         dem_da: 2D elevation DataArray with x/y coordinates.
 
     Returns:
-        Dataset with elevation, slope (degrees), and aspect (degrees).
+        Dataset with elevation, slope (degrees), northness and eastness.
     """
-    dem_vals = dem_da.values.astype("float32")
-    res_m = abs(float(dem_da.x[1] - dem_da.x[0]))
+    dem = dem_da.astype("float32")
+    # Signed coordinate steps, so the gradient is towards +x (east) and +y (north) whatever the row order.
+    dz_dx = dem.copy(data=sobel(dem.values, axis=1)) / (8 * float(dem.x[1] - dem.x[0]))
+    dz_dy = dem.copy(data=sobel(dem.values, axis=0)) / (8 * float(dem.y[1] - dem.y[0]))
+    grad = np.hypot(dz_dx, dz_dy)
+    sloped = grad.where(grad > 0)
 
-    dz_dx = sobel(dem_vals, axis=1) / (8 * res_m)
-    dz_dy = sobel(dem_vals, axis=0) / (8 * res_m)
-
-    slope = xr.DataArray(
-        np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))),
-        coords=dem_da.coords,
-        dims=dem_da.dims,
-        name="slope",
+    return xr.Dataset(
+        {
+            "elevation": dem_da,
+            "slope": np.degrees(np.arctan(grad)),
+            "northness": (-dz_dy / sloped).fillna(0),
+            "eastness": (-dz_dx / sloped).fillna(0),
+        }
     )
-    aspect = xr.DataArray(
-        (90 - np.degrees(np.arctan2(-dz_dy, dz_dx))) % 360,
-        coords=dem_da.coords,
-        dims=dem_da.dims,
-        name="aspect",
-    )
-
-    return xr.Dataset({"elevation": dem_da, "slope": slope, "aspect": aspect})
 
 
 # GeoMAD output bands that the LULC classification pipeline needs (excludes "count").
@@ -260,7 +257,7 @@ def _load_dem_am(
 
 
 def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
-    """Load Copernicus DEM and compute elevation, slope, and aspect.
+    """Load Copernicus DEM and compute elevation, slope, northness and eastness.
 
     Loads COP-DEM-GLO-30 tiles from Planetary Computer, reprojects
     to the target geobox, and derives terrain features using Sobel
@@ -270,7 +267,7 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
         geobox: Target grid (of a tile) in the analysis CRS (EPSG:3832 or EPSG:6933).
 
     Returns:
-        Dataset with elevation, slope, and aspect variables.
+        Dataset with elevation, slope, northness and eastness variables.
     """
     client = PyStacClient.open(DEM_CATALOG)
 
@@ -321,7 +318,7 @@ def make_features(geomad: xr.Dataset) -> xr.Dataset:
         geomad: Raw GeoMAD dataset for one tile and year (a single time step).
 
     Returns:
-        Dataset with scaled GeoMAD bands, spectral indices, elevation, slope and aspect on the GeoMAD grid.
+        Dataset with scaled GeoMAD bands, spectral indices, elevation, slope, northness and eastness on the GeoMAD grid.
     """
     data = calculate_indices(scale_offset_landsat(geomad.squeeze(drop=True)))
 

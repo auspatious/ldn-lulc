@@ -60,13 +60,13 @@ def _flat_dem(size=5, elevation=100.0, pixel_size=30.0) -> xr.DataArray:
 
 
 def _x_ramp_dem(pixel_size=30.0) -> xr.DataArray:
-    """3x3 DEM rising by exactly 1 m per pixel eastward, flat north-south."""
+    """3x3 north-up DEM rising by exactly 1 m per pixel eastward, flat north-south."""
     return xr.DataArray(
         np.array([[100, 101, 102], [100, 101, 102], [100, 101, 102]], dtype=np.float32),
         dims=("y", "x"),
         coords={
             "x": np.array([0, pixel_size, 2 * pixel_size]),
-            "y": np.array([0, pixel_size, 2 * pixel_size]),
+            "y": np.array([2 * pixel_size, pixel_size, 0]),
         },
         name="elevation",
     )
@@ -221,13 +221,17 @@ class TestCalculateIndices:
 class TestComputeTerrain:
     """
     _compute_terrain wraps scipy Sobel filters - pure computation.
-    We verify the three analytic cases we can reason about exactly:
-    flat (slope = 0), east-facing ramp (slope = arctan(1/res), aspect = 90°),
-    plus invariants that hold for any DEM (non-negative slope, aspect in [0, 360)).
+    We verify the analytic cases we can reason about exactly:
+    flat (slope = 0, no facing), ramps (slope = arctan(1/res), facing away from the rise),
+    plus invariants that hold for any DEM (non-negative slope, northness/eastness on the unit circle).
     """
 
-    def test_returns_elevation_slope_and_aspect(self):
-        assert set(_compute_terrain(_flat_dem()).data_vars) == {"elevation", "slope", "aspect"}
+    def test_returns_elevation_slope_northness_and_eastness(self):
+        assert set(_compute_terrain(_flat_dem()).data_vars) == {"elevation", "slope", "northness", "eastness"}
+
+    def test_flat_dem_has_zero_northness_and_eastness(self):
+        result = _compute_terrain(_flat_dem())
+        assert np.all(result["northness"].values == 0) and np.all(result["eastness"].values == 0)
 
     def test_flat_dem_has_zero_slope_everywhere(self):
         result = _compute_terrain(_flat_dem(size=7, elevation=500.0))
@@ -244,10 +248,19 @@ class TestComputeTerrain:
         expected = np.degrees(np.arctan(1.0 / pixel_size))
         assert result["slope"].values[1, 1] == pytest.approx(expected, rel=1e-4)
 
-    def test_x_ramp_center_aspect_points_east(self):
-        # Terrain rising in +x (east) → aspect = 90°.
+    def test_terrain_rising_east_faces_west(self):
         result = _compute_terrain(_x_ramp_dem())
-        assert result["aspect"].values[1, 1] == pytest.approx(90.0, abs=1.0)
+        assert result["eastness"].values[1, 1] == pytest.approx(-1.0)
+        assert result["northness"].values[1, 1] == pytest.approx(0.0, abs=1e-6)
+
+    @pytest.mark.parametrize("y", [[60.0, 30.0, 0.0], [0.0, 30.0, 60.0]])
+    def test_terrain_rising_north_faces_south_for_either_row_order(self, y):
+        # Elevation increases with y (north) regardless of whether rows run north-south or south-north.
+        rows = np.array(y, dtype=np.float32)[:, None] + np.zeros((1, 3), dtype=np.float32)
+        dem = xr.DataArray(rows, dims=("y", "x"), coords={"x": [0.0, 30.0, 60.0], "y": y}, name="elevation")
+        result = _compute_terrain(dem)
+        assert result["northness"].values[1, 1] == pytest.approx(-1.0)
+        assert result["eastness"].values[1, 1] == pytest.approx(0.0, abs=1e-6)
 
     def test_slope_is_non_negative_on_random_dem(self):
         rng = np.random.default_rng(0)
@@ -260,7 +273,7 @@ class TestComputeTerrain:
         )
         assert np.all(_compute_terrain(dem)["slope"].values >= 0)
 
-    def test_aspect_is_within_0_to_360_on_random_dem(self):
+    def test_northness_and_eastness_are_on_unit_circle_on_random_dem(self):
         rng = np.random.default_rng(1)
         data = rng.uniform(0, 500, (12, 12)).astype(np.float32)
         dem = xr.DataArray(
@@ -269,8 +282,8 @@ class TestComputeTerrain:
             coords={"x": np.arange(12) * 30.0, "y": np.arange(12) * 30.0},
             name="elevation",
         )
-        aspect = _compute_terrain(dem)["aspect"].values
-        assert np.all(aspect >= 0) and np.all(aspect < 360)
+        result = _compute_terrain(dem)
+        np.testing.assert_allclose(result["northness"] ** 2 + result["eastness"] ** 2, 1.0, rtol=1e-5)
 
     def test_output_spatial_coordinates_match_input(self):
         dem = _x_ramp_dem()

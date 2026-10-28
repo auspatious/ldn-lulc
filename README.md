@@ -179,7 +179,7 @@ Data is written here https://dep-public-staging.s3.us-west-2.amazonaws.com/index
 
 2. **Find 2-of-3 agreement:** a pixel is kept where at least 2 of the 3 products agree on class, requiring ≥2 products to have valid data at that pixel. A 3×3 neighbourhood minimum filter is then applied so isolated agreeing pixels (with no agreeing neighbours) are dropped.
 3. **Stratified random sampling** from the agreement map, masked to areas with valid GeoMAD data. Default: 2,100 total samples, minimum 300 per class.
-4. **Feature extraction:** GeoMAD reflectance bands, spectral indices, and DEM terrain features (elevation, slope, aspect) are sampled at each point's location.
+4. **Feature extraction:** GeoMAD reflectance bands, spectral indices, and DEM terrain features (elevation, slope, northness, eastness) are sampled at each point's location.
 5. **Cleanup:** samples with NaN feature values are dropped. K-Means-based per-class outlier filtering (removing the furthest-from-centroid samples within each class) is implemented but currently disabled pending an ablation study on whether it improves the model.
 6. **Output:** written locally as GeoJSON + CSV and uploaded to S3 as CSV. Outputs are versioned and record their region, tile index, and year. Source.Coop is not currently supported as a training-data destination.
 
@@ -238,7 +238,7 @@ Classification runs per tile/year using a pre-trained **random forest** model (l
 
 1. **Search:** the tile's GeoMAD item is located via its STAC-GeoParquet index, matched by tile ID and year.
 2. **Load:** GeoMAD bands are loaded through an antimeridian-safe loader that queries by geopolygon (not geobox), then crops back to the exact tile extent - this avoids the failures a plain bbox/geobox load hits on tiles spanning ±180°.
-3. **Feature prep:** reflectance bands are scaled, spectral indices computed, and DEM terrain features (elevation, slope, aspect) merged in - mirroring the training feature set.
+3. **Feature prep:** reflectance bands are scaled, spectral indices computed, and DEM terrain features (elevation, slope, northness, eastness) merged in - mirroring the training feature set.
 4. **Predict:** the random forest outputs a per-class probability for every pixel. Final classification is the highest-probability class, unless it falls below a configurable `probability_threshold`, in which case the pixel is set to nodata. Per-class probability bands are retained alongside the classification band, named by class value: `probability_1` is Tree cover, `probability_2` Grassland, and so on (see `typology_mapping.yaml`).
 5. **Write:** output COGs and STAC metadata are written to S3.
 
