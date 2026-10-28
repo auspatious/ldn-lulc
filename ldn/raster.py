@@ -29,7 +29,7 @@ from pystac import Item, ItemCollection, Link, Provider, ProviderRole
 from pystac.extensions.projection import ProjectionExtension
 from pystac.utils import datetime_to_str
 from pystac_client import Client as PyStacClient
-from scipy.ndimage import sobel, uniform_filter
+from scipy.ndimage import uniform_filter
 from shapely.geometry import box, shape
 
 from ldn.utils import (
@@ -159,40 +159,43 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     return geomad
 
 
-def _compute_terrain(dem_da: xr.DataArray) -> xr.Dataset:
-    """Compute slope and aspect from an elevation DataArray.
+def _calculate_terrain_features(dem: xr.DataArray) -> xr.Dataset:
+    """Compute slope, northness and eastness from an elevation DataArray on a geographic (degree) grid.
 
-    Uses Sobel filters to estimate terrain gradients. The pixel
-    resolution is assumed to be in meters (projected CRS).
+    Gradients are computed with central differences (Zevenbergen & Thorne 1987) in degrees and converted to ground
+    metres with the radii of curvature of the DEM CRS's ellipsoid at each latitude: a degree of longitude shrinks
+    with cos(latitude) and a degree of latitude lengthens slightly towards the poles. Working on
+    the DEM's native grid avoids the scale distortion of the analysis CRSs and keeps aspect relative to true north.
+
+    Northness and eastness are the cosine and sine of aspect (the downslope bearing) weighted by sin(slope): 1 = steep
+    north/east-facing, -1 = steep south/west-facing, 0 on flat ground. Unlike raw aspect, they don't wrap from 359 to 0
+    degrees, and the weighting stops DEM noise on flat ground giving a full-strength aspect.
 
     Args:
-        dem_da: 2D elevation DataArray with x/y coordinates.
+        dem: 2D elevation DataArray with x (longitude) and y (latitude) coordinates in degrees and a geographic CRS.
 
     Returns:
-        Dataset with elevation, slope (degrees), and aspect (degrees).
+        Dataset with elevation, slope (degrees), northness and eastness on the same grid.
     """
-    # Compute once at the beginning to prevent re-computation and repeated downloads of the lazy DEM.
-    dem = dem_da.astype("float32").compute()
-    dem_vals = dem.values
-    res_m = abs(float(dem.x[1] - dem.x[0]))
-
-    dz_dx = sobel(dem_vals, axis=1) / (8 * res_m)
-    dz_dy = sobel(dem_vals, axis=0) / (8 * res_m)
-
-    slope = xr.DataArray(
-        np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))),
-        coords=dem_da.coords,
-        dims=dem_da.dims,
-        name="slope",
+    geod = dem.odc.crs.proj.get_geod()
+    lat = np.radians(dem.y)
+    w = 1 - geod.es * np.sin(lat) ** 2
+    # Prime vertical (east-west) and meridian (north-south) radii of curvature.
+    east_radius = geod.a / np.sqrt(w)
+    north_radius = geod.a * (1 - geod.es) / w**1.5
+    dz_dx = dem.differentiate("x") / (np.radians(1) * east_radius * np.cos(lat))
+    dz_dy = dem.differentiate("y") / (np.radians(1) * north_radius)
+    grad = np.hypot(dz_dx, dz_dy)
+    # Equals cos/sin(aspect) * sin(slope), without computing aspect.
+    hypotenuse = np.sqrt(1 + grad**2)
+    return xr.Dataset(
+        {
+            "elevation": dem,
+            "slope": np.degrees(np.arctan(grad)),
+            "northness": -dz_dy / hypotenuse,
+            "eastness": -dz_dx / hypotenuse,
+        }
     )
-    aspect = xr.DataArray(
-        (90 - np.degrees(np.arctan2(-dz_dy, dz_dx))) % 360,
-        coords=dem_da.coords,
-        dims=dem_da.dims,
-        name="aspect",
-    )
-
-    return xr.Dataset({"elevation": dem, "slope": slope, "aspect": aspect})
 
 
 # Focal (regional) statistics, named "{band}_{stat}_{size}" with a size x size pixel window. Candidates for model
@@ -320,17 +323,16 @@ def _merge_geographic_halves(east: xr.Dataset, west: xr.Dataset) -> xr.Dataset:
 
 
 def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
-    """Load Copernicus DEM and compute elevation, slope, and aspect.
+    """Load Copernicus DEM and compute elevation, slope, northness and eastness.
 
-    Loads COP-DEM-GLO-30 tiles from Planetary Computer, reprojects
-    to the target geobox, and derives terrain features using Sobel
-    filters. Handles antimeridian-crossing tiles via load_across_antimeridian.
+    Loads COP-DEM-GLO-30 from Planetary Computer on its native WGS84 grid (limited to the tile), computes terrain
+    there (see _calculate_terrain_features), then reprojects to the target geobox with nearest resampling.
 
     Args:
         geobox: Target grid (of a tile) in the analysis CRS (EPSG:3832 or EPSG:6933).
 
     Returns:
-        Dataset with elevation, slope, and aspect variables.
+        Dataset with elevation, slope, northness and eastness variables.
     """
     client = PyStacClient.open(DEM_CATALOG)
 
@@ -343,33 +345,42 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     if len(dem_items) >= 10:
         raise LdnError(f"Too many DEM items ({len(dem_items)}). Expected ~4, data may be world-spanning.")
 
-    geobox_wgs84 = GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(WGS84)
-    crosses_am = isinstance(bbox_across_180(geobox_wgs84), tuple)
+    dem = _load_dem_geographic(dem_items, geobox)
+    logger.info(f"DEM elevation shape (native grid): {dem.shape}")
+    return _calculate_terrain_features(dem).odc.reproject(geobox, resampling="nearest")
 
-    if crosses_am:
+
+def _load_dem_geographic(dem_items: ItemCollection, geobox: GeoBox) -> xr.DataArray:
+    """Load the DEM on its native WGS84 grid, limited to the geobox plus a margin for the terrain gradients.
+
+    Args:
+        dem_items: DEM STAC items covering the geobox.
+        geobox: Target grid in the analysis CRS.
+
+    Returns:
+        Computed elevation DataArray with x (longitude) and y (latitude) coordinates in degrees. Antimeridian-crossing
+        tiles use longitudes relative to 180 (see _merge_geographic_halves).
+    """
+    # 2 pixels of margin so gradients at the tile edge use real neighbours.
+    area = geobox.pad(2)
+    area_wgs84 = GeoDataFrame(geometry=[area.extent.geom], crs=area.crs).to_crs(WGS84)
+    if isinstance(bbox_across_180(area_wgs84), tuple):
         logger.info("Tile crosses the antimeridian, loading each side and joining them")
-        dem = load_across_antimeridian(dem_items, geobox, resampling="bilinear").rename(data="elevation")
+        dem = _merge_geographic_halves(*_load_halves(dem_items, area, "nearest"))
     else:
-        logger.info("Tile does not cross the antimeridian, using standard loading logic")
         dem = (
             stac_load(
                 dem_items,
-                geobox=geobox,
-                resampling="bilinear",
+                geopolygon=area_wgs84,
                 patch_url=sign_url,
                 # Force lazy, one chunk per band. 1024 px chunks were 25-40% slower for a padded tile.
                 chunks={},
             )
             .squeeze(drop=True)  # Remove time. DEM does not need a time dimension.
-            .rename({"data": "elevation"})
+            .rename(longitude="x", latitude="y")
         )
-
-    # Assign CRS so spatial_ref matches GeoMAD during xr.merge.
-    dem = dem.odc.assign_crs(crs=geobox.crs)
-
-    logger.info(f"DEM elevation shape: {dem['elevation'].shape}")
-
-    return _compute_terrain(dem["elevation"])
+    # Compute once: the DEM is lazy, and every use would otherwise download it again.
+    return dem["data"].rename("elevation").astype("float32").compute()
 
 
 def _focal_mean(values: np.ndarray, size: int) -> np.ndarray:
@@ -441,8 +452,8 @@ def make_features(geomad: xr.Dataset, features: list[str]) -> xr.Dataset:
             other names are ignored, since the base features are always computed.
 
     Returns:
-        Computed dataset with scaled GeoMAD bands, spectral indices, elevation, slope, aspect and the requested
-        focal statistics on the GeoMAD grid.
+        Computed dataset with scaled GeoMAD bands, spectral indices, elevation, slope, northness, eastness and the
+        requested focal statistics on the GeoMAD grid.
     """
     data = calculate_indices(scale_offset_landsat(geomad.squeeze(drop=True)))
 

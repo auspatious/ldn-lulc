@@ -8,20 +8,23 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import xarray as xr
+from geopandas import GeoDataFrame
 from odc.geo.geobox import GeoBox
 from odc.geo.xr import assign_crs
-from pyproj import Transformer
+from pyproj import Geod, Transformer
 from pystac import Item
 from pystac.extensions.projection import ProjectionExtension
 from scipy.ndimage import generic_filter
 
+from ldn.grids import get_gridspec
 from ldn.raster import (
     BAEI_MAX,
     FOCAL_FEATURES,
     FOCAL_PAD,
     PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
-    _compute_terrain,
+    _calculate_terrain_features,
+    _load_dem_geographic,
     _merge_geographic_halves,
     add_processing_extension,
     build_pipeline_components,
@@ -59,29 +62,42 @@ def _spectral_dataset(nir=0.8, red=0.2, green=0.4, blue=0.1, swir16=0.5, swir22=
     )
 
 
-def _flat_dem(size=5, elevation=100.0, pixel_size=30.0) -> xr.DataArray:
-    return xr.DataArray(
-        np.full((size, size), elevation, dtype=np.float32),
+# DEMs on a 1 arcsecond WGS84 grid, like Copernicus DEM GLO-30.
+ARCSEC = 1 / 3600
+
+
+def _pixel_m(lat: float, east: bool) -> float:
+    """Ground distance in metres of one pixel east (or north) at a latitude, from pyproj's geodesic."""
+    return Geod(ellps="WGS84").inv(170, lat, 170 + ARCSEC * east, lat + ARCSEC * (not east))[2]
+
+
+def _geo_dem(values: np.ndarray, lat: float = 0.0) -> xr.DataArray:
+    """North-up DEM centred on latitude lat, with x/y in degrees."""
+    rows, cols = values.shape
+    dem = xr.DataArray(
+        values.astype(np.float32),
         dims=("y", "x"),
         coords={
-            "x": np.arange(size, dtype=float) * pixel_size,
-            "y": np.arange(size, dtype=float) * pixel_size,
+            "x": 170.0 + np.arange(cols) * ARCSEC,
+            "y": lat + (np.arange(rows)[::-1] - rows // 2) * ARCSEC,
         },
         name="elevation",
     )
+    return assign_crs(dem, "EPSG:4326")
 
 
-def _x_ramp_dem(pixel_size=30.0) -> xr.DataArray:
+def _flat_dem(size=5, elevation=100.0) -> xr.DataArray:
+    return _geo_dem(np.full((size, size), elevation))
+
+
+def _x_ramp_dem(lat: float = 0.0) -> xr.DataArray:
     """3x3 DEM rising by exactly 1 m per pixel eastward, flat north-south."""
-    return xr.DataArray(
-        np.array([[100, 101, 102], [100, 101, 102], [100, 101, 102]], dtype=np.float32),
-        dims=("y", "x"),
-        coords={
-            "x": np.array([0, pixel_size, 2 * pixel_size]),
-            "y": np.array([0, pixel_size, 2 * pixel_size]),
-        },
-        name="elevation",
-    )
+    return _geo_dem(np.array([[100, 101, 102]] * 3), lat)
+
+
+def _y_ramp_dem(lat: float = 0.0) -> xr.DataArray:
+    """3x3 DEM rising by exactly 1 m per pixel northward, flat east-west."""
+    return _geo_dem(np.array([[102] * 3, [101] * 3, [100] * 3]), lat)
 
 
 # Landsat scaling  - pure numpy, zero mocks
@@ -244,61 +260,74 @@ class TestCalculateIndices:
 
 class TestComputeTerrain:
     """
-    _compute_terrain wraps scipy Sobel filters - pure computation.
-    We verify the three analytic cases we can reason about exactly:
-    flat (slope = 0), east-facing ramp (slope = arctan(1/res), aspect = 90°),
-    plus invariants that hold for any DEM (non-negative slope, aspect in [0, 360)).
+    _calculate_terrain_features differentiates a geographic DEM and converts to ground metres - pure computation.
+    We verify the analytic cases we can reason about exactly:
+    flat (slope = 0, no facing), ramps (slope = arctan(rise / run), facing away from the rise), the cos(latitude)
+    shrinking of east-west distances, plus invariants that hold for any DEM.
     """
 
-    def test_returns_elevation_slope_and_aspect(self):
-        assert set(_compute_terrain(_flat_dem()).data_vars) == {"elevation", "slope", "aspect"}
+    def test_returns_elevation_slope_northness_and_eastness(self):
+        assert set(_calculate_terrain_features(_flat_dem()).data_vars) == {
+            "elevation",
+            "slope",
+            "northness",
+            "eastness",
+        }
 
-    def test_flat_dem_has_zero_slope_everywhere(self):
-        result = _compute_terrain(_flat_dem(size=7, elevation=500.0))
-        assert np.allclose(result["slope"].values, 0.0, atol=1e-5)
+    def test_flat_dem_has_zero_slope_northness_and_eastness(self):
+        result = _calculate_terrain_features(_flat_dem(size=7, elevation=500.0))
+        # Floating point coordinate spacing leaves ~1e-15 rounding, not exactly 0.
+        for name in ["slope", "northness", "eastness"]:
+            np.testing.assert_allclose(result[name].values, 0.0, atol=1e-9)
 
     def test_flat_dem_preserves_elevation_values(self):
-        result = _compute_terrain(_flat_dem(elevation=250.0))
+        result = _calculate_terrain_features(_flat_dem(elevation=250.0))
         assert np.allclose(result["elevation"].values, 250.0)
 
-    def test_x_ramp_center_slope_matches_analytic_value(self):
-        # Rise = 1 m per pixel, run = pixel_size → slope = arctan(1 / pixel_size).
-        pixel_size = 30.0
-        result = _compute_terrain(_x_ramp_dem(pixel_size))
-        expected = np.degrees(np.arctan(1.0 / pixel_size))
-        assert result["slope"].values[1, 1] == pytest.approx(expected, rel=1e-4)
+    def test_terrain_rising_east_faces_west(self):
+        result = _calculate_terrain_features(_x_ramp_dem())
+        slope = np.arctan(1 / _pixel_m(0.0, east=True))
+        assert result["slope"].values[1, 1] == pytest.approx(np.degrees(slope), rel=1e-4)
+        assert result["eastness"].values[1, 1] == pytest.approx(-np.sin(slope), rel=1e-4)
+        assert result["northness"].values[1, 1] == pytest.approx(0.0, abs=1e-6)
 
-    def test_x_ramp_center_aspect_points_east(self):
-        # Terrain rising in +x (east) → aspect = 90°.
-        result = _compute_terrain(_x_ramp_dem())
-        assert result["aspect"].values[1, 1] == pytest.approx(90.0, abs=1.0)
+    def test_terrain_rising_north_faces_south(self):
+        result = _calculate_terrain_features(_y_ramp_dem())
+        slope = np.arctan(1 / _pixel_m(0.0, east=False))
+        assert result["northness"].values[1, 1] == pytest.approx(-np.sin(slope), rel=1e-4)
+        assert result["eastness"].values[1, 1] == pytest.approx(0.0, abs=1e-6)
 
-    def test_slope_is_non_negative_on_random_dem(self):
-        rng = np.random.default_rng(0)
-        data = rng.uniform(0, 500, (12, 12)).astype(np.float32)
-        dem = xr.DataArray(
-            data,
-            dims=("y", "x"),
-            coords={"x": np.arange(12) * 30.0, "y": np.arange(12) * 30.0},
-            name="elevation",
+    def test_row_order_does_not_change_the_result(self):
+        north_up = _y_ramp_dem()
+        south_up = north_up.isel(y=slice(None, None, -1))
+        np.testing.assert_allclose(
+            _calculate_terrain_features(south_up)["northness"].isel(y=slice(None, None, -1)).values,
+            _calculate_terrain_features(north_up)["northness"].values,
         )
-        assert np.all(_compute_terrain(dem)["slope"].values >= 0)
 
-    def test_aspect_is_within_0_to_360_on_random_dem(self):
-        rng = np.random.default_rng(1)
-        data = rng.uniform(0, 500, (12, 12)).astype(np.float32)
-        dem = xr.DataArray(
-            data,
-            dims=("y", "x"),
-            coords={"x": np.arange(12) * 30.0, "y": np.arange(12) * 30.0},
-            name="elevation",
+    def test_east_west_distances_shrink_with_latitude(self):
+        """At 60 degrees a degree of longitude is about half as long, so an east-west ramp is about twice as steep."""
+        steep = np.arctan(1 / _pixel_m(60.0, east=True))
+        assert steep == pytest.approx(np.arctan(2 / _pixel_m(0.0, east=True)), rel=0.01)
+        assert _calculate_terrain_features(_x_ramp_dem(lat=60.0))["slope"].values[1, 1] == pytest.approx(
+            np.degrees(steep), rel=1e-4
         )
-        aspect = _compute_terrain(dem)["aspect"].values
-        assert np.all(aspect >= 0) and np.all(aspect < 360)
+        # North-south distances change only slightly with latitude (ellipsoid flattening).
+        expected = np.degrees(np.arctan(1 / _pixel_m(60.0, east=False)))
+        assert _calculate_terrain_features(_y_ramp_dem(lat=60.0))["slope"].values[1, 1] == pytest.approx(
+            expected, rel=1e-4
+        )
+
+    def test_northness_and_eastness_are_aspect_weighted_by_sin_slope_on_random_dem(self):
+        dem = _geo_dem(np.random.default_rng(1).uniform(0, 500, (12, 12)), lat=-18.0)
+        result = _calculate_terrain_features(dem)
+        assert np.all(result["slope"].values >= 0)
+        sin_slope = np.sin(np.radians(result["slope"]))
+        np.testing.assert_allclose(result["northness"] ** 2 + result["eastness"] ** 2, sin_slope**2, rtol=1e-4)
 
     def test_output_spatial_coordinates_match_input(self):
         dem = _x_ramp_dem()
-        result = _compute_terrain(dem)
+        result = _calculate_terrain_features(dem)
         np.testing.assert_array_equal(result["slope"].x.values, dem.x.values)
         np.testing.assert_array_equal(result["slope"].y.values, dem.y.values)
 
@@ -436,78 +465,37 @@ class TestLoadDemTerrainGuards:
             patch(f"{_MOD}.GeoDataFrame") as mock_gdf,
             patch(f"{_MOD}.bbox_across_180", return_value=None),
             patch(f"{_MOD}.stac_load"),
-            patch(f"{_MOD}._compute_terrain"),
+            patch(f"{_MOD}._calculate_terrain_features"),
         ):
             mock_gdf.return_value.to_crs.return_value = MagicMock()
             load_dem_terrain(geobox)  # must not raise
 
 
-class TestLoadDemTerrainBranching:
-    """Antimeridian branching - verifies routing, not I/O results."""
+class TestLoadDemGeographicRouting:
+    """Which loading path the native DEM load takes, on real geoboxes. Only the loading calls are patched."""
 
-    def _setup(self, crosses_am: bool):
-        """Return (geobox, bbox_return) for the given AM scenario.
+    def test_non_am_tile_loads_native_grid_limited_to_the_padded_tile(self):
+        geobox = get_gridspec("pacific").tile_geobox((50, 41))[:10, :10]
+        with patch(f"{_MOD}.stac_load") as mock_load, patch(f"{_MOD}._load_halves") as mock_halves:
+            _load_dem_geographic(_stac_items(1), geobox)
+        mock_halves.assert_not_called()
+        kwargs = mock_load.call_args.kwargs
+        assert kwargs["chunks"] == {} and "geobox" not in kwargs  # Native grid, lazy.
+        area = kwargs["geopolygon"].geometry.iloc[0]
+        assert area.contains(
+            GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs("EPSG:4326").union_all()
+        )
 
-        xr.Dataset.odc is a registered read-only accessor property - you
-        cannot assign a MagicMock to it on a real Dataset.  We therefore
-        keep all stac_load / load_across_antimeridian return values as plain MagicMocks
-        whose attribute chains resolve freely without raising AttributeError.
-        """
-        bbox_return = ((170, -10, 180, 10), (-180, -10, -170, 10)) if crosses_am else None
-        geobox = MagicMock()
-        geobox.crs = "EPSG:3832" if crosses_am else "EPSG:6933"
-        geobox.extent.geom = MagicMock()
-        return geobox, bbox_return
-
-    def test_non_am_tile_uses_stac_load_not_load_dem_am(self):
-        geobox, bbox_return = self._setup(crosses_am=False)
+    def test_am_tile_loads_and_joins_both_sides(self):
         with (
-            patch(f"{_MOD}.PyStacClient.open"),
-            patch(f"{_MOD}.search_across_180", return_value=_stac_items(1)),
-            patch(f"{_MOD}.GeoDataFrame") as mock_gdf,
-            patch(f"{_MOD}.bbox_across_180", return_value=bbox_return),
-            patch(f"{_MOD}.stac_load") as mock_stac_load,
-            patch(f"{_MOD}.load_across_antimeridian") as mock_am,
-            patch(f"{_MOD}._compute_terrain"),
+            patch(f"{_MOD}.stac_load") as mock_load,
+            patch(f"{_MOD}._load_halves", return_value=(MagicMock(), MagicMock())) as mock_halves,
+            patch(f"{_MOD}._merge_geographic_halves") as mock_merge,
         ):
-            mock_gdf.return_value.to_crs.return_value = MagicMock()
-            load_dem_terrain(geobox)
-
-        mock_stac_load.assert_called_once()
-        mock_am.assert_not_called()
-
-    def test_am_tile_uses_load_dem_am_not_stac_load(self):
-        geobox, bbox_return = self._setup(crosses_am=True)
-        with (
-            patch(f"{_MOD}.PyStacClient.open"),
-            patch(f"{_MOD}.search_across_180", return_value=_stac_items(1)),
-            patch(f"{_MOD}.GeoDataFrame") as mock_gdf,
-            patch(f"{_MOD}.bbox_across_180", return_value=bbox_return),
-            patch(f"{_MOD}.load_across_antimeridian") as mock_am,
-            patch(f"{_MOD}.stac_load") as mock_stac_load,
-            patch(f"{_MOD}._compute_terrain"),
-        ):
-            mock_gdf.return_value.to_crs.return_value = MagicMock()
-            load_dem_terrain(geobox)
-
-        mock_am.assert_called_once()
-        mock_stac_load.assert_not_called()
-
-    def test_stac_load_receives_chunks_empty_dict_for_lazy_loading(self):
-        """Lazy-loading contract: chunks={} must be forwarded to stac_load."""
-        geobox, _ = self._setup(crosses_am=False)
-        with (
-            patch(f"{_MOD}.PyStacClient.open"),
-            patch(f"{_MOD}.search_across_180", return_value=_stac_items(1)),
-            patch(f"{_MOD}.GeoDataFrame") as mock_gdf,
-            patch(f"{_MOD}.bbox_across_180", return_value=None),
-            patch(f"{_MOD}.stac_load") as mock_stac_load,
-            patch(f"{_MOD}._compute_terrain"),
-        ):
-            mock_gdf.return_value.to_crs.return_value = MagicMock()
-            load_dem_terrain(geobox)
-
-        assert mock_stac_load.call_args.kwargs.get("chunks") == {}
+            _load_dem_geographic(_stac_items(2), _am_geobox())
+        mock_halves.assert_called_once()
+        mock_merge.assert_called_once()
+        mock_load.assert_not_called()
 
 
 # PrefixedS3ItemPath
