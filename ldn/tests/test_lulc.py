@@ -1,7 +1,11 @@
+from datetime import datetime
+
 import numpy as np
 import xarray as xr
+from pystac import Asset, Item
+from pystac.extensions.classification import ClassificationExtension
 
-from ldn.lulc import geomad_searcher
+from ldn.lulc import _add_lulc_stac_metadata, geomad_searcher
 from ldn.raster import calculate_indices, scale_offset_landsat
 
 
@@ -222,3 +226,18 @@ class TestGeomadSearcher:
 
 
 # TODO: Add tests for further prediction functions.
+
+
+def test_add_lulc_stac_metadata():
+    """Model link and classification classes are added, with nodata using the output nodata value."""
+    item = Item(id="t", geometry=None, bbox=None, datetime=datetime(2020, 1, 1), properties={})
+    item.add_asset("classification", Asset(href="classification.tif"))
+    _add_lulc_stac_metadata(item, "https://example.com/model.joblib", nodata_value=0)
+
+    assert item.get_single_link("related").href == "https://example.com/model.joblib"
+    assert ClassificationExtension.get_schema_uri() in item.stac_extensions
+    classes = {c.name: c for c in ClassificationExtension.ext(item.assets["classification"]).classes}
+    assert len(classes) == 8
+    assert (classes["no_data"].value, classes["no_data"].nodata) == (0, True)
+    assert (classes["tree_cover"].value, classes["tree_cover"].title) == (1, "Tree cover")
+    assert classes["tree_cover"].color_hint == "006400"

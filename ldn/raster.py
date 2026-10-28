@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from importlib.metadata import distribution
 from typing import Literal
@@ -540,7 +541,7 @@ class AwsStacTask(AreaTask):
         processing_software: list[str],
         providers: list[Provider],
         post_processor: Processor | None = None,
-        links: list[Link] | None = None,
+        update_item: Callable[[Item], None] | None = None,
         logger: logging.Logger = logger,
         **kwargs,
     ):
@@ -554,7 +555,7 @@ class AwsStacTask(AreaTask):
         self.post_processor = post_processor
         self.processing_software = processing_software
         self.providers = providers
-        self.links = links or []
+        self.update_item = update_item
         self.stac_creator = stac_creator
         self.stac_writer = stac_writer
 
@@ -578,11 +579,13 @@ class AwsStacTask(AreaTask):
             stac_item.bbox = _antimeridian_safe_bbox(self.area, stac_item.bbox)
             stac_item.geometry = fix_shape(stac_item.geometry)
             add_processing_extension(stac_item, self.processing_software, self.providers)
-            stac_item.add_links([*self.links, visualisation_link()])
+            stac_item.add_link(visualisation_link())
             # Link to the input items (Landsat scenes for GeoMAD, the GeoMAD item for LULC).
             stac_item.add_links(
                 [Link(rel="derived_from", target=href, media_type="application/geo+json") for href in input_hrefs]
             )
+            if self.update_item is not None:
+                self.update_item(stac_item)
             self.stac_writer.write(stac_item, self.id)
 
         return paths
