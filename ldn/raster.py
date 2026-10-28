@@ -1,4 +1,7 @@
+import json
 import logging
+from datetime import UTC, datetime
+from importlib.metadata import distribution
 from typing import Literal
 
 import numpy as np
@@ -18,7 +21,8 @@ from geopandas import GeoDataFrame
 from odc.geo.geobox import GeoBox
 from odc.stac import load as stac_load
 from planetary_computer import sign_url
-from pystac import ItemCollection
+from pystac import Item, ItemCollection, Link
+from pystac.utils import datetime_to_str
 from pystac_client import Client as PyStacClient
 from rasterio.enums import Resampling
 from scipy.ndimage import sobel
@@ -403,6 +407,37 @@ def _antimeridian_safe_bbox(area: GeoBox, fallback_bbox: list[float]) -> list[fl
     ]
 
 
+# TODO: Use pystac's processing extension (and validate items with it) once it is supported by pystac.
+PROCESSING_EXTENSION = "https://stac-extensions.github.io/processing/v1.3.0/schema.json"
+
+
+def installed_version(name: str) -> str:
+    """Return the installed version of a package, with the commit appended if it was installed from git.
+
+    Args:
+        name: Installed package name.
+
+    Returns:
+        Version string, e.g. "2.5.2" or "0.5.4+fb8667b40bff46caf34193fe522b35f607020196".
+    """
+    dist = distribution(name)
+    direct_url = json.loads(dist.read_text("direct_url.json") or "{}")
+    commit = direct_url.get("vcs_info", {}).get("commit_id")
+    return f"{dist.version}+{commit}" if commit else dist.version
+
+
+def add_processing_extension(item: Item, software: list[str]) -> None:
+    """Add processing extension fields (software versions and processing datetime) to a STAC item in place.
+
+    Args:
+        item: STAC item to update.
+        software: Installed package names whose versions are recorded in `processing:software`.
+    """
+    item.stac_extensions.append(PROCESSING_EXTENSION)
+    item.properties["processing:software"] = {name: installed_version(name) for name in software}
+    item.properties["processing:datetime"] = datetime_to_str(datetime.now(UTC))
+
+
 # Shared by both GeoMAD creation and LULC classification tasks.
 class AwsStacTask(AreaTask):
     """Area task with search + STAC creation/writing for AWS workflows."""
@@ -415,7 +450,9 @@ class AwsStacTask(AreaTask):
         searcher: Searcher,
         loader: StacLoader,
         processor: Processor,
+        processing_software: list[str],
         post_processor: Processor | None = None,
+        links: list[Link] | None = None,
         logger: logging.Logger = logger,
         **kwargs,
     ):
@@ -427,6 +464,8 @@ class AwsStacTask(AreaTask):
         self.id = id
         self.searcher = searcher
         self.post_processor = post_processor
+        self.processing_software = processing_software
+        self.links = links or []
         self.stac_creator = stac_creator
         self.stac_writer = stac_writer
 
@@ -448,6 +487,8 @@ class AwsStacTask(AreaTask):
             stac_item = self.stac_creator.process(output_data, self.id)
             stac_item.bbox = _antimeridian_safe_bbox(self.area, stac_item.bbox)
             stac_item.geometry = fix_shape(stac_item.geometry)
+            add_processing_extension(stac_item, self.processing_software)
+            stac_item.add_links(self.links)
             self.stac_writer.write(stac_item, self.id)
 
         return paths
