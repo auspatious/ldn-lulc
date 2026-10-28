@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ldn"
-version = "0.1.0"
+version = "0.2.0"
 description = "Land Degradation Neutrality Land Use/Land Cover tools"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -70,6 +70,3 @@ select = ["E", "F", "I"]
 
 [tool.ruff.lint.per-file-ignores]
 "ldn/cli.py" = ["E402", "I001"]
-
-[tool.hatch.build.targets.wheel]
-packages = ["ldn"]
