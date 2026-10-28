@@ -21,7 +21,6 @@ from antimeridian import fix_multi_polygon, fix_polygon
 from dep_tools.aws import object_exists
 from dep_tools.utils import bbox_across_180, search_across_180
 from odc.geo.geom import Geometry
-from odc.geo.geom import box as odc_box
 from odc.stac import load, stac_load
 from planetary_computer import sign_url
 from pystac import ItemCollection
@@ -754,8 +753,8 @@ def make_training_data(
 
     # Clip country geometry to this tile's footprint before any data loading.
     # Critical for countries like Kiribati that span huge parts of the Pacific —
-    # passing the full country geometry into search_and_load_geomad_indices_dem
-    # causes Dask to materialise a massive array, leading to OOM kills.
+    # the country geometry bounds the final feature clip and the LULC product loads,
+    # and the full country would cause Dask to materialise a massive array, leading to OOM kills.
     # Skip for AM-crossing tiles: their WGS84 footprint straddles ±180° and
     # intersects incorrectly with standard WGS84 country geometries.
     logger.info("Clipping buffered country geometry to tile footprint")
@@ -783,7 +782,6 @@ def make_training_data(
         year,
         region=region,
         country_wgs84_buffered=country_wgs84_buffered,
-        analysis_crs=analysis_crs,
         product_owner=product_owner_geomad,
         single_region=single_region_geomad,
         bucket=geomad_bucket,
@@ -954,7 +952,6 @@ def search_and_load_geomad_indices_dem(
     year: str,
     region: Literal["pacific", "non-pacific"],
     country_wgs84_buffered: gpd.GeoDataFrame,
-    analysis_crs: Literal["EPSG:3832", "EPSG:6933"],
     product_owner: str | None,
     single_region: bool,
     bucket: str,
@@ -968,8 +965,7 @@ def search_and_load_geomad_indices_dem(
         tile_id: Grid tile identifier (e.g. "058_043").
         year: Year string for the GeoMAD item search (e.g. "2020").
         region: Grid region, either "pacific" or "non-pacific".
-        country_wgs84_buffered: Buffered country geometry in WGS84. Constrains the stac_load extent and the final clip.
-        analysis_crs: The expected CRS of the GeoMAD data (either "EPSG:3832" or "EPSG:6933").
+        country_wgs84_buffered: Buffered country geometry in WGS84, used for the final clip.
         product_owner: Optional owner override (e.g. "dep" or "ci").
         single_region: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
         bucket: S3 bucket name where the GeoMAD data is stored.
@@ -977,7 +973,7 @@ def search_and_load_geomad_indices_dem(
 
     Returns:
         Merged dataset with GeoMAD bands, spectral indices, elevation,
-        slope, northness and eastness, clipped to the intersection of the tile proj:bbox and the buffered country.
+        slope, northness and eastness, clipped to the intersection of the tile and the buffered country.
     """
     logger.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}.")
     if GEOMAD_VERSION != geomad_version:
@@ -991,42 +987,18 @@ def search_and_load_geomad_indices_dem(
     ).search()
     logger.info(f"Found GeoMAD item {geomad_items[0].id} for tile {tile_id} and year {year}")
 
-    proj_bbox = geomad_items[0].properties.get("proj:bbox")
-    if proj_bbox is None:
-        raise LdnError("GeoMAD item is missing 'proj:bbox' property.")
-    logger.info(f"proj:bbox = {proj_bbox}")
-
     bands = [b for b in geomad_items[0].assets.keys() if b != "count"]
     logger.info(f"Loading bands: {bands}")
 
+    # The tile geobox is the GeoMAD item's native grid, so this loads exactly the tile with no reprojection.
     geomad_ds = stac_load(
         geomad_items,
         chunks={},  # Force lazy.
         bands=bands,
         fail_on_error=True,  # We control the data so it shouldn't fail.
-        geopolygon=country_wgs84_buffered,
-    )
-
-    if geomad_ds.odc.crs.epsg != int(analysis_crs.split(":")[1]):
-        raise LdnError(
-            f"GeoMAD dataset CRS (EPSG:{geomad_ds.odc.crs.epsg}) does not match analysis CRS ({analysis_crs})"
-        )
-    logger.info(f"GeoMAD CRS: EPSG:{geomad_ds.odc.crs.epsg}")
+        geobox=get_gridspec(region=region).tile_geobox(parse_tile_id(tile_id)),
+    ).squeeze()
     logger.info(f"GeoMAD shape: {geomad_ds.dims}")
-
-    geomad_ds = geomad_ds.squeeze()
-
-    # Clip to tile proj:bbox (the dataset may span the full country extent)
-    tile_geom = odc_box(
-        proj_bbox[0],
-        proj_bbox[1],
-        proj_bbox[2],
-        proj_bbox[3],
-        crs=analysis_crs,
-    )
-    # apply_mask not needed for this box crop.
-    geomad_ds = geomad_ds.odc.crop(tile_geom, apply_mask=False)
-    logger.info(f"GeoMAD shape (after tile clip): {geomad_ds.dims}")
 
     merged = make_features(geomad_ds)
     logger.info(f"Merged GeoMAD+DEM shape: {merged.dims}")
