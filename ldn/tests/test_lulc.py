@@ -196,14 +196,13 @@ class TestCalculateIndices:
         for band in ["ndvi", "ndwi", "bsi", "mbi", "bui"]:
             assert np.isnan(result[band].values[0, 0]), f"{band} should be NaN"
 
-    def test_division_by_zero_produces_nan(self):
-        """When both bands in a ratio are 0, result should be NaN."""
+    def test_division_by_zero_produces_zero(self):
+        """When both bands in a normalised difference are 0 (valid dark pixel), result should be 0, not NaN."""
         ds = _make_geomad_dataset(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         result = calculate_indices(ds)
-        # All normalised difference indices divide by zero
         for band in ["ndvi", "ndwi", "mndwi", "ndti", "bsi"]:
             val = float(result[band].values[0, 0])
-            assert np.isnan(val), f"{band} = {val}"
+            assert val == 0, f"{band} = {val}"
 
 
 class TestGeomadSearcher:
