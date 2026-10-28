@@ -472,6 +472,7 @@ class AwsStacTask(AreaTask):
     def run(self):
         items = self.searcher.search(self.area)
         logger.info(f"Found {len(items)} items for this tile/year")
+        input_hrefs = [href for item in items if (href := item.get_self_href())]
         input_data = self.loader.load(items, self.area)
         logger.info(f"Loaded {len(input_data.time.values)} items for this tile/year")
 
@@ -489,6 +490,10 @@ class AwsStacTask(AreaTask):
             stac_item.geometry = fix_shape(stac_item.geometry)
             add_processing_extension(stac_item, self.processing_software)
             stac_item.add_links(self.links)
+            # Link to the input items (Landsat scenes for GeoMAD, the GeoMAD item for LULC).
+            stac_item.add_links(
+                [Link(rel="derived_from", target=href, media_type="application/geo+json") for href in input_hrefs]
+            )
             self.stac_writer.write(stac_item, self.id)
 
         return paths
