@@ -17,6 +17,7 @@ from pystac import (
 from shapely import box, unary_union
 
 from ldn.aws import s3_client
+from ldn.raster import PROCESSING_EXTENSION
 from ldn.utils import (
     GEOMAD_VERSION,
     LULC_VERSION,
@@ -58,6 +59,7 @@ def _run_create_collection(dataset: Literal["geomad", "lulc"], extent: Extent, s
             extent=extent,
             license="CC-BY-4.0",
             keywords=["Landsat", "GeoMAD", "Pacific"],
+            stac_extensions=[PROCESSING_EXTENSION],
             # stac_version="1.1.0", # Automatic from pystac.
             providers=[
                 # TODO: Update DEP provider for different buckets? e.g. Source.Coop as host.
@@ -109,6 +111,11 @@ def _run_create_collection(dataset: Literal["geomad", "lulc"], extent: Extent, s
                         )
                     ],
                     "platform": ["landsat-5", "landsat-7", "landsat-8", "landsat-9"],
+                    "processing:level": ["L3"],
+                    "processing:lineage": [
+                        "Annual geometric median and median absolute deviations of Landsat Collection 2 Level-2 "
+                        "surface reflectance"
+                    ],
                 },
             ),
         )

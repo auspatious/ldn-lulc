@@ -1,15 +1,21 @@
+import re
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 import xarray as xr
+from pystac import Item
 
 from ldn.raster import (
+    PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
     _compute_terrain,
     _load_dem_am,
+    add_processing_extension,
     build_pipeline_components,
     calculate_indices,
+    installed_version,
     load_dem_terrain,
     scale_offset_landsat,
 )
@@ -623,3 +629,16 @@ def test_build_pipeline_components_proceeds_when_exists_and_overwrite(mock_aws):
             sensor="ls",
         )
     assert result is not None
+
+
+def test_add_processing_extension():
+    item = Item(id="t", geometry=None, bbox=None, datetime=datetime(2020, 1, 1), properties={})
+    add_processing_extension(item, ["ldn", "pystac"])
+    assert PROCESSING_EXTENSION in item.stac_extensions
+    assert set(item.properties["processing:software"]) == {"ldn", "pystac"}
+    assert item.properties["processing:datetime"].endswith("Z")
+
+
+def test_installed_version_appends_git_commit():
+    assert installed_version("numpy") == np.__version__
+    assert re.fullmatch(r"[\w.]+\+[0-9a-f]{40}", installed_version("dep-tools"))

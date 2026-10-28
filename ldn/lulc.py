@@ -18,7 +18,7 @@ from dep_tools.utils import _fix_geometry
 from geopandas import GeoDataFrame
 from joblib import load as joblib_load
 from odc.geo.geobox import GeoBox
-from pystac import Item, ItemCollection
+from pystac import Item, ItemCollection, Link
 from rustac import search_sync
 from sklearn.ensemble import RandomForestClassifier
 from typing_extensions import Annotated
@@ -554,6 +554,20 @@ def run_classify_task(
                 searcher=searcher,
                 loader=loader,
                 processor=processor,
+                processing_software=[
+                    "ldn",
+                    "dep-tools",
+                    "odc-stac",
+                    "odc-geo",
+                    "rasterio",
+                    "rioxarray",
+                    "gdal",
+                    "numpy",
+                    "scipy",
+                    "xarray",
+                    "scikit-learn",
+                ],
+                links=[Link(rel="related", target=model_path, title="LULC classification model")],
                 logger=logger,
                 writer=writer,
                 stac_creator=stac_creator,
