@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 from collections.abc import Callable
 from datetime import UTC, datetime
 from importlib.metadata import distribution
@@ -38,6 +39,12 @@ from ldn.utils import (
 
 logger = logging.getLogger(__name__)
 
+# Landsat Collection 2 scaling constants (USGS)
+LANDSAT_SCALE = 0.0000275
+LANDSAT_OFFSET = -0.2
+# Largest valid baei: max numerator (red = 1) over the smallest positive scaled reflectance (raw 7273 -> 0.0000075).
+BAEI_MAX = (1 + 0.3) / (math.ceil(-LANDSAT_OFFSET / LANDSAT_SCALE) * LANDSAT_SCALE + LANDSAT_OFFSET)
+
 
 def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     """Scale Landsat Collection 2 reflectance values and mask nodata.
@@ -54,9 +61,6 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     Returns:
         The same dataset with bands scaled to float32 in [0, 1].
     """
-    # Landsat Collection 2 scaling constants (USGS)
-    scale_factor = 0.0000275
-    offset = -0.2
     nodata_values = (0, 65_535)
 
     bands_to_scale = [band for band in data.data_vars if band not in ["count", "emad", "smad", "bcmad"]]
@@ -64,17 +68,34 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     for band in bands_to_scale:
         raw = data[band]
         nodata = (raw == nodata_values[0]) | (raw == nodata_values[1])
-        # TODO: Clip to 0.01 instead of 0 so indices still work? Also would clipping to 0 mean that this becomes nodata?
-        scaled = (raw * scale_factor + offset).clip(0, 1).astype("float32")
+        # Reflectance <= 0 is clipped to 0: a valid very dark pixel, not nodata. safe_divide handles the zeros.
+        scaled = (raw * LANDSAT_SCALE + LANDSAT_OFFSET).clip(0, 1).astype("float32")
         data[band] = scaled.where(~nodata, other=np.nan)
     return data
+
+
+def safe_divide(num: xr.DataArray, den: xr.DataArray) -> xr.DataArray:
+    """Divide, returning 0 where the denominator is 0.
+
+    With bands clipped to [0, 1], a zero denominator in a normalised difference means both bands are 0: a valid
+    very dark pixel (e.g. water in SWIR) with no contrast, so 0 rather than NaN, which would mask it as nodata.
+
+    Args:
+        num: Numerator.
+        den: Denominator.
+
+    Returns:
+        num / den, 0 where den is 0, NaN where den is NaN (nodata).
+    """
+    return (num / den.where(den != 0)).where(den != 0, 0)
 
 
 def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     """Compute spectral indices from scaled geomedian bands.
 
-    Adds index bands to the dataset in place. Division-by-zero cases
-    (e.g. when both bands are 0 or NaN) will produce NaN values.
+    Adds index bands to the dataset in place. Bands must already be scaled and clipped to [0, 1]
+    (see scale_offset_landsat) so normalised differences stay in [-1, 1]. Zero denominators and
+    NaN inputs (nodata) produce NaN.
 
     Args:
         geomad: GeoMedian/GeoMAD dataset containing at least `nir08`, `red`, `green`,
@@ -90,14 +111,16 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     blue = geomad.blue
     swir1 = geomad.swir16
     swir2 = geomad.swir22
-    geomad["ndvi"] = (nir - red) / (nir + red)
-    geomad["ndwi"] = (green - nir) / (green + nir)
-    geomad["mndwi"] = (green - swir1) / (green + swir1)
-    geomad["ndti"] = (red - green) / (red + green)
-    geomad["bsi"] = ((swir1 + red) - (nir + blue)) / ((swir1 + red) + (nir + blue))
-    geomad["mbi"] = ((swir1 - swir2 - nir) / (swir1 + swir2 + nir)) + 0.5
-    geomad["baei"] = (red + 0.3) / (green + swir1)
-    ndbi = (swir1 - nir) / (swir1 + nir)  # intermediate, not stored
+    geomad["ndvi"] = safe_divide(nir - red, nir + red)
+    geomad["ndwi"] = safe_divide(green - nir, green + nir)
+    geomad["mndwi"] = safe_divide(green - swir1, green + swir1)
+    geomad["ndti"] = safe_divide(red - green, red + green)
+    geomad["bsi"] = safe_divide((swir1 + red) - (nir + blue), (swir1 + red) + (nir + blue))
+    geomad["mbi"] = safe_divide(swir1 - swir2 - nir, swir1 + swir2 + nir) + 0.5
+    # Not a normalised difference: grows without bound as the denominator approaches 0, so use the max, not 0.
+    baei_den = green + swir1
+    geomad["baei"] = safe_divide(red + 0.3, baei_den).where(baei_den != 0, BAEI_MAX)
+    ndbi = safe_divide(swir1 - nir, swir1 + nir)  # intermediate, not stored
     geomad["bui"] = ndbi - geomad["ndvi"]
     return geomad
 

@@ -10,6 +10,7 @@ import xarray as xr
 from pystac import Item
 
 from ldn.raster import (
+    BAEI_MAX,
     PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
     _compute_terrain,
@@ -201,10 +202,14 @@ class TestCalculateIndices:
         result = calculate_indices(spectral_ds)
         assert {"ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"}.issubset(result.data_vars)
 
-    @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi", "ndti", "bsi"])
-    def test_all_zero_inputs_yield_nan_for_ratio_indices(self, index):
+    @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"])
+    def test_all_zero_inputs_yield_finite_values(self, index):
         ds = _spectral_dataset(nir=0.0, red=0.0, green=0.0, blue=0.0, swir16=0.0, swir22=0.0)
-        assert np.isnan(calculate_indices(ds)[index].item())
+        assert np.isfinite(calculate_indices(ds)[index].item())
+
+    def test_baei_zero_denominator_is_max(self):
+        ds = _spectral_dataset(green=0.0, swir16=0.0)
+        assert calculate_indices(ds)["baei"].item() == pytest.approx(BAEI_MAX)
 
     def test_mutates_and_returns_same_dataset_object(self, spectral_ds):
         assert calculate_indices(spectral_ds) is spectral_ds
