@@ -1,14 +1,17 @@
 from datetime import datetime
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 import xarray as xr
 from pystac import Asset, Item
 from pystac.extensions.classification import ClassificationExtension
 from sklearn.ensemble import RandomForestClassifier
 
-from ldn.lulc import _add_lulc_stac_metadata, do_prediction, geomad_searcher
+from ldn.lulc import StacGeoparquetSearcher, _add_lulc_stac_metadata, do_prediction, geomad_searcher
 from ldn.raster import calculate_indices, scale_offset_landsat
+from ldn.utils import LdnError
 
 
 def _make_dataset(values: dict[str, list[list[float]]]) -> xr.Dataset:
@@ -224,6 +227,37 @@ class TestGeomadSearcher:
         """Without an owner override the ID uses the region's owner."""
         searcher = geomad_searcher("dep-public-staging", "non-pacific", None, False, "ls", "0-2-1", "2020", (119, 126))
         assert searcher._item_id == "ci_ls_geomad_119_126_2020"
+
+    @pytest.mark.parametrize("region,owner,tile", [("pacific", "dep", (66, 20)), ("non-pacific", "ci", (119, 126))])
+    def test_neighbour_ids_are_the_8_surrounding_tiles(self, region, owner, tile):
+        """The padded tile overlaps its 8 neighbours, including across the antimeridian (Pacific 066_020)."""
+        searcher = geomad_searcher("dep-public-staging", region, owner, True, "ls", "0-2-1", "2020", tile)
+        x, y = tile
+        expected = {
+            f"{owner}_ls_geomad_{x + dx:03d}_{y + dy:03d}_2020"
+            for dx in [-1, 0, 1]
+            for dy in [-1, 0, 1]
+            if (dx, dy) != (0, 0)
+        }
+        assert set(searcher._neighbour_ids) == expected
+
+
+class TestStacGeoparquetSearcher:
+    @staticmethod
+    def _doc(item_id: str) -> dict:
+        return Item(id=item_id, geometry=None, bbox=None, datetime=datetime(2020, 6, 30), properties={}).to_dict()
+
+    def test_tile_item_first_and_missing_neighbours_skipped(self):
+        searcher = StacGeoparquetSearcher("https://example.com/x.parquet", "tile", ["n1", "n2"])
+        with patch("ldn.lulc.search_sync", return_value=[self._doc("n1"), self._doc("tile")]):
+            items = searcher.search()
+        assert [item.id for item in items] == ["tile", "n1"]
+
+    def test_missing_tile_item_raises(self):
+        searcher = StacGeoparquetSearcher("https://example.com/x.parquet", "tile", ["n1"])
+        with patch("ldn.lulc.search_sync", return_value=[self._doc("n1")]):
+            with pytest.raises(LdnError, match="tile not found"):
+                searcher.search()
 
 
 # TODO: Add tests for further prediction functions.

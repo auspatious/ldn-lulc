@@ -14,12 +14,16 @@ from pystac.extensions.projection import ProjectionExtension
 
 from ldn.raster import (
     BAEI_MAX,
+    FOCAL_FEATURES,
+    FOCAL_PAD,
     PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
     _compute_terrain,
     add_processing_extension,
     build_pipeline_components,
     calculate_indices,
+    crop_padding,
+    focal_features,
     installed_version,
     load_across_antimeridian,
     load_dem_terrain,
@@ -704,3 +708,54 @@ def test_installed_version_appends_pinned_git_commit():
     sources = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())["tool"]["uv"]["sources"]
     for name in ["dep-tools", "datacube-compute"]:
         assert installed_version(name) == f"{version(name)}+{sources[name]['rev']}"
+
+
+# Focal statistics - compared against a direct numpy window calculation
+
+
+def _window(values: np.ndarray, row: int, col: int, size: int) -> np.ndarray:
+    """In-bounds size x size window around a pixel."""
+    half = size // 2
+    return values[max(row - half, 0) : row + half + 1, max(col - half, 0) : col + half + 1]
+
+
+class TestFocalFeatures:
+    @pytest.fixture
+    def data(self) -> xr.Dataset:
+        rng = np.random.default_rng(0)
+        values = rng.uniform(0, 1, (9, 9)).astype(np.float32)
+        values[2, 3] = values[6, 6] = np.nan
+        return xr.Dataset({"ndvi": (("y", "x"), values)})
+
+    @pytest.mark.parametrize("row,col", [(4, 4), (0, 0), (2, 3), (8, 5)])
+    def test_mean_std_and_tpi_match_numpy_window_ignoring_nan(self, data, row, col):
+        values = data["ndvi"].values.astype("float64")
+        result = focal_features(data, ["ndvi_mean_3", "ndvi_std_3", "ndvi_tpi_3"])
+        window = _window(values, row, col, 3)
+        assert result["ndvi_mean_3"].values[row, col] == pytest.approx(np.nanmean(window), rel=1e-5)
+        assert result["ndvi_std_3"].values[row, col] == pytest.approx(np.nanstd(window), rel=1e-4, abs=1e-6)
+        expected_tpi = values[row, col] - np.nanmean(window)
+        np.testing.assert_allclose(result["ndvi_tpi_3"].values[row, col], expected_tpi, rtol=1e-5)
+
+    def test_window_with_no_valid_pixels_is_nan(self):
+        values = np.ones((7, 7), dtype=np.float32)
+        values[:4, :4] = np.nan
+        result = focal_features(xr.Dataset({"ndvi": (("y", "x"), values)}), ["ndvi_mean_3"])
+        assert np.isnan(result["ndvi_mean_3"].values[1, 1])
+        assert result["ndvi_mean_3"].values[3, 3] == pytest.approx(1.0)
+
+    def test_outputs_are_float32_on_input_grid(self, data):
+        result = focal_features(data, ["ndvi_mean_7"])["ndvi_mean_7"]
+        assert result.dtype == np.float32
+        assert result.dims == data["ndvi"].dims and result.shape == data["ndvi"].shape
+
+
+def test_focal_pad_covers_widest_window():
+    assert FOCAL_PAD == max(int(name.rsplit("_", 1)[1]) for name in FOCAL_FEATURES) // 2 == 25
+
+
+def test_crop_padding_removes_pad_from_each_side():
+    data = xr.Dataset({"a": (("y", "x"), np.zeros((10, 12)))}, coords={"x": np.arange(12), "y": np.arange(10)})
+    cropped = crop_padding(data, 2)
+    assert cropped["a"].shape == (6, 8)
+    assert cropped.x.values[0] == 2 and cropped.y.values[-1] == 7
