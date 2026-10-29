@@ -209,6 +209,19 @@ class TestCalculateIndices:
     def test_mutates_and_returns_same_dataset_object(self, spectral_ds):
         assert calculate_indices(spectral_ds) is spectral_ds
 
+    def test_preserves_original_bands(self, spectral_ds):
+        result = calculate_indices(spectral_ds)
+        assert {"nir08", "red", "green", "blue", "swir16", "swir22"} <= set(result.data_vars)
+
+    @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi", "ndti", "bsi"])
+    def test_normalised_differences_in_range(self, spectral_ds, index):
+        assert -1.0 <= calculate_indices(spectral_ds)[index].item() <= 1.0
+
+    @pytest.mark.parametrize("index", ["ndvi", "ndwi", "bsi", "mbi", "bui"])
+    def test_nan_nir_propagates(self, index):
+        ds = _spectral_dataset(nir=np.nan)
+        assert np.isnan(calculate_indices(ds)[index].item())
+
 
 # Terrain derivation  - pure scipy/numpy, zero mocks
 
