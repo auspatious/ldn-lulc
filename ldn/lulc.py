@@ -207,7 +207,16 @@ def do_prediction(
         argmax class where max probability >= threshold (else nodata), and
         probabilities is a dict mapping "probability_{class value}" (e.g. "probability_1" for Tree cover)
         to uint8 DataArrays of per-class probability (0-100).
+
+    Raises:
+        LdnError: If the dataset's variables are not exactly the model's features.
     """
+    # The features must match the model's exactly. Extra ones would also wrongly mask pixels as nodata below.
+    missing = set(model.feature_names_in_) - set(ds.data_vars)
+    extra = set(ds.data_vars) - set(model.feature_names_in_)
+    if missing or extra:
+        raise LdnError(f"Dataset features don't match the model. Missing: {sorted(missing)}, extra: {sorted(extra)}")
+
     stacked = ds.to_array().stack(dims=["y", "x"])
 
     # Nodata mask: True for pixels where ANY band is NaN.
@@ -222,10 +231,6 @@ def do_prediction(
         .to_dataframe()
     )
 
-    # Validate that all model features are present before reindexing.
-    missing = set(model.feature_names_in_) - set(obs.columns)
-    if missing:
-        raise LdnError(f"Dataset is missing features required by the model: {sorted(missing)}")
     obs = obs.reindex(columns=model.feature_names_in_)
 
     # Flatten the spatial nodata mask to match the observation index.
