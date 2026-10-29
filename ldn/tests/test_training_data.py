@@ -1,8 +1,5 @@
-from unittest.mock import MagicMock
-
 import geopandas as gpd
 import numpy as np
-import pytest
 import xarray as xr
 from shapely.geometry import Point
 
@@ -11,7 +8,6 @@ from ldn.training_data import (
     PACIFIC_TRAINING_TILES,
     TEST_TILES,
     _cci_quality_filter,
-    _item_centroid_lon,
     _wc_quality_filter,
     extract_geomad_dem_indices_values,
     filter_outliers,
@@ -19,40 +15,6 @@ from ldn.training_data import (
     remove_nan_samples,
 )
 from ldn.utils import parse_tile_id
-
-
-class TestItemCentroidLon:
-    def test_simple_polygon(self):
-        """Returns mean longitude of item geometry coordinates."""
-        item = MagicMock()
-        item.geometry = {
-            "coordinates": [
-                [
-                    (170.0, -10.0),
-                    (172.0, -10.0),
-                    (172.0, -12.0),
-                    (170.0, -12.0),
-                    (170.0, -10.0),
-                ]
-            ]
-        }
-        assert _item_centroid_lon(item) == pytest.approx(170.8)
-
-    def test_negative_longitude(self):
-        """Handles western hemisphere coordinates."""
-        item = MagicMock()
-        item.geometry = {
-            "coordinates": [
-                [
-                    (-170.0, -10.0),
-                    (-168.0, -10.0),
-                    (-168.0, -12.0),
-                    (-170.0, -12.0),
-                    (-170.0, -10.0),
-                ]
-            ]
-        }
-        assert _item_centroid_lon(item) < 0
 
 
 class TestWcQualityFilter:
@@ -293,6 +255,7 @@ class TestExtractGeomadDemIndicesValues:
                 "red": xr.DataArray(red, dims=("y", "x"), coords={"y": y, "x": x}),
             }
         )
+        # TODO: use odc crs?
         ds = ds.rio.write_crs("EPSG:3832")
 
         # Sample at pixel centres
