@@ -232,7 +232,7 @@ def do_prediction(
     Returns:
         A (classification, probabilities) tuple where classification is the
         argmax class where max probability >= threshold (else nodata), and
-        probabilities is a dict mapping "probability_1" through "probability_N"
+        probabilities is a dict mapping "probability_{class value}" (e.g. "probability_1" for Tree cover)
         to uint8 DataArrays of per-class probability (0-100).
     """
     stacked = ds.to_array().stack(dims=["y", "x"])
@@ -272,11 +272,11 @@ def do_prediction(
     nodata_mask_2d = nodata_mask.unstack("dims")
     predictions_2d = reshape_array_to_2d(full_predictions, ds, nodata_mask_2d, nodata_value=nodata_value)
 
-    # Per-class probability bands.
+    # Per-class probability bands, named by class value (predict_proba columns follow model.classes_).
     probabilities = {}
-    for i in range(n_classes):
+    for i, class_value in enumerate(model.classes_):
         series = pd.Series(full_probabilities[:, i], index=obs.index)
-        probabilities[f"probability_{i + 1}"] = reshape_array_to_2d(
+        probabilities[f"probability_{int(class_value)}"] = reshape_array_to_2d(
             series, ds, nodata_mask_2d, nodata_value=nodata_value
         )
 
