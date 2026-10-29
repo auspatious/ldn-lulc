@@ -1,11 +1,13 @@
 from datetime import datetime
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 from pystac import Asset, Item
 from pystac.extensions.classification import ClassificationExtension
+from sklearn.ensemble import RandomForestClassifier
 
-from ldn.lulc import _add_lulc_stac_metadata, geomad_searcher
+from ldn.lulc import _add_lulc_stac_metadata, do_prediction, geomad_searcher
 from ldn.raster import calculate_indices, scale_offset_landsat
 
 
@@ -241,3 +243,13 @@ def test_add_lulc_stac_metadata():
     assert (classes["no_data"].value, classes["no_data"].nodata) == (0, True)
     assert (classes["tree_cover"].value, classes["tree_cover"].title) == (1, "Tree cover")
     assert classes["tree_cover"].color_hint == "006400"
+
+
+def test_probability_bands_are_named_by_class_value():
+    """Bands follow the model's classes, so a class missing from training doesn't shift the names."""
+    features = pd.DataFrame({"a": [0.0, 1.0, 0.0, 1.0], "b": [0.0, 0.0, 1.0, 1.0]})
+    model = RandomForestClassifier(n_estimators=2, random_state=0).fit(features, [1, 3, 1, 3])
+    values = np.array([[0.0, 1.0]], dtype=np.float32)
+    ds = xr.Dataset({"a": (("y", "x"), values), "b": (("y", "x"), values)}, coords={"y": [0], "x": [0, 1]})
+    _, probabilities = do_prediction(ds, model, 0, 255)
+    assert list(probabilities) == ["probability_1", "probability_3"]
