@@ -263,6 +263,26 @@ class TestStacGeoparquetSearcher:
 # TODO: Add tests for further prediction functions.
 
 
+class TestDoPredictionFeatureCheck:
+    @pytest.fixture
+    def model(self) -> RandomForestClassifier:
+        features = pd.DataFrame({"a": [0.0, 1.0, 0.0, 1.0], "b": [0.0, 0.0, 1.0, 1.0]})
+        return RandomForestClassifier(n_estimators=2, random_state=0).fit(features, [1, 2, 1, 2])
+
+    @staticmethod
+    def _features(*names: str) -> xr.Dataset:
+        return xr.Dataset({name: (("y", "x"), np.zeros((2, 2), dtype=np.float32)) for name in names})
+
+    def test_matching_features_predict(self, model):
+        classification, _ = do_prediction(self._features("b", "a"), model, 0, 255)
+        assert classification.shape == (2, 2)
+
+    @pytest.mark.parametrize("names,message", [(("a",), "Missing: \\['b'\\]"), (("a", "b", "c"), "extra: \\['c'\\]")])
+    def test_missing_or_extra_features_raise(self, model, names, message):
+        with pytest.raises(LdnError, match=message):
+            do_prediction(self._features(*names), model, 0, 255)
+
+
 def test_add_lulc_stac_metadata():
     """Model link, classification classes and asset titles are added, with nodata using the output nodata value."""
     item = Item(id="t", geometry=None, bbox=None, datetime=datetime(2020, 1, 1), properties={})
