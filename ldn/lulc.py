@@ -29,6 +29,7 @@ from ldn.raster import (
     GEOMAD_BANDS,
     build_pipeline_components,
     make_features,
+    stac_providers,
 )
 from ldn.raster import (
     AwsStacTask as Task,
@@ -554,6 +555,7 @@ def run_classify_task(
                 searcher=searcher,
                 loader=loader,
                 processor=processor,
+                providers=stac_providers(LULC_DATASET_ID, _is_source_coop),
                 processing_software=[
                     "ldn",
                     "dep-tools",

@@ -32,6 +32,7 @@ from ldn.utils import (
     WGS84,
     LdnError,
     get_public_url_base,
+    source_coop_prefix,
 )
 
 logger = logging.getLogger(__name__)
@@ -429,21 +430,65 @@ def visualisation_link() -> Link:
     )
 
 
-def auspatious_provider(processing_fields: dict[str, str]) -> Provider:
-    """Auspatious as the processor, with processing extension fields.
+# Processing level and lineage of each dataset, recorded on the Auspatious provider.
+PROCESSING_LEVEL_LINEAGE = {
+    "geomad": {
+        "processing:level": "L3",
+        "processing:lineage": "Annual geometric median and median absolute deviations of Landsat Collection 2 Level-2 "
+        "surface reflectance",
+    },
+    "lulc": {
+        "processing:level": "L4",
+        "processing:lineage": "Random forest land use/land cover classification of annual Landsat GeoMAD, spectral "
+        "indices and Copernicus DEM terrain, trained on the agreement of ESA WorldCover, ESA CCI and Impact "
+        "Observatory land cover in 2020",
+    },
+}
+
+
+def stac_providers(dataset: Literal["geomad", "lulc"], source_coop: bool) -> list[Provider]:
+    """STAC providers for a dataset, shared by its collection and items so items describe themselves.
+
+    Digital Earth Pacific is always a processor, and the host unless the data is on Source Cooperative. Auspatious
+    is the processor on Digital Earth Pacific infrastructure, with the dataset's processing level and lineage.
 
     Args:
-        processing_fields: Processing extension fields, e.g. {"processing:level": "L3"}. processing:facility is added.
+        dataset: Dataset ID, "geomad" or "lulc".
+        source_coop: Whether the data is hosted on Source Cooperative.
 
     Returns:
-        A STAC Provider.
+        List of STAC Providers.
     """
-    return Provider(
-        name="Auspatious",
-        roles=[ProviderRole.PROCESSOR],
-        url="https://auspatious.com",
-        extra_fields={"processing:facility": PROCESSING_FACILITY, **processing_fields},
-    )
+    return [
+        Provider(
+            name="Digital Earth Pacific",
+            roles=[ProviderRole.PROCESSOR] if source_coop else [ProviderRole.PROCESSOR, ProviderRole.HOST],
+            url="https://digitalearthpacific.org",
+        ),
+        *(
+            [
+                Provider(
+                    name="Source Cooperative",
+                    roles=[ProviderRole.HOST],
+                    url=f"https://source.coop/{source_coop_prefix(dataset)}",
+                )
+            ]
+            if source_coop
+            else []
+        ),
+        Provider(
+            name="Auspatious",
+            roles=[ProviderRole.PROCESSOR],
+            url="https://auspatious.com",
+            extra_fields={"processing:facility": PROCESSING_FACILITY, **PROCESSING_LEVEL_LINEAGE[dataset]},
+        ),
+        Provider(
+            name="USGS",
+            roles=[ProviderRole.PRODUCER, ProviderRole.PROCESSOR, ProviderRole.LICENSOR],
+            url="https://www.usgs.gov/landsat-missions/landsat-collection-2-level-2-science-products",
+        ),
+        Provider(name="NASA", roles=[ProviderRole.PRODUCER, ProviderRole.LICENSOR], url="https://www.nasa.gov/"),
+    ]
 
 
 def installed_version(name: str) -> str:
@@ -461,22 +506,23 @@ def installed_version(name: str) -> str:
     return f"{dist.version}+{commit}" if commit else dist.version
 
 
-def add_processing_extension(item: Item, software: list[str]) -> None:
-    """Add processing extension fields to a STAC item in place.
+def add_processing_extension(item: Item, software: list[str], providers: list[Provider]) -> None:
+    """Add processing extension fields and providers to a STAC item in place.
 
-    Records the ldn version (processing:version), software versions, the processing datetime in UTC, and Auspatious
-    as the processor on Digital Earth Pacific infrastructure.
+    Records the ldn version (processing:version), software versions, the processing datetime in UTC, and the
+    providers (see stac_providers).
 
     Args:
         item: STAC item to update.
         software: Installed package names whose versions are recorded in `processing:software`.
+        providers: STAC providers, from stac_providers.
     """
     if PROCESSING_EXTENSION not in item.stac_extensions:
         item.stac_extensions.append(PROCESSING_EXTENSION)
     item.properties["processing:version"] = installed_version("ldn")
     item.properties["processing:software"] = {name: installed_version(name) for name in software}
     item.properties["processing:datetime"] = datetime_to_str(datetime.now(UTC))
-    item.common_metadata.providers = [*(item.common_metadata.providers or []), auspatious_provider({})]
+    item.common_metadata.providers = providers
 
 
 # Shared by both GeoMAD creation and LULC classification tasks.
@@ -492,6 +538,7 @@ class AwsStacTask(AreaTask):
         loader: StacLoader,
         processor: Processor,
         processing_software: list[str],
+        providers: list[Provider],
         post_processor: Processor | None = None,
         links: list[Link] | None = None,
         logger: logging.Logger = logger,
@@ -506,6 +553,7 @@ class AwsStacTask(AreaTask):
         self.searcher = searcher
         self.post_processor = post_processor
         self.processing_software = processing_software
+        self.providers = providers
         self.links = links or []
         self.stac_creator = stac_creator
         self.stac_writer = stac_writer
@@ -529,7 +577,7 @@ class AwsStacTask(AreaTask):
             stac_item = self.stac_creator.process(output_data, self.id)
             stac_item.bbox = _antimeridian_safe_bbox(self.area, stac_item.bbox)
             stac_item.geometry = fix_shape(stac_item.geometry)
-            add_processing_extension(stac_item, self.processing_software)
+            add_processing_extension(stac_item, self.processing_software, self.providers)
             stac_item.add_links([*self.links, visualisation_link()])
             # Link to the input items (Landsat scenes for GeoMAD, the GeoMAD item for LULC).
             stac_item.add_links(
