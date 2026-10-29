@@ -1,5 +1,5 @@
 import tomllib
-from datetime import datetime
+from datetime import datetime, timedelta
 from importlib.metadata import version
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -636,9 +636,16 @@ def test_build_pipeline_components_proceeds_when_exists_and_overwrite(mock_aws):
 def test_add_processing_extension():
     item = Item(id="t", geometry=None, bbox=None, datetime=datetime(2020, 1, 1), properties={})
     add_processing_extension(item, ["ldn", "pystac"])
-    assert PROCESSING_EXTENSION in item.stac_extensions
+    add_processing_extension(item, ["ldn", "pystac"])  # Idempotent extension list.
+    assert item.stac_extensions.count(PROCESSING_EXTENSION) == 1
     assert set(item.properties["processing:software"]) == {"ldn", "pystac"}
-    assert item.properties["processing:datetime"].endswith("Z")
+    assert item.properties["processing:version"] == installed_version("ldn")
+    # RFC 3339 in UTC, as the extension requires.
+    processed = datetime.fromisoformat(item.properties["processing:datetime"])
+    assert item.properties["processing:datetime"].endswith("Z") and processed.utcoffset() == timedelta(0)
+    provider = item.common_metadata.providers[0]
+    assert (provider.name, provider.roles) == ("Auspatious", ["processor"])
+    assert provider.extra_fields["processing:facility"] == "Digital Earth Pacific"
 
 
 def test_installed_version_appends_pinned_git_commit():

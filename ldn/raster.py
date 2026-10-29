@@ -21,7 +21,7 @@ from geopandas import GeoDataFrame
 from odc.geo.geobox import GeoBox
 from odc.stac import load as stac_load
 from planetary_computer import sign_url
-from pystac import Item, ItemCollection, Link
+from pystac import Item, ItemCollection, Link, Provider, ProviderRole
 from pystac.utils import datetime_to_str
 from pystac_client import Client as PyStacClient
 from rasterio.enums import Resampling
@@ -407,8 +407,39 @@ def _antimeridian_safe_bbox(area: GeoBox, fallback_bbox: list[float]) -> list[fl
     ]
 
 
-# TODO: Use pystac's processing extension (and validate items with it) once it is supported by pystac.
+# TODO: Use pystac's processing extension (and validate items with it) once the extension is accepted. It is currently a
+# candidate: https://github.com/stac-extensions/processing
 PROCESSING_EXTENSION = "https://stac-extensions.github.io/processing/v1.3.0/schema.json"
+# Processing was done by Auspatious on Digital Earth Pacific infrastructure.
+PROCESSING_FACILITY = "Digital Earth Pacific"
+
+
+def visualisation_link() -> Link:
+    """A link to the LDN LULC visualisation app, for STAC items and collections.
+
+    Returns:
+        A STAC Link.
+    """
+    return Link(
+        rel="related", target="https://auspatious.github.io/ldn-lulc", media_type="text/html", title="Visualisation"
+    )
+
+
+def auspatious_provider(processing_fields: dict[str, str]) -> Provider:
+    """Auspatious as the processor, with processing extension fields.
+
+    Args:
+        processing_fields: Processing extension fields, e.g. {"processing:level": "L3"}. processing:facility is added.
+
+    Returns:
+        A STAC Provider.
+    """
+    return Provider(
+        name="Auspatious",
+        roles=[ProviderRole.PROCESSOR],
+        url="https://auspatious.com",
+        extra_fields={"processing:facility": PROCESSING_FACILITY, **processing_fields},
+    )
 
 
 def installed_version(name: str) -> str:
@@ -427,15 +458,21 @@ def installed_version(name: str) -> str:
 
 
 def add_processing_extension(item: Item, software: list[str]) -> None:
-    """Add processing extension fields (software versions and processing datetime) to a STAC item in place.
+    """Add processing extension fields to a STAC item in place.
+
+    Records the ldn version (processing:version), software versions, the processing datetime in UTC, and Auspatious
+    as the processor on Digital Earth Pacific infrastructure.
 
     Args:
         item: STAC item to update.
         software: Installed package names whose versions are recorded in `processing:software`.
     """
-    item.stac_extensions.append(PROCESSING_EXTENSION)
+    if PROCESSING_EXTENSION not in item.stac_extensions:
+        item.stac_extensions.append(PROCESSING_EXTENSION)
+    item.properties["processing:version"] = installed_version("ldn")
     item.properties["processing:software"] = {name: installed_version(name) for name in software}
     item.properties["processing:datetime"] = datetime_to_str(datetime.now(UTC))
+    item.common_metadata.providers = [*(item.common_metadata.providers or []), auspatious_provider({})]
 
 
 # Shared by both GeoMAD creation and LULC classification tasks.
@@ -489,7 +526,7 @@ class AwsStacTask(AreaTask):
             stac_item.bbox = _antimeridian_safe_bbox(self.area, stac_item.bbox)
             stac_item.geometry = fix_shape(stac_item.geometry)
             add_processing_extension(stac_item, self.processing_software)
-            stac_item.add_links(self.links)
+            stac_item.add_links([*self.links, visualisation_link()])
             # Link to the input items (Landsat scenes for GeoMAD, the GeoMAD item for LULC).
             stac_item.add_links(
                 [Link(rel="derived_from", target=href, media_type="application/geo+json") for href in input_hrefs]
