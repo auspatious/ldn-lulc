@@ -115,17 +115,25 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     blue = geomad.blue
     swir1 = geomad.swir16
     swir2 = geomad.swir22
+    # Normalised Difference Vegetation Index (Rouse 1974).
     geomad["ndvi"] = safe_divide(nir - red, nir + red)
+    # Normalised Difference Water Index (McFeeters 1996).
     geomad["ndwi"] = safe_divide(green - nir, green + nir)
+    # Modified Normalised Difference Water Index (Xu 2006).
     geomad["mndwi"] = safe_divide(green - swir1, green + swir1)
-    # Normalised Difference Turbidity Index (Lacaux 2007), not the tillage index of the same name (SWIR1/SWIR2).
+    # Normalised Difference Turbidity Index (Lacaux 2007).
     geomad["ndti"] = safe_divide(red - green, red + green)
+    # Bare Soil Index (Rikimaru 2002).
     geomad["bsi"] = safe_divide((swir1 + red) - (nir + blue), (swir1 + red) + (nir + blue))
+    # Modified Bare soil Index (Nguyen 2021).
     geomad["mbi"] = safe_divide(swir1 - swir2 - nir, swir1 + swir2 + nir) + 0.5
-    # Not a normalised difference: grows without bound as the denominator approaches 0, so use the max, not 0.
+    # Built-up Area Extraction Index (Bouzekri 2015). Not a normalised difference: grows without bound as the
+    # denominator approaches 0, so use the max, not 0.
     baei_den = green + swir1
     geomad["baei"] = safe_divide(red + 0.3, baei_den).where(baei_den != 0, BAEI_MAX)
-    ndbi = safe_divide(swir1 - nir, swir1 + nir)  # intermediate, not stored
+    # Normalised Difference Built-up Index (Zha 2003), intermediate, not stored.
+    ndbi = safe_divide(swir1 - nir, swir1 + nir)
+    # Built-Up Index (He 2010).
     geomad["bui"] = ndbi - geomad["ndvi"]
     return geomad
 
