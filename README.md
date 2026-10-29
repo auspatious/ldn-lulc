@@ -53,6 +53,20 @@ Output files are Cloud-Optimized GeoTIFFs structured by grid index and year (`x/
 
 All outputs for a tile/year are bundled into a STAC item JSON, e.g.: https://data.source.coop/auspatious/geomad-sids/ci_ls_geomad/0-2-1/118/125/2000/ci_ls_geomad_118_125_2000.stac-item.json
 
+#### STAC metadata
+
+Items record their provenance, so they describe themselves even without a collection:
+
+- [Processing extension](https://github.com/stac-extensions/processing): `processing:version` (ldn version),
+  `processing:software` (exact package versions, with the commit for git dependencies) and `processing:datetime` (UTC).
+- Providers: Digital Earth Pacific (processor, and host unless on Source Cooperative), Source Cooperative (host),
+  Auspatious (processor, with `processing:facility`, level and lineage), USGS and NASA.
+- Links: `derived_from` to the input items (Landsat scenes for GeoMAD, the GeoMAD item for LULC), the LULC model, and
+  the [visualisation](https://auspatious.github.io/ldn-lulc).
+- LULC only: the [classification extension](https://github.com/stac-extensions/classification) describes each class
+  (value, name, title, colour, nodata) on the `classification` asset, and each `probability_{class value}` asset is
+  titled with its class.
+
 ### Product 1. Geomedian with GeoMAD
 
 #### Geometric Median Mosaic
