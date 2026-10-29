@@ -170,8 +170,10 @@ def _compute_terrain(dem_da: xr.DataArray) -> xr.Dataset:
     Returns:
         Dataset with elevation, slope (degrees), and aspect (degrees).
     """
-    dem_vals = dem_da.values.astype("float32")
-    res_m = abs(float(dem_da.x[1] - dem_da.x[0]))
+    # Compute once at the beginning to prevent re-computation and repeated downloads of the lazy DEM.
+    dem = dem_da.astype("float32").compute()
+    dem_vals = dem.values
+    res_m = abs(float(dem.x[1] - dem.x[0]))
 
     dz_dx = sobel(dem_vals, axis=1) / (8 * res_m)
     dz_dy = sobel(dem_vals, axis=0) / (8 * res_m)
@@ -189,7 +191,7 @@ def _compute_terrain(dem_da: xr.DataArray) -> xr.Dataset:
         name="aspect",
     )
 
-    return xr.Dataset({"elevation": dem_da, "slope": slope, "aspect": aspect})
+    return xr.Dataset({"elevation": dem, "slope": slope, "aspect": aspect})
 
 
 # Focal (regional) statistics, named "{band}_{stat}_{size}" with a size x size pixel window. Candidates for model
