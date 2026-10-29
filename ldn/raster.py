@@ -407,8 +407,10 @@ def _antimeridian_safe_bbox(area: GeoBox, fallback_bbox: list[float]) -> list[fl
     ]
 
 
-# TODO: Use pystac's processing extension (and validate items with it) once the extension is accepted. It is currently a
-# candidate: https://github.com/stac-extensions/processing
+# TODO: Use pystac's processing extension (and validate items with it) once the extension is supported by pystac
+# https://github.com/stac-extensions/processing
+# https://github.com/stac-utils/pystac/pull/1589
+# https://github.com/stac-utils/pystac/pull/1785
 PROCESSING_EXTENSION = "https://stac-extensions.github.io/processing/v1.3.0/schema.json"
 # Processing was done by Auspatious on Digital Earth Pacific infrastructure.
 PROCESSING_FACILITY = "Digital Earth Pacific"
