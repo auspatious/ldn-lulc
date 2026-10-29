@@ -74,20 +74,26 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     return data
 
 
-def safe_divide(num: xr.DataArray, den: xr.DataArray) -> xr.DataArray:
-    """Divide, returning 0 where the denominator is 0.
+def safe_divide(num: xr.DataArray, den: xr.DataArray, zero_value: float) -> xr.DataArray:
+    """Divide, with explicit results for nodata and a zero denominator.
 
-    With bands clipped to [0, 1], a zero denominator in a normalised difference means both bands are 0: a valid
-    very dark pixel (e.g. water in SWIR) with no contrast, so 0 rather than NaN, which would mask it as nodata.
+    Bands are clipped to [0, 1], so a denominator of 0 means every band in it is 0. That's a valid, very dark pixel
+    (e.g. water in SWIR), not nodata, so it gets zero_value instead of NaN.
 
     Args:
         num: Numerator.
         den: Denominator.
+        zero_value: Result where den is 0 (and neither input is NaN).
 
     Returns:
-        num / den, 0 where den is 0, NaN where den is NaN (nodata).
+        NaN where num or den is NaN (nodata), zero_value where den is 0, otherwise num / den.
     """
-    return (num / den.where(den != 0)).where(den != 0, 0)
+    # Divide only where den isn't 0, avoiding divide by zero warnings.
+    result = num / den.where(den != 0)
+    # Zero denominator: a valid very dark pixel.
+    result = result.where(den != 0, zero_value)
+    # Either input is nodata.
+    return result.where(num.notnull() & den.notnull())
 
 
 def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
@@ -95,7 +101,8 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
 
     Adds index bands to the dataset in place. Bands must already be scaled and clipped to [0, 1]
     (see scale_offset_landsat) so normalised differences stay in [-1, 1]. A zero denominator (every band
-    involved is 0, a valid very dark pixel) gives 0, or BAEI_MAX for baei. NaN inputs (nodata) give NaN.
+    involved is 0, a valid very dark pixel) gives 0 for normalised differences (0 / 0: no contrast) and BAEI_MAX
+    for baei. NaN inputs (nodata) give NaN.
 
     Args:
         geomad: GeoMedian/GeoMAD dataset containing at least `nir08`, `red`, `green`,
@@ -109,6 +116,8 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     # dilute feature importance and add compute. Candidates: bui (linear combination of NDBI and ndvi, and NDBI is
     # -NDMI), ndwi (strongly anti-correlated with ndvi), mbi vs bsi (both bare soil), baei vs bui (both built-up).
     # Compare with feature importance or drop-column accuracy in notebooks/1_Train_Model.ipynb.
+    # A normalised difference (a - b) / (a + b) with a + b = 0 has a = b = 0: no contrast, so 0.
+    no_contrast = 0.0
     nir = geomad.nir08
     red = geomad.red
     green = geomad.green
@@ -116,23 +125,22 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     swir1 = geomad.swir16
     swir2 = geomad.swir22
     # Normalised Difference Vegetation Index (Rouse 1974).
-    geomad["ndvi"] = safe_divide(nir - red, nir + red)
+    geomad["ndvi"] = safe_divide(nir - red, nir + red, no_contrast)
     # Normalised Difference Water Index (McFeeters 1996).
-    geomad["ndwi"] = safe_divide(green - nir, green + nir)
+    geomad["ndwi"] = safe_divide(green - nir, green + nir, no_contrast)
     # Modified Normalised Difference Water Index (Xu 2006).
-    geomad["mndwi"] = safe_divide(green - swir1, green + swir1)
+    geomad["mndwi"] = safe_divide(green - swir1, green + swir1, no_contrast)
     # Normalised Difference Turbidity Index (Lacaux 2007).
-    geomad["ndti"] = safe_divide(red - green, red + green)
+    geomad["ndti"] = safe_divide(red - green, red + green, no_contrast)
     # Bare Soil Index (Rikimaru 2002).
-    geomad["bsi"] = safe_divide((swir1 + red) - (nir + blue), (swir1 + red) + (nir + blue))
+    geomad["bsi"] = safe_divide((swir1 + red) - (nir + blue), (swir1 + red) + (nir + blue), no_contrast)
     # Modified Bare soil Index (Nguyen 2021).
-    geomad["mbi"] = safe_divide(swir1 - swir2 - nir, swir1 + swir2 + nir) + 0.5
+    geomad["mbi"] = safe_divide(swir1 - swir2 - nir, swir1 + swir2 + nir, no_contrast) + 0.5
     # Built-up Area Extraction Index (Bouzekri 2015). Not a normalised difference: grows without bound as the
     # denominator approaches 0, so use the max, not 0.
-    baei_den = green + swir1
-    geomad["baei"] = safe_divide(red + 0.3, baei_den).where(baei_den != 0, BAEI_MAX)
+    geomad["baei"] = safe_divide(red + 0.3, green + swir1, BAEI_MAX)
     # Normalised Difference Built-up Index (Zha 2003), intermediate, not stored.
-    ndbi = safe_divide(swir1 - nir, swir1 + nir)
+    ndbi = safe_divide(swir1 - nir, swir1 + nir, no_contrast)
     # Built-Up Index (He 2010).
     geomad["bui"] = ndbi - geomad["ndvi"]
     return geomad
