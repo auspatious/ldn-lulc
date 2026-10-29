@@ -831,7 +831,7 @@ wheels = [
 [[package]]
 name = "dep-tools"
 version = "0.5.4"
-source = { git = "https://github.com/digitalearthpacific/dep-tools.git?rev=fb8667b40bff46caf34193fe522b35f607020196#fb8667b40bff46caf34193fe522b35f607020196" }
+source = { git = "https://github.com/digitalearthpacific/dep-tools.git?rev=bacf51d058066d81a2daa2a0f2ebdaecbc959c39#bacf51d058066d81a2daa2a0f2ebdaecbc959c39" }
 dependencies = [
     { name = "antimeridian" },
     { name = "azure-storage-blob" },
@@ -1588,7 +1588,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.42.31,<2.0.0" },
     { name = "dask", extras = ["distributed"], specifier = ">=2026.3.0,<2027.0.0" },
     { name = "datacube-compute", git = "https://github.com/auspatious/datacube-compute.git?rev=76e683cb958978cdc056aedf94df99162514b117" },
-    { name = "dep-tools", git = "https://github.com/digitalearthpacific/dep-tools.git?rev=fb8667b40bff46caf34193fe522b35f607020196" },
+    { name = "dep-tools", git = "https://github.com/digitalearthpacific/dep-tools.git?rev=bacf51d058066d81a2daa2a0f2ebdaecbc959c39" },
     { name = "gdal", specifier = "==3.13.1" },
     { name = "geopandas", specifier = ">=1.1.2,<2.0.0" },
     { name = "joblib", specifier = ">=1.5.3,<2.0.0" },
