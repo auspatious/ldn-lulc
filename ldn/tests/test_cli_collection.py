@@ -11,7 +11,10 @@ def test_geomad_collection_host_and_processor(source_coop, host):
     extent = Extent(SpatialExtent([[0, 0, 1, 1]]), TemporalExtent([[datetime(2020, 1, 1), None]]))
     providers = _run_create_collection("geomad", extent, False, source_coop).providers
     assert [p.name for p in providers if "host" in p.roles] == [host]
+    assert "processor" in next(p for p in providers if p.name == "Digital Earth Pacific").roles
     if source_coop:
-        assert providers[0].url == "https://source.coop/auspatious/geomad-sids"
+        assert next(p for p in providers if p.name == "Source Cooperative").url == (
+            "https://source.coop/auspatious/geomad-sids"
+        )
     processor = next(p for p in providers if p.name == "Auspatious")
     assert processor.extra_fields["processing:facility"] == "Digital Earth Pacific"
