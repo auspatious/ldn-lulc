@@ -231,12 +231,17 @@ class TestGeomadSearcher:
 
 
 def test_add_lulc_stac_metadata():
-    """Model link and classification classes are added, with nodata using the output nodata value."""
+    """Model link, classification classes and asset titles are added, with nodata using the output nodata value."""
     item = Item(id="t", geometry=None, bbox=None, datetime=datetime(2020, 1, 1), properties={})
-    item.add_asset("classification", Asset(href="classification.tif"))
-    _add_lulc_stac_metadata(item, "https://example.com/model.joblib", nodata_value=0)
+    for name in ["classification", "probability_1", "probability_5"]:
+        item.add_asset(name, Asset(href=f"{name}.tif"))
+    model_path = "https://example.com/dep_ls_lulc/models/0-1-1/2020/lulc_random_forest_model_2020.joblib"
+    _add_lulc_stac_metadata(item, model_path, nodata_value=0)
 
-    assert item.get_single_link("related").href == "https://example.com/model.joblib"
+    model_link = item.get_single_link("related")
+    assert (model_link.href, model_link.title) == (model_path, "LULC classification model 0-1-1")
+    assert item.assets["probability_1"].title == "Probability of Tree cover (%)"
+    assert item.assets["probability_5"].title == "Probability of Built-up (%)"
     assert ClassificationExtension.get_schema_uri() in item.stac_extensions
     classes = {c.name: c for c in ClassificationExtension.ext(item.assets["classification"]).classes}
     assert len(classes) == 8

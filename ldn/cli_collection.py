@@ -107,6 +107,9 @@ def _run_create_collection(
     else:
         # TODO: Make a collection for LULC.
         # TODO: Add classification and processing STAC extensions for LULC.
+        # TODO: Fields shared by every item (e.g. providers, classification:classes, the model link) could move to the
+        # collection (item_assets for asset fields) instead of being repeated in each item, if items don't need to
+        # describe themselves without a collection.
         raise NotImplementedError(f"Collection for dataset '{dataset}' is not implemented yet.")
 
 

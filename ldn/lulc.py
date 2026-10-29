@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import UTC
 from datetime import datetime as dt
 from functools import partial
@@ -36,7 +37,7 @@ from ldn.raster import (
 from ldn.raster import (
     AwsStacTask as Task,
 )
-from ldn.typology import stac_classes
+from ldn.typology import classes_flipped, stac_classes
 from ldn.utils import (
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
@@ -402,15 +403,28 @@ def _set_stac_properties(ds: xr.Dataset, year: str) -> xr.Dataset:
 
 
 def _add_lulc_stac_metadata(item: Item, model_path: str, nodata_value: int) -> None:
-    """Link the model used and describe the classification classes on a LULC STAC item, in place.
+    """Link the model used, describe the classification classes and title the assets of a LULC STAC item, in place.
 
     Args:
         item: LULC STAC item.
-        model_path: Path or URL to the model used for classification.
+        model_path: Path or URL to the model used for classification, e.g. ".../models/0-1-1/2020/model.joblib".
         nodata_value: Integer nodata value of the classification band.
     """
-    item.add_link(Link(rel="related", target=model_path, title="LULC classification model"))
+    # Models are stored under models/{MODEL_VERSION}/, so the version is in the path.
+    version = re.search(r"/models/([^/]+)/", model_path)
+    # TODO: Publish a STAC item for the model (e.g. with the MLM extension) and link to it with derived_from instead.
+    item.add_link(
+        Link(
+            rel="related",
+            target=model_path,
+            title=f"LULC classification model {version.group(1)}" if version else "LULC classification model",
+        )
+    )
+    item.assets["classification"].title = "Land use/land cover class"
     ClassificationExtension.ext(item.assets["classification"], add_if_missing=True).classes = stac_classes(nodata_value)
+    for name, asset in item.assets.items():
+        if name.startswith("probability_"):
+            asset.title = f"Probability of {classes_flipped[int(name.removeprefix('probability_'))]} (%)"
 
 
 def run_classify_task(
