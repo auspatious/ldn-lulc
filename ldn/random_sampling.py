@@ -222,6 +222,7 @@ def random_sampling(
     y = [i[0] for i in list(all_samples.index)]
     x = [i[1] for i in list(all_samples.index)]
 
+    # TODO: use odc crs?
     # Get CRS from the DataArray
     if hasattr(da, "rio") and da.rio.crs is not None:
         crs = da.rio.crs
