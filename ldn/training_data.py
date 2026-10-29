@@ -37,7 +37,7 @@ from ldn.aws import s3_client
 from ldn.grids import get_gadm, get_gridspec
 from ldn.lulc import geomad_searcher
 from ldn.random_sampling import random_sampling
-from ldn.raster import make_features
+from ldn.raster import FOCAL_FEATURES, FOCAL_PAD, crop_padding, make_features
 from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
     CLASS_ATTR,
@@ -981,26 +981,28 @@ def search_and_load_geomad_indices_dem(
     else:
         logger.info(f"Using latest GeoMAD version {GEOMAD_VERSION}")
 
-    # Raises unless exactly 1 item is found
+    # The tile's item (raises if missing) and any neighbouring items to fill the focal statistics padding.
     geomad_items = geomad_searcher(
         bucket, region, product_owner, single_region, sensor, geomad_version, year, parse_tile_id(tile_id)
     ).search()
-    logger.info(f"Found GeoMAD item {geomad_items[0].id} for tile {tile_id} and year {year}")
+    logger.info(f"Found GeoMAD item {geomad_items[0].id} and {len(geomad_items) - 1} neighbours for year {year}")
 
     bands = [b for b in geomad_items[0].assets.keys() if b != "count"]
     logger.info(f"Loading bands: {bands}")
 
-    # The tile geobox is the GeoMAD item's native grid, so this loads exactly the tile with no reprojection.
+    # The tile geobox is the GeoMAD items' native grid, so this loads with no reprojection. Padded so focal
+    # statistics are complete at tile edges, the same as prediction.
     geomad_ds = stac_load(
         geomad_items,
         chunks={},  # Force lazy.
         bands=bands,
         fail_on_error=True,  # We control the data so it shouldn't fail.
-        geobox=get_gridspec(region=region).tile_geobox(parse_tile_id(tile_id)),
+        geobox=get_gridspec(region=region).tile_geobox(parse_tile_id(tile_id)).pad(FOCAL_PAD),
     ).squeeze()
-    logger.info(f"GeoMAD shape: {geomad_ds.dims}")
+    logger.info(f"GeoMAD shape (padded): {geomad_ds.dims}")
 
-    merged = make_features(geomad_ds)
+    # All candidate focal statistics, so model training can choose which to keep.
+    merged = crop_padding(make_features(geomad_ds, FOCAL_FEATURES), FOCAL_PAD)
     logger.info(f"Merged GeoMAD+DEM shape: {merged.dims}")
 
     # Clip to intersection of tile extent and buffered country
