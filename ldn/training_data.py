@@ -21,7 +21,7 @@ from antimeridian import fix_multi_polygon, fix_polygon
 from dep_tools.aws import object_exists
 from dep_tools.utils import bbox_across_180, search_across_180
 from odc.geo.geom import Geometry
-from odc.stac import load, stac_load
+from odc.stac import load as stac_load
 from planetary_computer import sign_url
 from pystac import ItemCollection
 from pystac.client import Client
@@ -208,7 +208,7 @@ def _load_lulc_am(
     for items, gdf in [(east_items, east_gdf), (west_items, west_gdf)]:
         if not items:
             continue
-        ds = load(items, geopolygon=gdf, chunks={}, patch_url=sign_url).squeeze(drop=True)
+        ds = stac_load(items, geopolygon=gdf, chunks={}, patch_url=sign_url).squeeze(drop=True)
         halves.append(ds)
 
     if len(halves) != 2:
@@ -274,7 +274,7 @@ def load_lulc_for_tile(product: str, geobox, year: str) -> xr.Dataset:
         return _load_lulc_am(lulc_items, geobox, geobox_wgs84)
 
     logger.info("Non-AM-crossing tile, using normal load")
-    return load(
+    return stac_load(
         lulc_items,
         geobox=geobox,
         chunks={},
@@ -751,12 +751,10 @@ def make_training_data(
     analysis_crs = get_analysis_epsg(region)
     country_wgs84_buffered = get_buffered_country(country_of_interest, analysis_crs)
 
-    # Clip country geometry to this tile's footprint before any data loading.
-    # Critical for countries like Kiribati that span huge parts of the Pacific —
-    # the country geometry bounds the final feature clip and the LULC product loads,
-    # and the full country would cause Dask to materialise a massive array, leading to OOM kills.
-    # Skip for AM-crossing tiles: their WGS84 footprint straddles ±180° and
-    # intersects incorrectly with standard WGS84 country geometries.
+    # Clip the country geometry to this tile's footprint: it fails early if the country isn't in this tile, and keeps
+    # the polygons used for the final feature clip and LULC product masks small (e.g. Kiribati spans a huge area).
+    # Skip for AM-crossing tiles: their WGS84 footprint straddles ±180° and intersects incorrectly with standard WGS84
+    # country geometries.
     logger.info("Clipping buffered country geometry to tile footprint")
     tile_id_tuple = parse_tile_id(tile_id)
     grid = get_gridspec(region=region)
