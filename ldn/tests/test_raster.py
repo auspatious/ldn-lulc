@@ -20,6 +20,7 @@ from ldn.raster import (
     installed_version,
     load_dem_terrain,
     scale_offset_landsat,
+    stac_providers,
 )
 from ldn.utils import LdnError
 
@@ -635,17 +636,19 @@ def test_build_pipeline_components_proceeds_when_exists_and_overwrite(mock_aws):
 
 def test_add_processing_extension():
     item = Item(id="t", geometry=None, bbox=None, datetime=datetime(2020, 1, 1), properties={})
-    add_processing_extension(item, ["ldn", "pystac"])
-    add_processing_extension(item, ["ldn", "pystac"])  # Idempotent extension list.
+    providers = stac_providers("lulc", source_coop=False)
+    add_processing_extension(item, ["ldn", "pystac"], providers)
+    add_processing_extension(item, ["ldn", "pystac"], providers)  # Idempotent extension list.
     assert item.stac_extensions.count(PROCESSING_EXTENSION) == 1
     assert set(item.properties["processing:software"]) == {"ldn", "pystac"}
     assert item.properties["processing:version"] == installed_version("ldn")
     # RFC 3339 in UTC, as the extension requires.
     processed = datetime.fromisoformat(item.properties["processing:datetime"])
     assert item.properties["processing:datetime"].endswith("Z") and processed.utcoffset() == timedelta(0)
-    provider = item.common_metadata.providers[0]
-    assert (provider.name, provider.roles) == ("Auspatious", ["processor"])
-    assert provider.extra_fields["processing:facility"] == "Digital Earth Pacific"
+    assert [p.name for p in item.common_metadata.providers] == ["Digital Earth Pacific", "Auspatious", "USGS", "NASA"]
+    auspatious = item.common_metadata.providers[1]
+    assert auspatious.extra_fields["processing:facility"] == "Digital Earth Pacific"
+    assert auspatious.extra_fields["processing:level"] == "L4"
 
 
 def test_installed_version_appends_pinned_git_commit():

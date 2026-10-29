@@ -9,7 +9,6 @@ from pystac import (
     Extent,
     ItemCollection,
     Link,
-    Provider,
     SpatialExtent,
     Summaries,
     TemporalExtent,
@@ -17,7 +16,7 @@ from pystac import (
 from shapely import box, unary_union
 
 from ldn.aws import s3_client
-from ldn.raster import PROCESSING_EXTENSION, auspatious_provider, visualisation_link
+from ldn.raster import PROCESSING_EXTENSION, stac_providers, visualisation_link
 from ldn.utils import (
     GEOMAD_VERSION,
     LULC_VERSION,
@@ -65,38 +64,7 @@ def _run_create_collection(
             keywords=["Landsat", "GeoMAD", "Pacific"],
             stac_extensions=[PROCESSING_EXTENSION],
             # stac_version="1.1.0", # Automatic from pystac.
-            providers=[
-                # DEP is always a processor, and the host unless the data is on Source Cooperative.
-                Provider(
-                    name="Digital Earth Pacific",
-                    roles=["processor"] if source_coop else ["processor", "host"],
-                    url="https://digitalearthpacific.org",
-                ),
-                *(
-                    [
-                        Provider(
-                            name="Source Cooperative",
-                            roles=["host"],
-                            url=f"https://source.coop/{source_coop_prefix(dataset)}",
-                        )
-                    ]
-                    if source_coop
-                    else []
-                ),
-                auspatious_provider(
-                    {
-                        "processing:level": "L3",
-                        "processing:lineage": "Annual geometric median and median absolute deviations of Landsat "
-                        "Collection 2 Level-2 surface reflectance",
-                    }
-                ),
-                Provider(
-                    name="USGS",
-                    roles=["producer", "processor", "licensor"],
-                    url="https://www.usgs.gov/landsat-missions/landsat-collection-2-level-2-science-products",
-                ),
-                Provider(name="NASA", roles=["producer", "licensor"], url="https://www.nasa.gov/"),
-            ],
+            providers=stac_providers(dataset, source_coop),
             summaries=Summaries(
                 {
                     "gsd": [30],
