@@ -29,6 +29,8 @@ from ldn.grids import get_gridspec
 from ldn.raster import (
     FOCAL_PAD,
     GEOMAD_BANDS,
+    LANDSAT_NODATA,
+    REFLECTANCE_BANDS,
     build_pipeline_components,
     crop_padding,
     make_features,
@@ -57,10 +59,11 @@ logger = logging.getLogger(__name__)
 
 
 class GeomadSearcher(Searcher):
-    """Search the GeoMAD STAC-Geoparquet index for a tile's item and its neighbours for one year, using rustac.
+    """Search the GeoMAD STAC-Geoparquet index for a tile's item, its neighbours and other years, using rustac.
 
     Item IDs are built the same way as the GeoMAD writer's. The neighbours are needed for focal (regional) statistics:
-    pixels along a tile's edges need the surrounding tiles' pixels to fill their windows (see FOCAL_PAD).
+    pixels along a tile's edges need the surrounding tiles' pixels to fill their windows (see FOCAL_PAD). The other
+    years are needed for gap filling.
     """
 
     def __init__(
@@ -73,11 +76,12 @@ class GeomadSearcher(Searcher):
         geomad_version: str,
         year: str,
         tile_id_tuple: tuple[int, int],
+        gap_fill_years: int,
     ):
         """Create a searcher for a GeoMAD tile and its neighbours.
 
         Neighbours are the grid tiles overlapping the tile geobox padded by FOCAL_PAD pixels, found in the grid's own
-        CRS (no WGS84 or antimeridian handling).
+        CRS (no WGS84 or antimeridian handling). The same tiles are searched for gap_fill_years either side of year.
 
         Args:
             geomad_bucket: S3 bucket where the GeoMAD data is stored.
@@ -89,6 +93,7 @@ class GeomadSearcher(Searcher):
             geomad_version: GeoMAD version string (e.g. "0-3-0").
             year: Year string (e.g. "2020").
             tile_id_tuple: Grid tile index (x, y).
+            gap_fill_years: Years either side of year to also search, 0 for none.
         """
         super().__init__()
         owner = owner_for_region(region, product_owner)
@@ -96,36 +101,35 @@ class GeomadSearcher(Searcher):
             geomad_bucket, owner if single_region else None, sensor, GEOMAD_DATASET_ID, geomad_version
         )
         self._url = get_stac_geoparquet_url(geomad_bucket, key)
-        # Same ID construction as the GeoMAD writer (itempath.basename), without its bucket region lookup.
-        itempath = GenericItemPath(
-            sensor=sensor,
-            dataset_id=GEOMAD_DATASET_ID,
-            version=geomad_version,
-            time=year,
-            prefix=owner,
-        )
-        self._item_id = itempath.basename(tile_id_tuple)
         grid = get_gridspec(region)
-        padded = grid.tile_geobox(tile_id_tuple).pad(FOCAL_PAD)
-        self._neighbour_ids = [
-            itempath.basename(tile) for tile, _ in grid.tiles(padded.boundingbox) if tile != tile_id_tuple
-        ]
+        tiles = [tile for tile, _ in grid.tiles(grid.tile_geobox(tile_id_tuple).pad(FOCAL_PAD).boundingbox)]
+        years = range(int(year) - gap_fill_years, int(year) + gap_fill_years + 1)
+        # Same ID construction as the GeoMAD writer (itempath.basename), without its bucket region lookup.
+        ids = {
+            (tile, str(y)): GenericItemPath(
+                sensor=sensor, dataset_id=GEOMAD_DATASET_ID, version=geomad_version, time=str(y), prefix=owner
+            ).basename(tile)
+            for tile in tiles
+            for y in years
+        }
+        self._item_id = ids.pop((tile_id_tuple, year))
+        self._other_ids = list(ids.values())
 
     def search(self, area: GeoBox | None = None) -> ItemCollection:
-        """Search for the tile's item and any neighbouring items.
+        """Search for the tile's item and any other items.
 
         Args:
             area: Unused, because the item IDs already identify the tiles. Accepted so this matches the dep_tools
                 Searcher interface that AwsStacTask calls with the tile area.
 
         Returns:
-            A pystac ItemCollection with the tile's item first, then the neighbours found. Missing neighbours (e.g.
-            open ocean) are skipped.
+            A pystac ItemCollection with the tile's item first, then the other items found. Missing ones (e.g. open
+            ocean) are skipped.
 
         Raises:
             LdnError: If the tile's item is not found.
         """
-        items = [Item.from_dict(doc) for doc in search_sync(self._url, ids=[self._item_id, *self._neighbour_ids])]
+        items = [Item.from_dict(doc) for doc in search_sync(self._url, ids=[self._item_id, *self._other_ids])]
         tile_items = [item for item in items if item.id == self._item_id]
         if not tile_items:
             raise LdnError(f"GeoMAD item {self._item_id} not found")
@@ -260,6 +264,64 @@ def do_prediction(
     return classification, probabilities
 
 
+def _valid_pixels(data: xr.Dataset) -> xr.DataArray:
+    """True where every GeoMAD band has data: reflectance not in LANDSAT_NODATA and MAD bands not NaN.
+
+    Args:
+        data: Raw GeoMAD dataset.
+
+    Returns:
+        Boolean DataArray on the dataset's grid.
+    """
+    masks = [
+        data[band].notnull() & ~data[band].isin(LANDSAT_NODATA) if band in REFLECTANCE_BANDS else data[band].notnull()
+        for band in data.data_vars
+    ]
+    return xr.concat(masks, dim="band").all("band")
+
+
+# Nodata for the gap_filled band, which holds the signed year offset (source year - year) where a pixel was filled.
+GAP_FILLED_NODATA = 0
+
+
+def gap_fill(data: xr.Dataset, year: int, max_years: int) -> tuple[xr.Dataset, xr.DataArray]:
+    """Fill nodata pixels of one year from the nearest years with data.
+
+    Whole pixels (all bands) are taken from a single year, so bands stay consistent like a geomedian. Years are tried
+    nearest first: year - 1, year + 1, year - 2, year + 2, ... up to max_years away. When the years before and after
+    are equally near and both have data, the year before is used. Years outside the data (e.g. before 2000) are skipped,
+    so the first and last years only fill from one direction.
+
+    Args:
+        data: Raw GeoMAD dataset with a time dimension of one step per year, including year.
+        year: Year to fill.
+        max_years: Furthest number of years away to fill from.
+
+    Returns:
+        The filled dataset for year (no time dimension), and an int8 DataArray of the signed offset to the year each
+        filled pixel's data came from (-1 = year before, +1 = year after), GAP_FILLED_NODATA where not filled.
+    """
+    years = data.time.dt.year.values.tolist()
+    filled = data.isel(time=years.index(year), drop=True).compute()
+    invalid = ~_valid_pixels(filled)
+    gap_filled = xr.full_like(invalid, GAP_FILLED_NODATA, dtype="int8")
+    if not invalid.any():
+        return filled, gap_filled  # Other years are lazy, so they're never read.
+
+    # One year at a time, nearest first, stopping once every gap is filled so further years are never read.
+    for k in range(1, max_years + 1):
+        for source_year in [year - k, year + k]:
+            if source_year not in years or not invalid.any():
+                continue
+            source = data.isel(time=years.index(source_year), drop=True).compute()
+            take = invalid & _valid_pixels(source)
+            filled = filled.where(~take, source)
+            gap_filled = gap_filled.where(~take, source_year - year)
+            invalid = invalid & ~take
+
+    return filled, gap_filled.astype("int8")
+
+
 class LulcProcessor(Processor):
     """Processor that scales GeoMAD, computes indices, loads terrain, and predicts classes."""
 
@@ -270,6 +332,7 @@ class LulcProcessor(Processor):
         probability_threshold: float,
         nodata_value: int,
         year: str,
+        gap_fill_years: int,
         **kwargs,
     ):
         """Create a LULC prediction/classification processor.
@@ -279,6 +342,8 @@ class LulcProcessor(Processor):
             nodata_value: Integer nodata value for output bands.
             probability_threshold: Probability threshold for classification.
             logger: Logger instance.
+            year: Year being classified.
+            gap_fill_years: Furthest number of years away to gap fill from, 0 for no gap filling.
         """
         super().__init__(**kwargs)
         self._model = model
@@ -286,36 +351,39 @@ class LulcProcessor(Processor):
         self._nodata_value = nodata_value
         self._logger = logger
         self._year = year
+        self._gap_fill_years = gap_fill_years
 
     def process(self, input_data: xr.Dataset) -> xr.Dataset:
         """Build features (scaled GeoMAD, indices, DEM terrain) and predict/classify LULC.
 
         Args:
-            input_data: Raw GeoMAD bands loaded on the tile geobox padded by FOCAL_PAD pixels. The features (scaled
-                bands, indices, terrain and focal statistics) are built from it here.
+            input_data: Raw GeoMAD bands loaded on the tile geobox padded by FOCAL_PAD pixels, with one time step per
+                year for the year being classified and the gap fill years. The features (scaled bands, indices,
+                terrain and focal statistics) are built from it here.
 
         Returns:
-            Dataset with classification and probability bands.
+            Dataset with classification, probability and gap_filled bands.
         """
+        self._logger.info(f"Gap filling from up to {self._gap_fill_years} years away")
+        geomad, gap_filled = gap_fill(input_data, int(self._year), self._gap_fill_years)
+
         self._logger.info("Building features: scaling GeoMAD, computing indices, loading DEM terrain, focal statistics")
         # Only the focal statistics the model uses are computed. Crop back to the tile once they're complete.
-        merged = crop_padding(make_features(input_data, list(self._model.feature_names_in_)), FOCAL_PAD)
+        merged = crop_padding(make_features(geomad, list(self._model.feature_names_in_)), FOCAL_PAD)
 
         self._logger.info("Running LULC prediction")
         classification, probabilities = do_prediction(
             merged, self._model, self._probability_threshold, self._nodata_value
         )
 
-        output = xr.Dataset(
-            {
-                "classification": classification,
-                **probabilities,
-            }
-        )
-
+        output = xr.Dataset({"classification": classification, **probabilities})
         for var in output.data_vars:
             output[var].odc.nodata = self._nodata_value
             output[var].attrs["_FillValue"] = self._nodata_value
+
+        output["gap_filled"] = crop_padding(gap_filled, FOCAL_PAD)
+        output["gap_filled"].odc.nodata = GAP_FILLED_NODATA
+        output["gap_filled"].attrs["_FillValue"] = GAP_FILLED_NODATA
 
         return _set_stac_properties(output, year=self._year)
 
@@ -417,6 +485,7 @@ def run_classify_task(
     threads_per_worker: int,
     sensor: str,
     collection_url_root: str | None,
+    gap_fill_years: int,
 ) -> None:
     """Run LULC prediction for a single tile and year, writing results to S3.
 
@@ -445,6 +514,7 @@ def run_classify_task(
         threads_per_worker: Number of threads per Dask worker.
         sensor: Sensor to use for LULC classification e.g. 'ls'.
         collection_url_root: Override the default collection URL root for STAC metadata.
+        gap_fill_years: Furthest number of years away to fill nodata pixels from, 0 for no gap filling.
     """
     logger.info(f"Starting processing. Tile ID: {tile_id}, Year: {year}, Region: {region}, Version: {version}.")
     logger.info(
@@ -518,6 +588,7 @@ def run_classify_task(
         geomad_version,
         year,
         tile_id_tuple,
+        gap_fill_years,
     )
 
     loader = PaddedOdcLoader(
@@ -532,6 +603,7 @@ def run_classify_task(
         logger=logger,
         probability_threshold=probability_threshold,
         year=year,
+        gap_fill_years=gap_fill_years,
     )
 
     try:

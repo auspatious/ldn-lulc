@@ -67,6 +67,8 @@ spec:
         value: "--no-overwrite"
       - name: decimated
         value: "--no-decimated"
+      - name: gap-fill-years # Fill nodata pixels from the nearest year with data, up to this many years either side
+        value: "2"
   templates:
     - name: workflow-entrypoint
       dag:
@@ -176,5 +178,7 @@ spec:
           - "8"
           - --xy-chunk-size
           - "1024"
+          - --gap-fill-years
+          - "{{ workflow.parameters.gap-fill-years }}"
           - "{{ workflow.parameters.decimated }}"
           - "{{ workflow.parameters.overwrite }}"
