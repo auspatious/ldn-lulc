@@ -20,6 +20,7 @@ from ldn.raster import (
     calculate_indices,
     installed_version,
     load_dem_terrain,
+    safe_divide,
     scale_offset_landsat,
     stac_providers,
 )
@@ -153,6 +154,18 @@ def spectral_ds():
         swir16=_SWIR1,
         swir22=_SWIR2,
     )
+
+
+@pytest.mark.parametrize(
+    "num, den, expected",
+    [(1.0, 2.0, 0.5), (np.nan, 2.0, np.nan), (1.0, np.nan, np.nan), (np.nan, 0.0, np.nan), (0.0, 0.0, 9.0)],
+    ids=["divides", "nan numerator", "nan denominator", "nan numerator and zero denominator", "zero denominator"],
+)
+def test_safe_divide(num, den, expected):
+    """NaN if either input is NaN, zero_value if the denominator is 0, otherwise the quotient."""
+    result = safe_divide(xr.DataArray(np.float32(num)), xr.DataArray(np.float32(den)), 9.0)
+    np.testing.assert_equal(result.item(), expected)
+    assert result.dtype == np.float32
 
 
 class TestCalculateIndices:
