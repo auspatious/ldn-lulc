@@ -371,6 +371,8 @@ def build_pipeline_components(
         return None
     logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
 
+    # Items use the projection and raster extensions at v1.1.0, not their latest versions, because rio-stac (used by
+    # StacCreator) hard-codes them: https://github.com/developmentseed/rio-stac/issues/64
     stac_creator = StacCreator(
         collection_url_root=collection_url_root,
         itempath=itempath,
