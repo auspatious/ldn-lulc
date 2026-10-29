@@ -13,16 +13,16 @@ ENV UV_PROJECT_ENVIRONMENT=/code/.venv UV_LINK_MODE=copy
 WORKDIR /code
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-install-project --no-dev
+RUN uv sync --locked --no-install-project --no-dev
 RUN rustup self uninstall -y && rm -rf /usr/local/cargo /usr/local/rustup
 
 COPY . .
-RUN uv sync --frozen --no-dev
+RUN uv sync --locked --no-dev
 ENV PATH="/code/.venv/bin:$PATH"
 
 # ---- test stage: adds dev deps on top of the production layer ----
 FROM base AS test
-RUN uv sync --frozen --group dev
+RUN uv sync --locked --group dev
 CMD ["uv", "run", "pytest", "ldn/tests/", "-v"]
 
 # ---- final stage = base, i.e. production image with no dev deps ----
