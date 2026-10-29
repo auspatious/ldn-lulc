@@ -435,15 +435,15 @@ def focal_features(data: xr.Dataset, names: list[str]) -> dict[str, xr.DataArray
     return features
 
 
-def crop_to_geobox(data: xr.Dataset, geobox: GeoBox) -> xr.Dataset:
+def crop_to_geobox(data: xr.Dataset | xr.DataArray, geobox: GeoBox) -> xr.Dataset | xr.DataArray:
     """Crop data to a geobox on its pixel grid, e.g. from a padded geobox back to the tile.
 
     Args:
-        data: Dataset on a geobox containing geobox.
+        data: Dataset or DataArray on a geobox containing geobox.
         geobox: Geobox to crop to.
 
     Returns:
-        The cropped dataset, a view without copying data.
+        The cropped data, a view without copying data.
 
     Raises:
         ValueError: If geobox isn't on the data's pixel grid.
