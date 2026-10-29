@@ -336,7 +336,8 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
                 geobox=geobox,
                 resampling="bilinear",
                 patch_url=sign_url,
-                chunks={},  # Force lazy
+                # Force lazy, one chunk per band. 1024 px chunks were 25-40% slower for a padded tile.
+                chunks={},
             )
             .squeeze(drop=True)  # Remove time. DEM does not need a time dimension.
             .rename({"data": "elevation"})
