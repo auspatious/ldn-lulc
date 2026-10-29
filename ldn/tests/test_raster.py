@@ -1,5 +1,7 @@
-import re
+import tomllib
 from datetime import datetime
+from importlib.metadata import version
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -639,6 +641,9 @@ def test_add_processing_extension():
     assert item.properties["processing:datetime"].endswith("Z")
 
 
-def test_installed_version_appends_git_commit():
+def test_installed_version_appends_pinned_git_commit():
+    """Git dependencies report the commit pinned in pyproject.toml, so STAC processing:software records it."""
     assert installed_version("numpy") == np.__version__
-    assert re.fullmatch(r"[\w.]+\+[0-9a-f]{40}", installed_version("dep-tools"))
+    sources = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())["tool"]["uv"]["sources"]
+    for name in ["dep-tools", "datacube-compute"]:
+        assert installed_version(name) == f"{version(name)}+{sources[name]['rev']}"

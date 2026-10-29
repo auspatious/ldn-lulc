@@ -43,8 +43,10 @@ dependencies = [
 ldn = "ldn.cli:app"
 
 [tool.uv.sources]
-datacube-compute = { git = "https://github.com/auspatious/datacube-compute.git" }
-dep-tools = { git = "https://github.com/digitalearthpacific/dep-tools.git" }
+# Pinned by commit (no tags at these commits). STAC processing:software records the commit.
+datacube-compute = { git = "https://github.com/auspatious/datacube-compute.git", rev = "76e683cb958978cdc056aedf94df99162514b117" }
+# TODO: Update to bacf51d (the geopolygon fix, dep-tools#103) with the GeoMAD geobox loading change (#130).
+dep-tools = { git = "https://github.com/digitalearthpacific/dep-tools.git", rev = "fb8667b40bff46caf34193fe522b35f607020196" }
 
 [dependency-groups]
 dev = [
