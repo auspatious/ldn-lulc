@@ -94,8 +94,8 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     """Compute spectral indices from scaled geomedian bands.
 
     Adds index bands to the dataset in place. Bands must already be scaled and clipped to [0, 1]
-    (see scale_offset_landsat) so normalised differences stay in [-1, 1]. Zero denominators and
-    NaN inputs (nodata) produce NaN.
+    (see scale_offset_landsat) so normalised differences stay in [-1, 1]. A zero denominator (every band
+    involved is 0, a valid very dark pixel) gives 0, or BAEI_MAX for baei. NaN inputs (nodata) give NaN.
 
     Args:
         geomad: GeoMedian/GeoMAD dataset containing at least `nir08`, `red`, `green`,
@@ -105,6 +105,10 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
         The same dataset with additional bands: `ndvi`, `ndwi`, `mndwi`,
         `ndti`, `bsi`, `mbi`, `baei`, and `bui`.
     """
+    # TODO: Check whether every index is needed. The random forest copes with correlated features, but redundant ones
+    # dilute feature importance and add compute. Candidates: bui (linear combination of NDBI and ndvi, and NDBI is
+    # -NDMI), ndwi (strongly anti-correlated with ndvi), mbi vs bsi (both bare soil), baei vs bui (both built-up).
+    # Compare with feature importance or drop-column accuracy in notebooks/1_Train_Model.ipynb.
     nir = geomad.nir08
     red = geomad.red
     green = geomad.green
@@ -114,6 +118,7 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     geomad["ndvi"] = safe_divide(nir - red, nir + red)
     geomad["ndwi"] = safe_divide(green - nir, green + nir)
     geomad["mndwi"] = safe_divide(green - swir1, green + swir1)
+    # Normalised Difference Turbidity Index (Lacaux 2007), not the tillage index of the same name (SWIR1/SWIR2).
     geomad["ndti"] = safe_divide(red - green, red + green)
     geomad["bsi"] = safe_divide((swir1 + red) - (nir + blue), (swir1 + red) + (nir + blue))
     geomad["mbi"] = safe_divide(swir1 - swir2 - nir, swir1 + swir2 + nir) + 0.5
