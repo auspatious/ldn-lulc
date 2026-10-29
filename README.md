@@ -29,6 +29,7 @@ Creating Land Use/Land Cover (LULC) datasets for the UN Small Island Developing 
   - [Running in Argo](#running-in-argo)
 - [Visualisation](#visualisation)
 - [CI/CD](#cicd)
+  - [Releasing](#releasing)
 
 ---
 
@@ -545,7 +546,8 @@ Argo Workflow templates are defined [here](https://github.com/auspatious/ldn-lul
 - Creating LULC from geomad
 - Indexing either dataset to STAC-Geoparquet
 
-These workflows use the built image in GHCR, which packages the LDN Python toolkit.
+These workflows use the built image in GHCR, which packages the LDN Python toolkit. Templates pin `image-tag` to a
+release version (e.g. `0.2.0`), not `latest`, so runs are reproducible.
 
 ---
 
@@ -563,7 +565,7 @@ A GitHub Actions workflow (`.github/workflows/ldn-lint-build-test-push.yml`) lin
 - Manual dispatch from the GitHub UI
 - Any pull request, to any branch
 - Push to `main`
-- Release creation
+- Release publication
 
 Superseded runs for the same workflow + ref are automatically cancelled.
 
@@ -572,11 +574,24 @@ Superseded runs for the same workflow + ref are automatically cancelled.
 1. **`lint`** - runs [Ruff](https://github.com/astral-sh/ruff-action) over the `ldn` directory.
 2. **`build-test-push`** (depends on `lint` passing):
    - Logs in to GHCR (only if running on `main` or for a release).
-   - Derives a version string via `git describe --tags`.
+   - Reads the version from `pyproject.toml`. A release fails unless its tag is `v<version>`.
    - Builds the `test`-target image and runs the test suite inside it.
-   - Builds the `final`-target (production) image and smoketests it with `ldn --help`.
+   - Builds the `final`-target (production) image and smoketests it with `ldn --help`, and checks the image reports
+     the `pyproject.toml` version.
    - **Only pushes to GHCR if on `main` or for a release** - every PR gets built and tested, but nothing is published from a PR.
-     - On `main`: tags and pushes `<version>` and `latest`.
-     - On release: tags and pushes `<release-tag>` and `latest`.
+     - On `main`: tags and pushes `<version>-<short sha>` (e.g. `0.2.0-abc1234`).
+     - On release: tags and pushes `<version>` (e.g. `0.2.0`) and `latest`. `latest` is always the latest release.
 
 Action versions are pinned to full 40-character commit SHAs (not tags) for supply-chain security.
+
+The Docker image installs dependencies with `uv sync --locked`, so the build fails if `uv.lock` is out of date with
+`pyproject.toml`. Run `uv lock` after changing dependencies or the version. The git dependencies (`dep-tools`,
+`datacube-compute`) are pinned to commits in `[tool.uv.sources]`, and STAC items record the installed commit in
+`processing:software`.
+
+### Releasing
+
+1. Bump the version in `pyproject.toml`, e.g. `uv version --bump minor`, which also updates `uv.lock`.
+2. Merge to `main`.
+3. Publish a GitHub release with the tag `v<version>`, e.g. `v0.2.0`. CI pushes the image as `0.2.0` and `latest`.
+4. Update `image-tag` in the [Argo templates](templates/) to the new version.
