@@ -46,7 +46,7 @@ REFLECTANCE_BANDS = ["red", "green", "blue", "nir08", "swir16", "swir22"]
 MAD_BANDS = ["emad", "smad", "bcmad"]
 # GeoMAD output bands that the LULC classification pipeline needs (excludes "count").
 GEOMAD_BANDS = REFLECTANCE_BANDS + MAD_BANDS
-# Spectral indices added by calculate_indices.
+# Spectral indices added by _calculate_indices.
 INDEX_BANDS = ["ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"]
 
 # Landsat Collection 2 scaling constants (USGS), and raw reflectance values that mean nodata.
@@ -57,7 +57,7 @@ LANDSAT_NODATA = (0, 65_535)
 BAEI_MAX = (1 + 0.3) / (math.ceil(-LANDSAT_OFFSET / LANDSAT_SCALE) * LANDSAT_SCALE + LANDSAT_OFFSET)
 
 
-def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
+def _scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     """Scale Landsat Collection 2 reflectance values and mask nodata.
 
     Applies the USGS scaling formula: scaled = raw * 0.0000275 - 0.2,
@@ -77,7 +77,7 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     for band in bands_to_scale:
         raw = data[band]
         nodata = raw.isin(LANDSAT_NODATA)
-        # Reflectance <= 0 is clipped to 0: a valid very dark pixel, not nodata. safe_divide handles the zeros.
+        # Reflectance <= 0 is clipped to 0: a valid very dark pixel, not nodata. _safe_divide handles the zeros.
         # Known limitation: over deep water, red is often slightly negative from atmospheric correction noise (e.g.
         # -0.004) while nir is about 0.004, so after clipping NDVI = (0.004 - 0) / (0.004 + 0) = 1, the value for
         # dense vegetation (24% of sea pixels on tile 033_031). Left as is: training samples are within 100 m of land,
@@ -87,7 +87,7 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     return data
 
 
-def safe_divide(num: xr.DataArray, den: xr.DataArray, zero_value: float) -> xr.DataArray:
+def _safe_divide(num: xr.DataArray, den: xr.DataArray, zero_value: float) -> xr.DataArray:
     """Divide, with explicit results for nodata and a zero denominator.
 
     Bands are clipped to [0, 1], so a denominator of 0 means every band in it is 0. That's a valid, very dark pixel
@@ -109,11 +109,11 @@ def safe_divide(num: xr.DataArray, den: xr.DataArray, zero_value: float) -> xr.D
     return result.where(num.notnull() & den.notnull())
 
 
-def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
+def _calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     """Compute spectral indices from scaled geomedian bands.
 
     Adds index bands to the dataset in place. Bands must already be scaled and clipped to [0, 1]
-    (see scale_offset_landsat) so normalised differences stay in [-1, 1]. A zero denominator (every band
+    (see _scale_offset_landsat) so normalised differences stay in [-1, 1]. A zero denominator (every band
     involved is 0, a valid very dark pixel) gives 0 for normalised differences (0 / 0: no contrast) and BAEI_MAX
     for baei. NaN inputs (nodata) give NaN.
 
@@ -138,22 +138,22 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     swir1 = geomad.swir16
     swir2 = geomad.swir22
     # Normalised Difference Vegetation Index (Rouse 1974).
-    geomad["ndvi"] = safe_divide(nir - red, nir + red, no_contrast)
+    geomad["ndvi"] = _safe_divide(nir - red, nir + red, no_contrast)
     # Normalised Difference Water Index (McFeeters 1996).
-    geomad["ndwi"] = safe_divide(green - nir, green + nir, no_contrast)
+    geomad["ndwi"] = _safe_divide(green - nir, green + nir, no_contrast)
     # Modified Normalised Difference Water Index (Xu 2006).
-    geomad["mndwi"] = safe_divide(green - swir1, green + swir1, no_contrast)
+    geomad["mndwi"] = _safe_divide(green - swir1, green + swir1, no_contrast)
     # Normalised Difference Turbidity Index (Lacaux 2007).
-    geomad["ndti"] = safe_divide(red - green, red + green, no_contrast)
+    geomad["ndti"] = _safe_divide(red - green, red + green, no_contrast)
     # Bare Soil Index (Rikimaru 2002).
-    geomad["bsi"] = safe_divide((swir1 + red) - (nir + blue), (swir1 + red) + (nir + blue), no_contrast)
+    geomad["bsi"] = _safe_divide((swir1 + red) - (nir + blue), (swir1 + red) + (nir + blue), no_contrast)
     # Modified Bare soil Index (Nguyen 2021).
-    geomad["mbi"] = safe_divide(swir1 - swir2 - nir, swir1 + swir2 + nir, no_contrast) + 0.5
+    geomad["mbi"] = _safe_divide(swir1 - swir2 - nir, swir1 + swir2 + nir, no_contrast) + 0.5
     # Built-up Area Extraction Index (Bouzekri 2015). Not a normalised difference: grows without bound as the
     # denominator approaches 0, so use the max, not 0.
-    geomad["baei"] = safe_divide(red + 0.3, green + swir1, BAEI_MAX)
+    geomad["baei"] = _safe_divide(red + 0.3, green + swir1, BAEI_MAX)
     # Normalised Difference Built-up Index (Zha 2003), intermediate, not stored.
-    ndbi = safe_divide(swir1 - nir, swir1 + nir, no_contrast)
+    ndbi = _safe_divide(swir1 - nir, swir1 + nir, no_contrast)
     # Built-Up Index (He 2010).
     geomad["bui"] = ndbi - geomad["ndvi"]
     return geomad
@@ -322,7 +322,7 @@ def _merge_geographic_halves(east: xr.Dataset, west: xr.Dataset) -> xr.Dataset:
     return assign_crs(merged.assign_coords(xr_coords(merged_box)), merged_box.crs).rename(longitude="x", latitude="y")
 
 
-def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
+def _load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     """Load Copernicus DEM and compute elevation, slope, northness and eastness.
 
     Loads COP-DEM-GLO-30 from Planetary Computer on its native WGS84 grid (limited to the tile), computes terrain
@@ -401,7 +401,7 @@ def _focal_mean(values: np.ndarray, size: int) -> np.ndarray:
     return np.where(has_valid, total / np.where(has_valid, fraction_valid, 1), np.nan)
 
 
-def focal_features(data: xr.Dataset, names: list[str]) -> dict[str, xr.DataArray]:
+def _focal_features(data: xr.Dataset, names: list[str]) -> dict[str, xr.DataArray]:
     """Compute focal (regional) statistics features.
 
     Args:
@@ -455,10 +455,10 @@ def make_features(geomad: xr.Dataset, features: list[str]) -> xr.Dataset:
         Computed dataset with scaled GeoMAD bands, spectral indices, elevation, slope, northness, eastness and the
         requested focal statistics on the GeoMAD grid.
     """
-    data = calculate_indices(scale_offset_landsat(geomad.squeeze(drop=True)))
+    data = _calculate_indices(_scale_offset_landsat(geomad.squeeze(drop=True)))
 
     # Load DEM aligned to the GeoMAD grid
-    dem = load_dem_terrain(data.odc.geobox)
+    dem = _load_dem_terrain(data.odc.geobox)
 
     # Drop spatial_ref from DEM to avoid WKT encoding conflicts with
     # the GeoMAD spatial_ref during merge (odc vs rioxarray encodings).
@@ -470,7 +470,7 @@ def make_features(geomad: xr.Dataset, features: list[str]) -> xr.Dataset:
     # Override join prefers GeoMAD coords and metadata. Computed because focal statistics and scikit-learn need numpy
     # arrays, and sending a large lazy graph to Dask workers is slow.
     merged = xr.merge([data, dem], join="override").compute()
-    return merged.assign(focal_features(merged, [name for name in features if name in FOCAL_FEATURES]))
+    return merged.assign(_focal_features(merged, [name for name in features if name in FOCAL_FEATURES]))
 
 
 # This is needed to support Source.Coop prefix.
@@ -666,7 +666,7 @@ def stac_providers(dataset: Literal["geomad", "lulc"], source_coop: bool) -> lis
     ]
 
 
-def installed_version(name: str) -> str:
+def _installed_version(name: str) -> str:
     """Return the installed version of a package, with the commit appended if it was installed from git.
 
     Args:
@@ -681,7 +681,7 @@ def installed_version(name: str) -> str:
     return f"{dist.version}+{commit}" if commit else dist.version
 
 
-def add_processing_extension(item: Item, software: list[str], providers: list[Provider]) -> None:
+def _add_processing_extension(item: Item, software: list[str], providers: list[Provider]) -> None:
     """Add processing extension fields and providers to a STAC item in place.
 
     Records the ldn version (processing:version), software versions, the processing datetime in UTC, and the
@@ -694,8 +694,8 @@ def add_processing_extension(item: Item, software: list[str], providers: list[Pr
     """
     if PROCESSING_EXTENSION not in item.stac_extensions:
         item.stac_extensions.append(PROCESSING_EXTENSION)
-    item.properties["processing:version"] = installed_version("ldn")
-    item.properties["processing:software"] = {name: installed_version(name) for name in software}
+    item.properties["processing:version"] = _installed_version("ldn")
+    item.properties["processing:software"] = {name: _installed_version(name) for name in software}
     item.properties["processing:datetime"] = datetime_to_str(datetime.now(UTC))
     item.common_metadata.providers = providers
 
@@ -752,7 +752,7 @@ class AwsStacTask(AreaTask):
             stac_item = self.stac_creator.process(output_data, self.id)
             stac_item.bbox = _antimeridian_safe_bbox(self.area, stac_item.bbox)
             stac_item.geometry = _antimeridian_safe_geometry(self.area, stac_item.geometry)
-            add_processing_extension(stac_item, self.processing_software, self.providers)
+            _add_processing_extension(stac_item, self.processing_software, self.providers)
             stac_item.add_link(visualisation_link())
             # Link to the input items (Landsat scenes for GeoMAD, the GeoMAD item for LULC).
             stac_item.add_links(
