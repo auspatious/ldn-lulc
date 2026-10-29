@@ -7,7 +7,6 @@ from importlib.metadata import distribution
 from typing import Literal
 
 import numpy as np
-import rioxarray  # noqa: F401  Registers the .rio accessor.
 import xarray as xr
 from antimeridian import fix_shape
 from dep_tools.aws import BaseClient, object_exists
@@ -21,14 +20,14 @@ from dep_tools.utils import bbox_across_180, join_path_or_url, search_across_180
 from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from geopandas import GeoDataFrame
 from odc.geo.geobox import GeoBox
+from odc.geo.xr import assign_crs
 from odc.stac import load as stac_load
 from planetary_computer import sign_url
 from pystac import Item, ItemCollection, Link, Provider, ProviderRole
 from pystac.utils import datetime_to_str
 from pystac_client import Client as PyStacClient
-from rasterio.enums import Resampling
 from scipy.ndimage import sobel
-from shapely.geometry import box
+from shapely.geometry import box, shape
 
 from ldn.utils import (
     WGS84,
@@ -202,86 +201,109 @@ DEM_CATALOG = "https://planetarycomputer.microsoft.com/api/stac/v1/"
 DEM_COLLECTION = "cop-dem-glo-30"
 
 
-def _load_dem_am(
-    dem_items: ItemCollection,
-    geobox: GeoBox,
-    geobox_wgs84: GeoDataFrame,
-) -> xr.Dataset:
-    """Load DEM for a tile that crosses the antimeridian.
+def _valid(data: xr.DataArray) -> xr.DataArray:
+    """True where a value isn't empty: not NaN and not the declared nodata (if any)."""
+    valid = data.notnull()
+    return valid if data.odc.nodata is None else valid & (data != data.odc.nodata)
 
-    This is needed to prevent a memory error due to loading a world-spanning DEM tile when the WGS84
-    footprint overlaps both sides of the AM.
-    Can't load straight to target geobox CRS. Must load to WGS84, shift longitudes,
-    concatenate, then reproject with +over.
 
-    Loads east and west halves separately in WGS84, shifts west
-    longitudes to >180, concatenates, and reprojects to the target
-    geobox using the PROJ "+over" flag.
+def _first_valid(first: xr.Dataset, second: xr.Dataset) -> xr.Dataset:
+    """Merge two datasets on the same grid, keeping first's values where not empty, otherwise second's.
 
-    The "+over" CRS flag tells PROJ to allow longitudes >180 instead
-    of wrapping them. This is required because:
-    - stac_load(geobox=) cannot reproject WGS84 data across the AM
-      into EPSG:3832 (PROJ maps -180 to the wrong side of the projection).
-    - odc.reproject does not support +over CRS (returns all NaN).
-    - rioxarray's rio.reproject wraps rasterio.warp.reproject, which
-      handles +over correctly.
+    Variables without a declared nodata can't be told apart from data, so first's value is kept.
+    """
+    return xr.Dataset({name: first[name].where(_valid(first[name]), second[name]) for name in first.data_vars})
 
-    Related open issues (no upstream fix as of 2025-04):
+
+def _merge_projected_halves(east: xr.Dataset, west: xr.Dataset, geobox: GeoBox, resampling: str) -> xr.Dataset:
+    """Reproject halves in a projected CRS (e.g. Impact Observatory's UTM) to the geobox and merge them.
+
+    Projected sources don't wrap at ±180 like WGS84 does, so each half reprojects normally.
+
+    Args:
+        east: Data for the east side of the antimeridian.
+        west: Data for the west side of the antimeridian.
+        geobox: Target geobox.
+        resampling: Resampling method, e.g. "bilinear" or "nearest".
+
+    Returns:
+        Merged dataset on the geobox.
+    """
+    first, second = (half.odc.reproject(geobox, resampling=resampling) for half in (east, west))
+    return assign_crs(_first_valid(first, second), geobox.crs)
+
+
+def load_across_antimeridian(items: ItemCollection, geobox: GeoBox, resampling: str, fail_on_error: bool) -> xr.Dataset:
+    """Load STAC items onto a geobox that crosses the antimeridian, e.g. the DEM or LULC reference products.
+
+    Why this workaround is needed (measured with the DEM on tile 066_020, Fiji): sources in WGS84 must be
+    reprojected to the analysis CRS, which odc-stac can't do across ±180:
+    - stac_load(geobox=) on the tile leaves ~24% of it empty: one side of the antimeridian is missing.
+    - Loading each side onto its own half of the tile geobox leaves a ~1.3 km empty strip at the antimeridian.
+    - A single WGS84 load spanning both sides covers almost the whole world, which runs out of memory.
+
+    So this loads the east and west halves separately, in each source's own CRS, then reprojects to the geobox. The
+    target is EPSG:3832 (the Pacific grid; only Pacific tiles cross the antimeridian). How the halves are joined
+    depends on the source CRS:
+    - Geographic (EPSG:4326): Copernicus DEM GLO-30, ESA WorldCover and ESA CCI. Longitudes wrap at ±180, so the
+      halves' longitudes are expressed relative to 180 and joined into one continuous grid in a WGS84 CRS with its
+      prime meridian at 180 (`+pm=180`), which odc.reproject handles normally. (The PROJ "+over" flag, the usual
+      alternative, isn't supported by odc.) Both halves include a column at exactly 180; the empty one is dropped
+      by keeping non-empty values.
+    - Projected (UTM): Impact Observatory, in a UTM zone on each side (e.g. EPSG:32760 and EPSG:32601). Projected
+      coordinates don't wrap, so each half reprojects to the geobox normally and the two are merged
+      (_merge_projected_halves).
+
+    Related upstream issues (no fix as of 2025-04):
     - https://github.com/opendatacube/odc-stac/issues/165
     - https://github.com/opendatacube/odc-stac/issues/172
     - https://github.com/opendatacube/odc-geo/issues/208
 
     Args:
-        dem_items: STAC items from search_across_180.
-        geobox: Target geobox in the analysis CRS (e.g. EPSG:3832).
-        geobox_wgs84: Tile footprint as a WGS84 GeoDataFrame.
+        items: STAC items covering the geobox, e.g. from search_across_180.
+        geobox: Target geobox in the analysis CRS, crossing the antimeridian.
+        resampling: Resampling method, e.g. "bilinear" for continuous data or "nearest" for classes.
+        fail_on_error: Whether a failed read raises (otherwise it's left empty), passed to stac_load.
 
     Returns:
-        Dataset with a single "elevation" variable in the target CRS.
+        Dataset on the geobox.
+
+    Raises:
+        LdnError: If either side of the antimeridian has no items.
     """
-    east_bbox, west_bbox = bbox_across_180(geobox_wgs84)
-    east_gdf = GeoDataFrame(geometry=[box(*east_bbox)], crs=WGS84)
-    west_gdf = GeoDataFrame(geometry=[box(*west_bbox)], crs=WGS84)
-
-    east_items = [i for i in dem_items if i.bbox[0] >= 0]
-    west_items = [i for i in dem_items if i.bbox[0] < 0]
-
-    halves = []
-    for items, gdf in [(east_items, east_gdf), (west_items, west_gdf)]:
-        if not items:
-            continue
-        ds = (
-            stac_load(
-                items,
-                geopolygon=gdf,
-                chunks={},  # Force lazy.
-                resampling="bilinear",
-                patch_url=sign_url,
-                fail_on_error=False,
-            ).squeeze(drop=True)  # Remove time. DEM does not need a time dimension.
-        )
-        halves.append(ds)
-
-    if len(halves) != 2:
+    geobox_wgs84 = GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(WGS84)
+    sides = [box(*bbox) for bbox in bbox_across_180(geobox_wgs84)]
+    # Each side loads the items whose footprint intersects it.
+    east_items, west_items = ([item for item in items if shape(item.geometry).intersects(side)] for side in sides)
+    if not east_items or not west_items:
         raise LdnError(
-            f"Expected to load 2 halves of the DEM but got {len(halves)}. Check if the tile geometry is "
-            f"correct and if the DEM items cover the area."
+            f"Expected to load 2 halves across the antimeridian but got {len(east_items)} east and "
+            f"{len(west_items)} west items. Check the tile geometry and item coverage."
         )
 
-    # Shift west longitudes (-180..-179) to (180..181) so the
-    # two halves form a continuous longitude range.
-    halves[1] = halves[1].assign_coords(longitude=(halves[1].longitude % 360))
-    ds_combined = xr.concat(halves, dim="longitude").sortby("longitude")
+    east, west = (
+        stac_load(
+            side_items,
+            geopolygon=GeoDataFrame(geometry=[side], crs=WGS84),
+            chunks={},  # Force lazy.
+            resampling=resampling,
+            patch_url=sign_url,
+            fail_on_error=fail_on_error,
+        ).squeeze(drop=True)  # Remove time.
+        for side_items, side in zip([east_items, west_items], sides)
+    )
+    if "longitude" not in east.dims:
+        return _merge_projected_halves(east, west, geobox, resampling)
 
-    # rio is required here because odc.reproject does not support +over.
-    ds_combined = ds_combined.rio.set_spatial_dims(x_dim="longitude", y_dim="latitude")
-    ds_combined = ds_combined.rio.write_crs("+proj=longlat +datum=WGS84 +over")
-    return ds_combined.rio.reproject(
-        str(geobox.crs),
-        shape=(geobox.height, geobox.width),
-        transform=geobox.transform,
-        resampling=Resampling.bilinear,
-    ).rename({"data": "elevation"})
+    # Longitude relative to 180: east half becomes -0.x..0, west half 0..0.x, so they join continuously.
+    east, west = (
+        half.assign_coords(longitude=half.longitude % 360 - 180).rename(longitude="x", latitude="y")
+        for half in (east, west)
+    )
+    empty = {name: np.nan if east[name].odc.nodata is None else east[name].odc.nodata for name in east.data_vars}
+    east, west = xr.align(east, west, join="outer", fill_value=empty)
+    merged = assign_crs(_first_valid(east, west), "+proj=longlat +datum=WGS84 +pm=180")
+    return merged.odc.reproject(geobox, resampling=resampling)
 
 
 def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
@@ -289,7 +311,7 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
 
     Loads COP-DEM-GLO-30 tiles from Planetary Computer, reprojects
     to the target geobox, and derives terrain features using Sobel
-    filters. Handles antimeridian-crossing tiles via _load_dem_am.
+    filters. Handles antimeridian-crossing tiles via load_across_antimeridian.
 
     Args:
         geobox: Target grid (of a tile) in the analysis CRS (EPSG:3832 or EPSG:6933).
@@ -313,7 +335,9 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
 
     if crosses_am:
         logger.info("Tile crosses the antimeridian, using custom '+over' loading logic")
-        dem = _load_dem_am(dem_items, geobox, geobox_wgs84)
+        dem = load_across_antimeridian(dem_items, geobox, resampling="bilinear", fail_on_error=False).rename(
+            data="elevation"
+        )
     else:
         logger.info("Tile does not cross the antimeridian, using standard loading logic")
         dem = (
