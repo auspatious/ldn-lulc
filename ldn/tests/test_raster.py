@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import xarray as xr
+from pyproj import Proj, Transformer
 from pystac import Item
 
 from ldn.raster import (
@@ -249,8 +250,9 @@ class TestComputeTerrain:
         assert result["slope"].values[1, 1] == pytest.approx(expected, rel=1e-4)
 
     def test_terrain_rising_east_faces_west(self):
+        # Facing west, weighted by sin(slope) of the 1 m per 30 m ramp.
         result = _compute_terrain(_x_ramp_dem())
-        assert result["eastness"].values[1, 1] == pytest.approx(-1.0)
+        assert result["eastness"].values[1, 1] == pytest.approx(-np.sin(np.arctan(1 / 30)), rel=1e-4)
         assert result["northness"].values[1, 1] == pytest.approx(0.0, abs=1e-6)
 
     @pytest.mark.parametrize("y", [[60.0, 30.0, 0.0], [0.0, 30.0, 60.0]])
@@ -259,7 +261,8 @@ class TestComputeTerrain:
         rows = np.array(y, dtype=np.float32)[:, None] + np.zeros((1, 3), dtype=np.float32)
         dem = xr.DataArray(rows, dims=("y", "x"), coords={"x": [0.0, 30.0, 60.0], "y": y}, name="elevation")
         result = _compute_terrain(dem)
-        assert result["northness"].values[1, 1] == pytest.approx(-1.0)
+        # 1 m per m is a 45 degree slope, so facing south weighted by sin(45).
+        assert result["northness"].values[1, 1] == pytest.approx(-np.sin(np.pi / 4), rel=1e-4)
         assert result["eastness"].values[1, 1] == pytest.approx(0.0, abs=1e-6)
 
     def test_slope_is_non_negative_on_random_dem(self):
@@ -273,7 +276,7 @@ class TestComputeTerrain:
         )
         assert np.all(_compute_terrain(dem)["slope"].values >= 0)
 
-    def test_northness_and_eastness_are_on_unit_circle_on_random_dem(self):
+    def test_northness_and_eastness_are_aspect_weighted_by_sin_slope_on_random_dem(self):
         rng = np.random.default_rng(1)
         data = rng.uniform(0, 500, (12, 12)).astype(np.float32)
         dem = xr.DataArray(
@@ -283,7 +286,24 @@ class TestComputeTerrain:
             name="elevation",
         )
         result = _compute_terrain(dem)
-        np.testing.assert_allclose(result["northness"] ** 2 + result["eastness"] ** 2, 1.0, rtol=1e-5)
+        sin_slope = np.sin(np.radians(result["slope"]))
+        np.testing.assert_allclose(result["northness"] ** 2 + result["eastness"] ** 2, sin_slope**2, rtol=1e-4)
+
+    def test_flat_dem_has_zero_northness_and_eastness_without_division_by_zero(self):
+        result = _compute_terrain(_flat_dem())
+        assert np.all(result["northness"].values == 0) and np.all(result["eastness"].values == 0)
+
+    @pytest.mark.parametrize("crs,lat", [("EPSG:3832", -20.0), ("EPSG:6933", 13.0)])
+    def test_gradients_are_per_ground_metre_for_the_crs(self, crs, lat):
+        """A ramp rising 1 m per projected 30 m is steeper on the ground where the CRS stretches distances."""
+        x0, y0 = Transformer.from_crs("EPSG:4326", crs, always_xy=True).transform(170.0, lat)
+        xs, ys = x0 + np.array([0.0, 30.0, 60.0]), y0 + np.array([30.0, 0.0, -30.0])
+        ramp = np.array([[100, 101, 102]] * 3, dtype=np.float32)
+        dem = xr.DataArray(ramp, dims=("y", "x"), coords={"x": xs, "y": ys}).odc.assign_crs(crs)
+        east_west_scale = Proj(crs).get_factors(170.0, lat).parallel_scale
+        expected = np.degrees(np.arctan(east_west_scale / 30))
+        assert _compute_terrain(dem)["slope"].values[1, 1] == pytest.approx(expected, rel=1e-3)
+        assert east_west_scale != pytest.approx(1.0, abs=0.05)  # The correction matters at this latitude.
 
     def test_output_spatial_coordinates_match_input(self):
         dem = _x_ramp_dem()

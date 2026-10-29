@@ -23,6 +23,7 @@ from geopandas import GeoDataFrame
 from odc.geo.geobox import GeoBox
 from odc.stac import load as stac_load
 from planetary_computer import sign_url
+from pyproj import Proj
 from pystac import Item, ItemCollection, Link, Provider, ProviderRole
 from pystac.utils import datetime_to_str
 from pystac_client import Client as PyStacClient
@@ -133,30 +134,39 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
 def _compute_terrain(dem_da: xr.DataArray) -> xr.Dataset:
     """Compute slope, northness and eastness from an elevation DataArray.
 
-    Uses Horn's method (Sobel / 8) for terrain gradients. Coordinates are assumed to be in meters
-    (projected CRS). Northness and eastness are the cosine and sine of aspect (the downslope
-    bearing): 1 = north/east-facing, -1 = south/west-facing, 0 on flat ground. Unlike raw aspect,
-    they don't wrap from 359 to 0 degrees.
+    Uses Horn's method (Sobel / 8) for terrain gradients, in ground metres. Northness and eastness are the cosine
+    and sine of aspect (the downslope bearing) weighted by sin(slope): 1 = steep north/east-facing, -1 = steep
+    south/west-facing, 0 on flat ground. Unlike raw aspect, they don't wrap from 359 to 0 degrees, and the weighting
+    stops DEM noise on flat ground giving a full-strength aspect.
 
     Args:
-        dem_da: 2D elevation DataArray with x/y coordinates.
+        dem_da: 2D elevation DataArray with x/y coordinates in a projected CRS. Without a CRS, coordinates are taken
+            as ground metres.
 
     Returns:
         Dataset with elevation, slope (degrees), northness and eastness.
     """
     dem = dem_da.astype("float32")
+    # The analysis CRSs aren't true to scale (EPSG:3832 stretches up to ~10%, EPSG:6933 up to ~15% and differently
+    # east-west and north-south), so convert to ground distance at the tile centre. It varies <1% across a tile.
+    scale_x = scale_y = 1.0
+    if dem.odc.crs is not None:
+        lon, lat = dem.odc.geobox.extent.centroid.to_crs("EPSG:4326").coords[0]
+        factors = Proj(dem.odc.crs.to_wkt()).get_factors(lon, lat)
+        scale_x, scale_y = factors.parallel_scale, factors.meridional_scale
     # Signed coordinate steps, so the gradient is towards +x (east) and +y (north) whatever the row order.
-    dz_dx = dem.copy(data=sobel(dem.values, axis=1)) / (8 * float(dem.x[1] - dem.x[0]))
-    dz_dy = dem.copy(data=sobel(dem.values, axis=0)) / (8 * float(dem.y[1] - dem.y[0]))
+    dz_dx = sobel(dem.values, axis=1) * scale_x / (8 * float(dem.x[1] - dem.x[0]))
+    dz_dy = sobel(dem.values, axis=0) * scale_y / (8 * float(dem.y[1] - dem.y[0]))
     grad = np.hypot(dz_dx, dz_dy)
-    sloped = grad.where(grad > 0)
+    # sin(slope) = grad / sqrt(1 + grad^2), so weighting cos/sin(aspect) by it is -dz/sqrt(1 + grad^2): 0 when flat.
+    hypotenuse = np.sqrt(1 + grad**2)
 
     return xr.Dataset(
         {
             "elevation": dem_da,
-            "slope": np.degrees(np.arctan(grad)),
-            "northness": (-dz_dy / sloped).fillna(0),
-            "eastness": (-dz_dx / sloped).fillna(0),
+            "slope": dem.copy(data=np.degrees(np.arctan(grad))),
+            "northness": dem.copy(data=-dz_dy / hypotenuse),
+            "eastness": dem.copy(data=-dz_dx / hypotenuse),
         }
     )
 
