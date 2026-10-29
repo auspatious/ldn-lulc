@@ -8,6 +8,7 @@ from dep_tools.processors import Processor
 from odc.algo import mask_cleanup
 from xarray import DataArray, Dataset
 
+from ldn.raster import LANDSAT_OFFSET, LANDSAT_SCALE, REFLECTANCE_BANDS
 from ldn.utils import LdnError
 
 logger = logging.getLogger(__name__)
@@ -15,18 +16,7 @@ logger = logging.getLogger(__name__)
 USGS_CATALOG = "https://earth-search.aws.element84.com/v1"
 USGS_COLLECTION = "landsat-c2-l2"
 
-LANDSAT_BANDS = [
-    "qa_pixel",
-    "qa_radsat",
-    "red",
-    "green",
-    "blue",
-    "nir08",
-    "swir16",
-    "swir22",
-]
-LANDSAT_SCALE = 0.0000275
-LANDSAT_OFFSET = -0.2
+LANDSAT_BANDS = ["qa_pixel", "qa_radsat", *REFLECTANCE_BANDS]
 
 qa_bands = {"qa_pixel", "qa_radsat"}
 
