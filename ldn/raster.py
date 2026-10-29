@@ -39,6 +39,14 @@ from ldn.utils import (
 
 logger = logging.getLogger(__name__)
 
+# Landsat surface reflectance bands, and the GeoMAD median absolute deviation bands.
+REFLECTANCE_BANDS = ["red", "green", "blue", "nir08", "swir16", "swir22"]
+MAD_BANDS = ["emad", "smad", "bcmad"]
+# GeoMAD output bands that the LULC classification pipeline needs (excludes "count").
+GEOMAD_BANDS = REFLECTANCE_BANDS + MAD_BANDS
+# Spectral indices added by calculate_indices.
+INDEX_BANDS = ["ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"]
+
 # Landsat Collection 2 scaling constants (USGS)
 LANDSAT_SCALE = 0.0000275
 LANDSAT_OFFSET = -0.2
@@ -63,7 +71,7 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     Raises:
         LdnError: If a reflectance band has no declared nodata.
     """
-    bands_to_scale = [band for band in data.data_vars if band not in ["count", "emad", "smad", "bcmad"]]
+    bands_to_scale = [band for band in data.data_vars if band in REFLECTANCE_BANDS]
 
     for band in bands_to_scale:
         raw = data[band]
@@ -184,19 +192,6 @@ def _calculate_terrain_features(dem: xr.DataArray) -> xr.Dataset:
         }
     )
 
-
-# GeoMAD output bands that the LULC classification pipeline needs (excludes "count").
-GEOMAD_BANDS = [
-    "nir08",
-    "red",
-    "green",
-    "blue",
-    "swir16",
-    "swir22",
-    "smad",
-    "bcmad",
-    "emad",
-]
 
 # Copernicus DEM collection on MS PC.
 DEM_CATALOG = "https://planetarycomputer.microsoft.com/api/stac/v1/"
