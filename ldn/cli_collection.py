@@ -45,7 +45,8 @@ def _run_create_collection(
     Args:
         extent (Extent): The spatial and temporal extent of the collection.
         single_region (bool): Whether the collection is for a single region (changes path/id).
-        source_coop (bool): Whether the data is hosted on Source Cooperative, otherwise Digital Earth Pacific.
+        source_coop (bool): Whether the data is hosted on Source Cooperative, otherwise Digital Earth Pacific hosts it.
+            Digital Earth Pacific is always a processor.
 
     Returns:
         Collection: A STAC Collection object.
@@ -65,11 +66,23 @@ def _run_create_collection(
             stac_extensions=[PROCESSING_EXTENSION],
             # stac_version="1.1.0", # Automatic from pystac.
             providers=[
+                # DEP is always a processor, and the host unless the data is on Source Cooperative.
                 Provider(
-                    name="Source Cooperative", roles=["host"], url=f"https://source.coop/{source_coop_prefix(dataset)}"
-                )
-                if source_coop
-                else Provider(name="Digital Earth Pacific", roles=["host"], url="https://digitalearthpacific.org"),
+                    name="Digital Earth Pacific",
+                    roles=["processor"] if source_coop else ["processor", "host"],
+                    url="https://digitalearthpacific.org",
+                ),
+                *(
+                    [
+                        Provider(
+                            name="Source Cooperative",
+                            roles=["host"],
+                            url=f"https://source.coop/{source_coop_prefix(dataset)}",
+                        )
+                    ]
+                    if source_coop
+                    else []
+                ),
                 auspatious_provider(
                     {
                         "processing:level": "L3",
