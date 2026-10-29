@@ -528,7 +528,6 @@ def run_classify_task(
                     "odc-stac",
                     "odc-geo",
                     "rasterio",
-                    "rioxarray",
                     "gdal",
                     "numpy",
                     "scipy",
