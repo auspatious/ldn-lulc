@@ -82,7 +82,7 @@ land change.
 
 ## Caveats
 
-- Nodata years are skipped, so year-to-year tests compare each valid year with the previous valid year. Pixels with no valid years are not tested.
+- Nodata years are skipped, so year-to-year tests compare each valid year with the previous valid year.
+Pixels with no valid years are not tested.
 - Tiles are cropped and masked to Nauru buffered by 200 m.
 - Class areas are from LULC reprojected to equal area EPSG:6933 at 30 m with nearest neighbour resampling.
-- Annual LULC PNGs for visual comparison are written alongside this report.
