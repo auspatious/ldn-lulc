@@ -1,4 +1,5 @@
 import tomllib
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from importlib.metadata import version
 from pathlib import Path
@@ -11,15 +12,20 @@ from odc.geo.geobox import GeoBox
 from pyproj import Transformer
 from pystac import Item
 from pystac.extensions.projection import ProjectionExtension
+from scipy.ndimage import generic_filter
 
 from ldn.raster import (
     BAEI_MAX,
+    FOCAL_FEATURES,
+    FOCAL_PAD,
     PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
     _compute_terrain,
     add_processing_extension,
     build_pipeline_components,
     calculate_indices,
+    crop_padding,
+    focal_features,
     installed_version,
     load_across_antimeridian,
     load_dem_terrain,
@@ -704,3 +710,56 @@ def test_installed_version_appends_pinned_git_commit():
     sources = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())["tool"]["uv"]["sources"]
     for name in ["dep-tools", "datacube-compute"]:
         assert installed_version(name) == f"{version(name)}+{sources[name]['rev']}"
+
+
+# Focal statistics - compared against scipy's generic_filter with NaN-aware numpy functions, a slow but independent
+# calculation of the same windows (NaN outside the array, so edge windows only use in-bounds pixels).
+
+
+def _reference(values: np.ndarray, function: Callable, size: int) -> np.ndarray:
+    """Apply function to the size x size window around every pixel, ignoring pixels outside the array."""
+    return generic_filter(values, function, size=size, mode="constant", cval=np.nan)
+
+
+class TestFocalFeatures:
+    @pytest.fixture
+    def data(self) -> xr.Dataset:
+        rng = np.random.default_rng(0)
+        values = rng.uniform(0, 1, (9, 9)).astype(np.float32)
+        values[2, 3] = values[6, 6] = np.nan
+        return xr.Dataset({"ndvi": (("y", "x"), values)})
+
+    @pytest.mark.parametrize("size", [3, 7])
+    def test_mean_std_and_tpi_match_reference_ignoring_nan(self, data, size):
+        values = data["ndvi"].values.astype("float64")
+        names = [f"ndvi_mean_{size}", f"ndvi_std_{size}", f"ndvi_tpi_{size}"]
+        result = focal_features(data, names)
+        mean = _reference(values, np.nanmean, size)
+        np.testing.assert_allclose(result[names[0]].values, mean, rtol=1e-5)
+        np.testing.assert_allclose(result[names[1]].values, _reference(values, np.nanstd, size), rtol=1e-4, atol=1e-6)
+        np.testing.assert_allclose(result[names[2]].values, values - mean, rtol=1e-5, atol=1e-6)
+
+    def test_window_with_no_valid_pixels_is_nan(self):
+        values = np.ones((7, 7), dtype=np.float32)
+        values[:4, :4] = np.nan
+        result = focal_features(xr.Dataset({"ndvi": (("y", "x"), values)}), ["ndvi_mean_3"])
+        assert np.isnan(result["ndvi_mean_3"].values[1, 1])
+        assert result["ndvi_mean_3"].values[3, 3] == pytest.approx(1.0)
+
+    def test_outputs_are_float32_on_input_grid(self, data):
+        result = focal_features(data, ["ndvi_mean_7"])["ndvi_mean_7"]
+        assert result.dtype == np.float32
+        assert result.dims == data["ndvi"].dims and result.shape == data["ndvi"].shape
+
+
+def test_focal_pad_covers_every_window():
+    """Every feature's window fits in the padding, so tile edge pixels have complete windows."""
+    assert all(int(name.rsplit("_", 1)[1]) // 2 <= FOCAL_PAD for name in FOCAL_FEATURES)
+
+
+def test_crop_padding_removes_pad_from_each_side():
+    data = xr.Dataset({"a": (("y", "x"), np.zeros((10, 12)))}, coords={"x": np.arange(12), "y": np.arange(10)})
+    cropped = crop_padding(data, 2)
+    assert cropped["a"].shape == (6, 8)
+    assert cropped.x.values[0] == 2 and cropped.y.values[-1] == 7
+    assert crop_padding(data, 0)["a"].shape == (10, 12)

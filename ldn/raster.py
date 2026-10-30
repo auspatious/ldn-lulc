@@ -28,7 +28,7 @@ from pystac import Item, ItemCollection, Link, Provider, ProviderRole
 from pystac.extensions.projection import ProjectionExtension
 from pystac.utils import datetime_to_str
 from pystac_client import Client as PyStacClient
-from scipy.ndimage import sobel
+from scipy.ndimage import sobel, uniform_filter
 from shapely.geometry import box, shape
 
 from ldn.utils import (
@@ -39,6 +39,14 @@ from ldn.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Landsat surface reflectance bands, and the GeoMAD median absolute deviation bands.
+REFLECTANCE_BANDS = ["red", "green", "blue", "nir08", "swir16", "swir22"]
+MAD_BANDS = ["emad", "smad", "bcmad"]
+# GeoMAD output bands that the LULC classification pipeline needs (excludes "count").
+GEOMAD_BANDS = REFLECTANCE_BANDS + MAD_BANDS
+# Spectral indices added by calculate_indices.
+INDEX_BANDS = ["ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"]
 
 # Landsat Collection 2 scaling constants (USGS)
 LANDSAT_SCALE = 0.0000275
@@ -64,7 +72,7 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     """
     nodata_values = (0, 65_535)
 
-    bands_to_scale = [band for band in data.data_vars if band not in ["count", "emad", "smad", "bcmad"]]
+    bands_to_scale = [band for band in data.data_vars if band in REFLECTANCE_BANDS]
 
     for band in bands_to_scale:
         raw = data[band]
@@ -185,18 +193,19 @@ def _compute_terrain(dem_da: xr.DataArray) -> xr.Dataset:
     return xr.Dataset({"elevation": dem_da, "slope": slope, "aspect": aspect})
 
 
-# GeoMAD output bands that the LULC classification pipeline needs (excludes "count").
-GEOMAD_BANDS = [
-    "nir08",
-    "red",
-    "green",
-    "blue",
-    "swir16",
-    "swir22",
-    "smad",
-    "bcmad",
-    "emad",
-]
+# Focal (regional) statistics, named "{band}_{stat}_{size}" with a size x size pixel window. Candidates for model
+# training, which keeps only the groups that improve accuracy. TPI is elevation minus its focal mean.
+_FOCAL_SIZES = [3, 7, 15]
+_TPI_SIZES = [15, 51]
+FOCAL_FEATURES = (
+    [f"{band}_{stat}_{size}" for band in INDEX_BANDS for stat in ["mean", "std"] for size in _FOCAL_SIZES]
+    + [f"{band}_mean_{size}" for band in REFLECTANCE_BANDS for size in _FOCAL_SIZES]
+    + [f"{band}_mean_7" for band in MAD_BANDS]
+    + [f"elevation_tpi_{size}" for size in _TPI_SIZES]
+)
+# Pixels to pad each side of a tile so the widest window is complete at tile edges: half the widest window (51 x 51,
+# including the focal pixel), so 25.
+FOCAL_PAD = max(_FOCAL_SIZES + _TPI_SIZES) // 2
 
 # Copernicus DEM collection on MS PC.
 DEM_CATALOG = "https://planetarycomputer.microsoft.com/api/stac/v1/"
@@ -340,16 +349,77 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     return _compute_terrain(dem["elevation"])
 
 
-def make_features(geomad: xr.Dataset) -> xr.Dataset:
-    """Build the model features from a GeoMAD dataset: scaled bands, spectral indices and DEM terrain.
+def _focal_mean(values: np.ndarray, size: int) -> np.ndarray:
+    """NaN-aware mean over a size x size window around each pixel.
 
-    Used for both training data and prediction, so the model always sees features computed the same way.
+    Args:
+        values: 2D array, NaN for nodata.
+        size: Window width in pixels.
+
+    Returns:
+        Mean of the valid pixels in each window, NaN where a window has no valid pixels.
+    """
+    valid = np.isfinite(values)
+    total = uniform_filter(np.where(valid, values, 0.0), size, mode="constant")
+    fraction_valid = uniform_filter(valid.astype("float64"), size, mode="constant")
+    # Threshold at half a pixel, since the running-sum filter leaves tiny residuals in all-NaN windows.
+    has_valid = fraction_valid > 0.5 / size**2
+    return np.where(has_valid, total / np.where(has_valid, fraction_valid, 1), np.nan)
+
+
+def focal_features(data: xr.Dataset, names: list[str]) -> dict[str, xr.DataArray]:
+    """Compute focal (regional) statistics features.
+
+    Args:
+        data: Computed (not lazy) dataset containing the source bands.
+        names: Feature names in FOCAL_FEATURES, "{band}_{stat}_{size}" with stat "mean", "std" or "tpi".
+
+    Returns:
+        Mapping of feature name to float32 DataArray on the same grid as data.
+    """
+    features = {}
+    for name in names:
+        band, stat, size = name.rsplit("_", 2)
+        values = data[band].values.astype("float64")
+        mean = _focal_mean(values, int(size))
+        if stat == "mean":
+            result = mean
+        elif stat == "std":
+            result = np.sqrt(np.maximum(_focal_mean(values**2, int(size)) - mean**2, 0))
+        else:
+            result = values - mean
+        features[name] = data[band].copy(data=result.astype("float32"))
+    return features
+
+
+def crop_padding(data: xr.Dataset, pad: int) -> xr.Dataset:
+    """Remove pad pixels from each side, e.g. to go from a padded geobox back to the tile.
+
+    Args:
+        data: Dataset with x and y dimensions.
+        pad: Pixels to remove from each side.
+
+    Returns:
+        The cropped dataset.
+    """
+    # Slicing returns a view, without copying data. slice(pad, -pad) would be empty for pad = 0.
+    return data.isel(x=slice(pad, data.sizes["x"] - pad), y=slice(pad, data.sizes["y"] - pad))
+
+
+def make_features(geomad: xr.Dataset, features: list[str]) -> xr.Dataset:
+    """Build the model features from a GeoMAD dataset: scaled bands, spectral indices, DEM terrain and focal statistics.
+
+    Used for both training data and prediction, so the model always sees features computed the same way. Load the
+    GeoMAD padded by FOCAL_PAD pixels so focal statistics are complete at tile edges, then crop_padding the result.
 
     Args:
         geomad: Raw GeoMAD dataset for one tile and year (a single time step).
+        features: Feature names to compute. Focal statistics (names in FOCAL_FEATURES) are only computed when listed;
+            other names are ignored, since the base features are always computed.
 
     Returns:
-        Dataset with scaled GeoMAD bands, spectral indices, elevation, slope and aspect on the GeoMAD grid.
+        Computed dataset with scaled GeoMAD bands, spectral indices, elevation, slope, aspect and the requested
+        focal statistics on the GeoMAD grid.
     """
     data = calculate_indices(scale_offset_landsat(geomad.squeeze(drop=True)))
 
@@ -363,8 +433,10 @@ def make_features(geomad: xr.Dataset) -> xr.Dataset:
 
     # Assign GeoMAD coords to DEM before merge
     dem = dem.assign_coords(x=data.x, y=data.y)
-    # Override join prefers GeoMAD coords and metadata
-    return xr.merge([data, dem], join="override")
+    # Override join prefers GeoMAD coords and metadata. Computed because focal statistics and scikit-learn need numpy
+    # arrays, and sending a large lazy graph to Dask workers is slow.
+    merged = xr.merge([data, dem], join="override").compute()
+    return merged.assign(focal_features(merged, [name for name in features if name in FOCAL_FEATURES]))
 
 
 # This is needed to support Source.Coop prefix.

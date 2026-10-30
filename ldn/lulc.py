@@ -27,8 +27,10 @@ from typing_extensions import Annotated
 from ldn.aws import configure_s3_access_profile, s3_client
 from ldn.grids import get_gridspec
 from ldn.raster import (
+    FOCAL_PAD,
     GEOMAD_BANDS,
     build_pipeline_components,
+    crop_padding,
     make_features,
     stac_providers,
 )
@@ -54,80 +56,97 @@ from ldn.utils import (
 logger = logging.getLogger(__name__)
 
 
-class StacGeoparquetSearcher(Searcher):
-    """Search a STAC-Geoparquet file for a single item by ID using rustac."""
+class GeomadSearcher(Searcher):
+    """Search the GeoMAD STAC-Geoparquet index for a tile's item and its neighbours for one year, using rustac.
 
-    def __init__(self, stac_geoparquet_url: str, item_id: str):
-        """Create a searcher for a STAC-Geoparquet file.
+    Item IDs are built the same way as the GeoMAD writer's. The neighbours are needed for focal (regional) statistics:
+    pixels along a tile's edges need the surrounding tiles' pixels to fill their windows (see FOCAL_PAD).
+    """
+
+    def __init__(
+        self,
+        geomad_bucket: str,
+        region: Literal["pacific", "non-pacific"],
+        product_owner: str | None,
+        single_region: bool,
+        sensor: str,
+        geomad_version: str,
+        year: str,
+        tile_id_tuple: tuple[int, int],
+    ):
+        """Create a searcher for a GeoMAD tile and its neighbours.
+
+        Neighbours are the grid tiles overlapping the tile geobox padded by FOCAL_PAD pixels, found in the grid's own
+        CRS (no WGS84 or antimeridian handling).
 
         Args:
-            stac_geoparquet_url: HTTP(S) URL to the STAC-Geoparquet file.
-            item_id: Full STAC item ID, e.g. "dep_ls_geomad_028_030_2000".
+            geomad_bucket: S3 bucket where the GeoMAD data is stored.
+            region: Grid region, either "pacific" or "non-pacific".
+            product_owner: Override the region-derived owner prefix.
+            single_region: If True, search the owner's single region index (e.g. 'dep_ls_geomad'), otherwise the
+                many-region index (e.g. 'ls_geomad').
+            sensor: Sensor name (e.g. 'ls').
+            geomad_version: GeoMAD version string (e.g. "0-3-0").
+            year: Year string (e.g. "2020").
+            tile_id_tuple: Grid tile index (x, y).
         """
         super().__init__()
-        self._url = stac_geoparquet_url
-        self._item_id = item_id
+        owner = owner_for_region(region, product_owner)
+        key = get_stac_geoparquet_key(
+            geomad_bucket, owner if single_region else None, sensor, GEOMAD_DATASET_ID, geomad_version
+        )
+        self._url = get_stac_geoparquet_url(geomad_bucket, key)
+        # Same ID construction as the GeoMAD writer (itempath.basename), without its bucket region lookup.
+        itempath = GenericItemPath(
+            sensor=sensor,
+            dataset_id=GEOMAD_DATASET_ID,
+            version=geomad_version,
+            time=year,
+            prefix=owner,
+        )
+        self._item_id = itempath.basename(tile_id_tuple)
+        grid = get_gridspec(region)
+        padded = grid.tile_geobox(tile_id_tuple).pad(FOCAL_PAD)
+        self._neighbour_ids = [
+            itempath.basename(tile) for tile, _ in grid.tiles(padded.boundingbox) if tile != tile_id_tuple
+        ]
 
     def search(self, area: GeoBox | None = None) -> ItemCollection:
-        """Search for the item with the configured ID.
+        """Search for the tile's item and any neighbouring items.
 
         Args:
-            area: Unused, because the item ID already identifies the tile. Accepted so this matches the dep_tools
+            area: Unused, because the item IDs already identify the tiles. Accepted so this matches the dep_tools
                 Searcher interface that AwsStacTask calls with the tile area.
 
         Returns:
-            A pystac ItemCollection containing exactly one item.
+            A pystac ItemCollection with the tile's item first, then the neighbours found. Missing neighbours (e.g.
+            open ocean) are skipped.
 
         Raises:
-            LdnError: If the number of matching items is not exactly one.
+            LdnError: If the tile's item is not found.
         """
-        items = [Item.from_dict(doc) for doc in search_sync(self._url, ids=[self._item_id])]
+        items = [Item.from_dict(doc) for doc in search_sync(self._url, ids=[self._item_id, *self._neighbour_ids])]
+        tile_items = [item for item in items if item.id == self._item_id]
+        if not tile_items:
+            raise LdnError(f"GeoMAD item {self._item_id} not found")
 
-        if len(items) != 1:
-            raise LdnError(f"Expected exactly one GeoMAD item with ID {self._item_id}, but found {len(items)}")
-
-        return ItemCollection(items)
+        return ItemCollection(tile_items + [item for item in items if item.id != self._item_id])
 
 
-def geomad_searcher(
-    geomad_bucket: str,
-    region: Literal["pacific", "non-pacific"],
-    product_owner: str | None,
-    single_region: bool,
-    sensor: str,
-    geomad_version: str,
-    year: str,
-    tile_id_tuple: tuple[int, int],
-) -> StacGeoparquetSearcher:
-    """Return a searcher for one GeoMAD tile and year, using the same item ID as the GeoMAD writer.
+class PaddedOdcLoader(OdcLoader):
+    """OdcLoader that loads the tile geobox padded by FOCAL_PAD pixels, so focal statistics are complete at edges."""
 
-    Args:
-        geomad_bucket: S3 bucket where the GeoMAD data is stored.
-        region: Grid region, either "pacific" or "non-pacific".
-        product_owner: Override the region-derived owner prefix.
-        single_region: If True, search the owner's single region index (e.g. 'dep_ls_geomad'), otherwise the
-            many-region index (e.g. 'ls_geomad').
-        sensor: Sensor name (e.g. 'ls').
-        geomad_version: GeoMAD version string (e.g. "0-3-0").
-        year: Year string (e.g. "2020").
-        tile_id_tuple: Grid tile index (x, y).
+    def load(self, items: ItemCollection, areas: GeoBox) -> xr.Dataset:
+        """Load items onto the padded geobox.
 
-    Returns:
-        A StacGeoparquetSearcher for the item.
-    """
-    owner = owner_for_region(region, product_owner)
-    key = get_stac_geoparquet_key(
-        geomad_bucket, owner if single_region else None, sensor, GEOMAD_DATASET_ID, geomad_version
-    )
-    # Same ID construction as the GeoMAD writer (itempath.basename), without its bucket region lookup.
-    item_id = GenericItemPath(
-        sensor=sensor,
-        dataset_id=GEOMAD_DATASET_ID,
-        version=geomad_version,
-        time=year,
-        prefix=owner,
-    ).basename(tile_id_tuple)
-    return StacGeoparquetSearcher(stac_geoparquet_url=get_stac_geoparquet_url(geomad_bucket, key), item_id=item_id)
+        Args:
+            items: GeoMAD items for the tile and its neighbours.
+            areas: Tile geobox.
+
+        Returns:
+            Dataset on the tile geobox padded by FOCAL_PAD pixels.
+        """
+        return super().load(items, areas.pad(FOCAL_PAD))
 
 
 def reshape_array_to_2d(
@@ -137,6 +156,10 @@ def reshape_array_to_2d(
     nodata_value: int,
 ) -> xr.DataArray:
     """Reshape a 1D stacked array back to a 2D DataArray.
+
+    scikit-learn predicts on a table with one row per pixel, so its outputs are 1D and are reshaped back to the
+    raster here. The output is uint8 for storage, not for the random forest: class values and probabilities (0-100)
+    fit in 0-255, so it keeps the COGs small, and nodata_value (e.g. 255) marks pixels without a prediction.
 
     Args:
         stacked_array: Flattened prediction or probability values.
@@ -151,7 +174,8 @@ def reshape_array_to_2d(
     da = xr.DataArray(array, coords={"y": template_ds.y, "x": template_ds.x}, dims=["y", "x"])
     # nodata_value as NoData. Ensure any remaining NaNs are also set to nodata_value before casting.
     da = da.where(~original_mask, nodata_value).fillna(nodata_value)
-    return da.astype("uint8")
+    # Round, as casting truncates (e.g. a probability of 99.9 would become 99).
+    return da.round().astype("uint8")
 
 
 def do_prediction(
@@ -177,7 +201,16 @@ def do_prediction(
         argmax class where max probability >= threshold (else nodata), and
         probabilities is a dict mapping "probability_{class value}" (e.g. "probability_1" for Tree cover)
         to uint8 DataArrays of per-class probability (0-100).
+
+    Raises:
+        LdnError: If the dataset's variables are not exactly the model's features.
     """
+    # The features must match the model's exactly. Extra ones would also wrongly mask pixels as nodata below.
+    missing = set(model.feature_names_in_) - set(ds.data_vars)
+    extra = set(ds.data_vars) - set(model.feature_names_in_)
+    if missing or extra:
+        raise LdnError(f"Dataset features don't match the model. Missing: {sorted(missing)}, extra: {sorted(extra)}")
+
     stacked = ds.to_array().stack(dims=["y", "x"])
 
     # Nodata mask: True for pixels where ANY band is NaN.
@@ -192,10 +225,6 @@ def do_prediction(
         .to_dataframe()
     )
 
-    # Validate that all model features are present before reindexing.
-    missing = set(model.feature_names_in_) - set(obs.columns)
-    if missing:
-        raise LdnError(f"Dataset is missing features required by the model: {sorted(missing)}")
     obs = obs.reindex(columns=model.feature_names_in_)
 
     # Flatten the spatial nodata mask to match the observation index.
@@ -262,18 +291,15 @@ class LulcProcessor(Processor):
         """Build features (scaled GeoMAD, indices, DEM terrain) and predict/classify LULC.
 
         Args:
-            input_data: GeoMAD dataset loaded on the tile geobox.
+            input_data: Raw GeoMAD bands loaded on the tile geobox padded by FOCAL_PAD pixels. The features (scaled
+                bands, indices, terrain and focal statistics) are built from it here.
 
         Returns:
             Dataset with classification and probability bands.
         """
-        self._logger.info("Building features: scaling GeoMAD, computing indices, loading DEM terrain")
-        merged = make_features(input_data)
-
-        # Compute before prediction: sklearn needs eager numpy arrays,
-        # and sending a large lazy graph to Dask workers is slow.
-        self._logger.info("Computing merged dataset")
-        merged = merged.compute()
+        self._logger.info("Building features: scaling GeoMAD, computing indices, loading DEM terrain, focal statistics")
+        # Only the focal statistics the model uses are computed. Crop back to the tile once they're complete.
+        merged = crop_padding(make_features(input_data, list(self._model.feature_names_in_)), FOCAL_PAD)
 
         self._logger.info("Running LULC prediction")
         classification, probabilities = do_prediction(
@@ -483,7 +509,7 @@ def run_classify_task(
         return  # Skip due to no overwrite.
     itempath, stac_creator, writer = components
 
-    searcher = geomad_searcher(
+    searcher = GeomadSearcher(
         geomad_bucket,
         region,
         product_owner,
@@ -494,7 +520,7 @@ def run_classify_task(
         tile_id_tuple,
     )
 
-    loader = OdcLoader(
+    loader = PaddedOdcLoader(
         bands=GEOMAD_BANDS,
         chunks={"x": xy_chunk_size, "y": xy_chunk_size},
         fail_on_error=True,  # We control the geomad data so it shouldn't fail.
