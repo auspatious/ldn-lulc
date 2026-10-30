@@ -920,7 +920,8 @@ def search_and_load_geomad_indices_dem(
     # statistics are complete at tile edges, the same as prediction.
     geomad_ds = stac_load(
         geomad_items,
-        chunks={},  # Force lazy.
+        # Force lazy, one chunk per band. 1024 px chunks were about 2x slower for a padded tile (99 s vs ~200 s).
+        chunks={},
         bands=bands,
         fail_on_error=True,  # We control the data so it shouldn't fail.
         geobox=get_gridspec(region=region).tile_geobox(parse_tile_id(tile_id)).pad(FOCAL_PAD),
