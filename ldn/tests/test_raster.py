@@ -10,6 +10,7 @@ import xarray as xr
 from pystac import Item
 
 from ldn.raster import (
+    BAEI_MAX,
     PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
     _compute_terrain,
@@ -19,6 +20,7 @@ from ldn.raster import (
     calculate_indices,
     installed_version,
     load_dem_terrain,
+    safe_divide,
     scale_offset_landsat,
     stac_providers,
 )
@@ -154,6 +156,18 @@ def spectral_ds():
     )
 
 
+@pytest.mark.parametrize(
+    "num, den, expected",
+    [(1.0, 2.0, 0.5), (np.nan, 2.0, np.nan), (1.0, np.nan, np.nan), (np.nan, 0.0, np.nan), (0.0, 0.0, 9.0)],
+    ids=["divides", "nan numerator", "nan denominator", "nan numerator and zero denominator", "zero denominator"],
+)
+def test_safe_divide(num, den, expected):
+    """NaN if either input is NaN, zero_value if the denominator is 0, otherwise the quotient."""
+    result = safe_divide(xr.DataArray(np.float32(num)), xr.DataArray(np.float32(den)), 9.0)
+    np.testing.assert_equal(result.item(), expected)
+    assert result.dtype == np.float32
+
+
 class TestCalculateIndices:
     """
     All spectral indices are ratios of scaled reflectance - pure arithmetic.
@@ -201,10 +215,14 @@ class TestCalculateIndices:
         result = calculate_indices(spectral_ds)
         assert {"ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"}.issubset(result.data_vars)
 
-    @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi", "ndti", "bsi"])
-    def test_all_zero_inputs_yield_nan_for_ratio_indices(self, index):
+    @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"])
+    def test_all_zero_inputs_yield_finite_values(self, index):
         ds = _spectral_dataset(nir=0.0, red=0.0, green=0.0, blue=0.0, swir16=0.0, swir22=0.0)
-        assert np.isnan(calculate_indices(ds)[index].item())
+        assert np.isfinite(calculate_indices(ds)[index].item())
+
+    def test_baei_zero_denominator_is_max(self):
+        ds = _spectral_dataset(green=0.0, swir16=0.0)
+        assert calculate_indices(ds)["baei"].item() == pytest.approx(BAEI_MAX)
 
     def test_mutates_and_returns_same_dataset_object(self, spectral_ds):
         assert calculate_indices(spectral_ds) is spectral_ds
