@@ -48,9 +48,10 @@ GEOMAD_BANDS = REFLECTANCE_BANDS + MAD_BANDS
 # Spectral indices added by calculate_indices.
 INDEX_BANDS = ["ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"]
 
-# Landsat Collection 2 scaling constants (USGS)
+# Landsat Collection 2 scaling constants (USGS), and raw reflectance values that mean nodata.
 LANDSAT_SCALE = 0.0000275
 LANDSAT_OFFSET = -0.2
+LANDSAT_NODATA = (0, 65_535)
 # Largest valid baei: max numerator (red = 1) over the smallest positive scaled reflectance (raw 7273 -> 0.0000075).
 BAEI_MAX = (1 + 0.3) / (math.ceil(-LANDSAT_OFFSET / LANDSAT_SCALE) * LANDSAT_SCALE + LANDSAT_OFFSET)
 
@@ -70,13 +71,11 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     Returns:
         The same dataset with bands scaled to float32 in [0, 1].
     """
-    nodata_values = (0, 65_535)
-
     bands_to_scale = [band for band in data.data_vars if band in REFLECTANCE_BANDS]
 
     for band in bands_to_scale:
         raw = data[band]
-        nodata = (raw == nodata_values[0]) | (raw == nodata_values[1])
+        nodata = raw.isin(LANDSAT_NODATA)
         # Reflectance <= 0 is clipped to 0: a valid very dark pixel, not nodata. safe_divide handles the zeros.
         # Known limitation: over deep water, red is often slightly negative from atmospheric correction noise (e.g.
         # -0.004) while nir is about 0.004, so after clipping NDVI = (0.004 - 0) / (0.004 + 0) = 1, the value for

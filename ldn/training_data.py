@@ -907,8 +907,9 @@ def search_and_load_geomad_indices_dem(
         logger.info(f"Using latest GeoMAD version {GEOMAD_VERSION}")
 
     # The tile's item (raises if missing) and any neighbouring items to fill the focal statistics padding.
+    # Gap fill years is disabled (set to 0) so only this year's data is considered for training data.
     geomad_items = GeomadSearcher(
-        bucket, region, product_owner, single_region, sensor, geomad_version, year, parse_tile_id(tile_id)
+        bucket, region, product_owner, single_region, sensor, geomad_version, year, parse_tile_id(tile_id), 0
     ).search()
     logger.info(f"Found GeoMAD item {geomad_items[0].id} and {len(geomad_items) - 1} neighbours for year {year}")
 
