@@ -25,10 +25,8 @@ from odc.stac import load as stac_load
 from planetary_computer import sign_url
 from pystac import ItemCollection
 from pystac.client import Client
-from rasterio.enums import Resampling
 from scipy.ndimage import minimum_filter
 from scipy.spatial.distance import cdist
-from shapely.geometry import box
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
@@ -37,7 +35,7 @@ from ldn.aws import s3_client
 from ldn.grids import get_gadm, get_gridspec
 from ldn.lulc import geomad_searcher
 from ldn.random_sampling import random_sampling
-from ldn.raster import make_features
+from ldn.raster import load_across_antimeridian, make_features
 from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
     CLASS_ATTR,
@@ -170,77 +168,6 @@ def _get_pc_client():
     return PC_CLIENT
 
 
-def _item_centroid_lon(item):
-    """Return the WGS84 centroid longitude of a STAC item."""
-    coords = item.geometry["coordinates"][0]
-    return np.mean([c[0] for c in coords])
-
-
-def _load_lulc_am(
-    lulc_items: ItemCollection,
-    geobox,
-    geobox_wgs84: gpd.GeoDataFrame,
-) -> xr.Dataset:
-    """Load LULC product for a tile that crosses the antimeridian.
-
-    Loads east and west halves separately. For geographic CRS products
-    (WC, CCI in EPSG:4326), shifts west longitudes to >180 and
-    reprojects with +over via rio.reproject. For projected CRS products
-    (IO in UTM), reprojects each half to the target geobox independently
-    via odc.reproject and merges non-zero values.
-
-    Args:
-        lulc_items: STAC items from search_across_180.
-        geobox: Target geobox in the analysis CRS.
-        geobox_wgs84: Tile footprint as a WGS84 GeoDataFrame.
-
-    Returns:
-        Dataset reprojected to the target geobox.
-    """
-    east_bbox, west_bbox = bbox_across_180(geobox_wgs84)
-    east_gdf = gpd.GeoDataFrame(geometry=[box(*east_bbox)], crs=WGS84)
-    west_gdf = gpd.GeoDataFrame(geometry=[box(*west_bbox)], crs=WGS84)
-
-    east_items = [i for i in lulc_items if _item_centroid_lon(i) >= 0]
-    west_items = [i for i in lulc_items if _item_centroid_lon(i) < 0]
-
-    halves = []
-    for items, gdf in [(east_items, east_gdf), (west_items, west_gdf)]:
-        if not items:
-            continue
-        ds = stac_load(items, geopolygon=gdf, chunks={}, patch_url=sign_url).squeeze(drop=True)
-        halves.append(ds)
-
-    if len(halves) != 2:
-        raise ValueError(
-            f"Expected 2 halves but got {len(halves)}. "
-            f"East: {len(east_items)}, West: {len(west_items)}. "
-            f"Check tile geometry and LULC item coverage."
-        )
-
-    is_geographic = "longitude" in halves[0].dims
-
-    if not is_geographic:
-        halves = [h.odc.reproject(geobox, resampling="nearest") for h in halves]
-        merged = halves[0].copy()
-        for var in merged.data_vars:
-            merged[var] = xr.where(halves[1][var] != 0, halves[1][var], halves[0][var])
-        return merged.odc.assign_crs(crs=geobox.crs)
-
-    halves[1] = halves[1].assign_coords(longitude=(halves[1].longitude % 360))
-    ds_combined = xr.concat(halves, dim="longitude").sortby("longitude")
-
-    ds_combined = ds_combined.rio.set_spatial_dims(x_dim="longitude", y_dim="latitude")
-    ds_combined = ds_combined.rio.write_crs("+proj=longlat +datum=WGS84 +over")
-
-    return ds_combined.rio.reproject(
-        str(geobox.crs),
-        shape=(geobox.height, geobox.width),
-        transform=geobox.transform,
-        resampling=Resampling.nearest,
-    )
-
-
 def load_lulc_for_tile(product: str, geobox, year: str) -> xr.Dataset:
     """Search and load a LULC product onto a target geobox.
 
@@ -271,7 +198,7 @@ def load_lulc_for_tile(product: str, geobox, year: str) -> xr.Dataset:
 
     if crosses_am:
         logger.info("AM-crossing tile, using split load")
-        return _load_lulc_am(lulc_items, geobox, geobox_wgs84)
+        return load_across_antimeridian(lulc_items, geobox, resampling="nearest")
 
     logger.info("Non-AM-crossing tile, using normal load")
     return stac_load(

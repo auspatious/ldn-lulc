@@ -7,18 +7,21 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import xarray as xr
+from odc.geo.geobox import GeoBox
+from pyproj import Transformer
 from pystac import Item
+from pystac.extensions.projection import ProjectionExtension
 
 from ldn.raster import (
     BAEI_MAX,
     PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
     _compute_terrain,
-    _load_dem_am,
     add_processing_extension,
     build_pipeline_components,
     calculate_indices,
     installed_version,
+    load_across_antimeridian,
     load_dem_terrain,
     safe_divide,
     scale_offset_landsat,
@@ -292,49 +295,75 @@ class TestComputeTerrain:
         np.testing.assert_array_equal(result["slope"].y.values, dem.y.values)
 
 
-# _load_dem_am
+# load_across_antimeridian
 
 
-class TestLoadDemAmGuards:
-    _PATCH = "ldn.raster"
+def _am_geobox() -> GeoBox:
+    """A small EPSG:3832 geobox centred on the antimeridian at 18S."""
+    x_am, y_am = Transformer.from_crs("EPSG:4326", "EPSG:3832", always_xy=True).transform(180.0, -18.0)
+    return GeoBox.from_bbox((x_am - 150, y_am - 150, x_am + 150, y_am + 150), "EPSG:3832", resolution=30)
 
-    def _bbox_patch(self):
-        return patch(
-            f"{self._PATCH}.bbox_across_180",
-            return_value=((170, -10, 180, 10), (-180, -10, -170, 10)),
+
+def _item(west: float, east: float, crs: str) -> Item:
+    """STAC item with a polygon footprint spanning west to east longitude, in a native CRS."""
+    ring = [(west, -19.0), (east, -19.0), (east, -17.0), (west, -17.0), (west, -19.0)]
+    geometry = {"type": "Polygon", "coordinates": [ring]}
+    item = Item(
+        id=f"{west}_{east}",
+        geometry=geometry,
+        bbox=[west, -19.0, east, -17.0],
+        datetime=datetime(2020, 1, 1),
+        properties={},
+    )
+    ProjectionExtension.add_to(item)
+    ProjectionExtension.ext(item).code = crs
+    return item
+
+
+@pytest.mark.parametrize(
+    "items",
+    [[], [_item(179.0, 180.0, "EPSG:4326")], [_item(-180.0, -179.0, "EPSG:4326")]],
+    ids=["no items", "east only", "west only"],
+)
+def test_load_across_antimeridian_raises_without_items_on_both_sides(items):
+    with patch("ldn.raster.stac_load") as mock_load:
+        with pytest.raises(LdnError, match="Expected to load 2 halves"):
+            load_across_antimeridian(items, _am_geobox(), "bilinear")
+    mock_load.assert_not_called()
+
+
+def test_load_across_antimeridian_loads_projected_items_onto_the_geobox():
+    """UTM footprints span -180 to 180 and UTM coordinates don't wrap, so they load directly without splitting."""
+    items = [_item(-180.0, 180.0, "EPSG:32760"), _item(-180.0, 180.0, "EPSG:32701")]
+    geobox = _am_geobox()
+    with patch("ldn.raster.stac_load") as mock_load:
+        load_across_antimeridian(items, geobox, "nearest")
+    mock_load.assert_called_once()
+    assert mock_load.call_args.kwargs["geobox"] is geobox
+
+
+def test_load_across_antimeridian_has_no_gap_where_both_halves_have_a_180_column():
+    """The east half's empty column at 180 and the west half's -180 column must not leave a gap or duplicate."""
+    step = 1 / 3600
+    latitude = -18.0 + np.arange(-8, 9) * step
+
+    def half(longitude: np.ndarray, empty_last_column: bool) -> xr.Dataset:
+        data = np.full((len(latitude), len(longitude)), 100.0, dtype=np.float32)
+        if empty_last_column:
+            data[:, -1] = np.nan
+        return xr.Dataset(
+            {"data": (("latitude", "longitude"), data)}, coords={"latitude": latitude, "longitude": longitude}
         )
 
-    def _east_item(self):
-        item = MagicMock()
-        item.bbox = [170, -10, 180, 10]  # min_lon ≥ 0 → east
-        return item
-
-    def _west_item(self):
-        item = MagicMock()
-        item.bbox = [-180, -10, -170, 10]  # min_lon < 0 → west
-        return item
-
-    @pytest.mark.parametrize(
-        "items,label",
-        [
-            ([], "no items"),
-            ([MagicMock(spec_set=["bbox"], bbox=[170, -10, 180, 10])], "east only"),
-            ([MagicMock(spec_set=["bbox"], bbox=[-180, -10, -170, 10])], "west only"),
-        ],
-    )
-    def test_raises_ldnerror_when_fewer_than_two_halves_loaded(self, items, label):
-        """
-        The function must raise before doing any I/O when the item list
-        cannot produce two geographic halves.
-        """
-        geobox, geobox_wgs84 = MagicMock(), MagicMock()
-        with self._bbox_patch(), patch(f"{self._PATCH}.stac_load") as mock_load:
-            # Give stac_load a plausible-but-minimal return value so it
-            # doesn't blow up if called - we only care about the guard.
-            ds = xr.Dataset({"data": (("latitude", "longitude"), np.ones((2, 2)))})
-            mock_load.return_value.squeeze.return_value = ds
-            with pytest.raises(LdnError, match="Expected to load 2 halves"):
-                _load_dem_am(items, geobox, geobox_wgs84)
+    east = half(180.0 - np.arange(8, -1, -1) * step, empty_last_column=True)  # ends with an empty column at 180
+    west = half(-180.0 + np.arange(9) * step, empty_last_column=False)  # starts at -180
+    geobox = _am_geobox()
+    with patch("ldn.raster.stac_load") as mock_load:
+        mock_load.return_value.squeeze.side_effect = [east, west]
+        items = [_item(179.0, 180.0, "EPSG:4326"), _item(-180.0, -179.0, "EPSG:4326")]
+        result = load_across_antimeridian(items, geobox, "bilinear")
+    assert result["data"].shape == geobox.shape
+    np.testing.assert_allclose(result["data"].values, 100.0)
 
 
 # load_dem_terrain guards
@@ -397,7 +426,7 @@ class TestLoadDemTerrainBranching:
 
         xr.Dataset.odc is a registered read-only accessor property - you
         cannot assign a MagicMock to it on a real Dataset.  We therefore
-        keep all stac_load / _load_dem_am return values as plain MagicMocks
+        keep all stac_load / load_across_antimeridian return values as plain MagicMocks
         whose attribute chains resolve freely without raising AttributeError.
         """
         bbox_return = ((170, -10, 180, 10), (-180, -10, -170, 10)) if crosses_am else None
@@ -414,7 +443,7 @@ class TestLoadDemTerrainBranching:
             patch(f"{_MOD}.GeoDataFrame") as mock_gdf,
             patch(f"{_MOD}.bbox_across_180", return_value=bbox_return),
             patch(f"{_MOD}.stac_load") as mock_stac_load,
-            patch(f"{_MOD}._load_dem_am") as mock_am,
+            patch(f"{_MOD}.load_across_antimeridian") as mock_am,
             patch(f"{_MOD}._compute_terrain"),
         ):
             mock_gdf.return_value.to_crs.return_value = MagicMock()
@@ -430,7 +459,7 @@ class TestLoadDemTerrainBranching:
             patch(f"{_MOD}.search_across_180", return_value=_stac_items(1)),
             patch(f"{_MOD}.GeoDataFrame") as mock_gdf,
             patch(f"{_MOD}.bbox_across_180", return_value=bbox_return),
-            patch(f"{_MOD}._load_dem_am") as mock_am,
+            patch(f"{_MOD}.load_across_antimeridian") as mock_am,
             patch(f"{_MOD}.stac_load") as mock_stac_load,
             patch(f"{_MOD}._compute_terrain"),
         ):
