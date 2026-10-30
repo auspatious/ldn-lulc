@@ -198,7 +198,7 @@ def load_lulc_for_tile(product: str, geobox, year: str) -> xr.Dataset:
 
     if crosses_am:
         logger.info("AM-crossing tile, using split load")
-        return load_across_antimeridian(lulc_items, geobox, resampling="nearest", fail_on_error=True)
+        return load_across_antimeridian(lulc_items, geobox, resampling="nearest")
 
     logger.info("Non-AM-crossing tile, using normal load")
     return stac_load(
