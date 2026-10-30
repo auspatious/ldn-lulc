@@ -7,6 +7,7 @@ from typing import Literal
 
 import numpy as np
 import xarray as xr
+from affine import Affine
 from antimeridian import fix_shape
 from dep_tools.aws import BaseClient, object_exists
 from dep_tools.loaders import StacLoader
@@ -20,7 +21,7 @@ from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from geopandas import GeoDataFrame
 from odc.geo.crs import CRS
 from odc.geo.geobox import GeoBox
-from odc.geo.xr import assign_crs
+from odc.geo.xr import assign_crs, xr_coords
 from odc.stac import load as stac_load
 from planetary_computer import sign_url
 from pystac import Item, ItemCollection, Link, Provider, ProviderRole
@@ -198,42 +199,6 @@ DEM_CATALOG = "https://planetarycomputer.microsoft.com/api/stac/v1/"
 DEM_COLLECTION = "cop-dem-glo-30"
 
 
-def _valid(data: xr.DataArray) -> xr.DataArray:
-    """True where a value isn't empty: not NaN and not the declared nodata.
-
-    The declared nodata (`odc.nodata`) comes from the STAC items' `raster:bands`, set by odc-stac. For the products
-    loaded across the antimeridian: ESA WorldCover and ESA CCI are uint8 with nodata 0, and the Copernicus DEM is
-    float32 with no declared nodata, so odc-stac fills empty areas with NaN.
-
-    Args:
-        data: Loaded band.
-
-    Returns:
-        Boolean DataArray, True where the value is data.
-
-    Raises:
-        LdnError: If an integer band has no declared nodata, so its empty pixels can't be told apart from data.
-    """
-    if data.odc.nodata is None:
-        if not np.issubdtype(data.dtype, np.floating):
-            raise LdnError(f"Band {data.name} is {data.dtype} with no declared nodata, so empty pixels are unknown.")
-        return data.notnull()
-    return data.notnull() & (data != data.odc.nodata)
-
-
-def _first_valid(first: xr.Dataset, second: xr.Dataset) -> xr.Dataset:
-    """Merge two datasets on the same grid, keeping first's values where not empty (see _valid), otherwise second's.
-
-    Args:
-        first: Dataset whose values are kept where not empty.
-        second: Dataset on the same grid, used where first is empty.
-
-    Returns:
-        Merged dataset.
-    """
-    return xr.Dataset({name: first[name].where(_valid(first[name]), second[name]) for name in first.data_vars})
-
-
 def load_across_antimeridian(items: ItemCollection, geobox: GeoBox, resampling: str) -> xr.Dataset:
     """Load STAC items onto a geobox that crosses the antimeridian, e.g. the DEM or LULC reference products.
 
@@ -244,10 +209,9 @@ def load_across_antimeridian(items: ItemCollection, geobox: GeoBox, resampling: 
     - A single WGS84 load spanning both sides covers almost the whole world, which runs out of memory.
 
     So for geographic sources (EPSG:4326: Copernicus DEM GLO-30, ESA WorldCover and ESA CCI) this loads the east and
-    west halves separately in WGS84. Their longitudes are expressed relative to 180 and joined into one continuous
-    grid in a WGS84 CRS with its prime meridian at 180 (`+pm=180`), which odc.reproject handles normally. The usual
-    alternative, the PROJ "+over" flag (longitudes beyond ±180), isn't supported by odc. Both halves include a column
-    at exactly 180; the empty one is dropped by keeping non-empty values.
+    west halves separately in WGS84 (_load_halves) and joins them into one continuous grid in a WGS84 CRS with its
+    prime meridian at 180 (`+pm=180`, see _merge_geographic_halves), which odc.reproject handles normally. The usual
+    alternative, the PROJ "+over" flag (longitudes beyond ±180), isn't supported by odc.
 
     Projected sources (Impact Observatory, in a UTM zone on each side, e.g. EPSG:32760 and EPSG:32601) don't wrap at
     ±180, so they load onto the geobox directly.
@@ -275,7 +239,25 @@ def load_across_antimeridian(items: ItemCollection, geobox: GeoBox, resampling: 
     # squeeze drops the time dimension: the items are one product for one year, so it has length 1.
     if not all(CRS(ProjectionExtension.ext(item).crs_string).geographic for item in items):
         return stac_load(items, geobox=geobox, chunks={}, resampling=resampling, patch_url=sign_url).squeeze(drop=True)
+    return _merge_geographic_halves(*_load_halves(items, geobox, resampling)).odc.reproject(
+        geobox, resampling=resampling
+    )
 
+
+def _load_halves(items: ItemCollection, geobox: GeoBox, resampling: str) -> tuple[xr.Dataset, xr.Dataset]:
+    """Load the east and west sides of a geobox that crosses the antimeridian in WGS84.
+
+    Args:
+        items: EPSG:4326 STAC items covering the geobox.
+        geobox: Geobox crossing the antimeridian.
+        resampling: Resampling method, passed to stac_load.
+
+    Returns:
+        East and west datasets, without a time dimension.
+
+    Raises:
+        LdnError: If either side of the antimeridian has no items.
+    """
     footprint_wgs84 = GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(WGS84)
     sides = [box(*bbox) for bbox in bbox_across_180(footprint_wgs84)]
     # Each side loads the items whose footprint intersects it. An EPSG:4326 item's footprint can't cross ±180, so it
@@ -286,7 +268,6 @@ def load_across_antimeridian(items: ItemCollection, geobox: GeoBox, resampling: 
             f"Expected to load 2 halves across the antimeridian but got {len(east_items)} east and "
             f"{len(west_items)} west items. Check the tile geometry and item coverage."
         )
-
     east, west = (
         stac_load(
             side_items,
@@ -297,20 +278,35 @@ def load_across_antimeridian(items: ItemCollection, geobox: GeoBox, resampling: 
         ).squeeze(drop=True)  # Remove time (length 1).
         for side_items, side in zip([east_items, west_items], sides)
     )
+    return east, west
 
-    # Express longitudes relative to 180 so the halves join continuously: the east half (e.g. 179.9 to 180) becomes -0.1
-    # to 0, and the west half (e.g. -180 to -179.9) becomes 0 to 0.1.
-    east, west = (
-        half.assign_coords(longitude=half.longitude % 360 - 180).rename(longitude="x", latitude="y")
-        for half in (east, west)
+
+def _merge_geographic_halves(east: xr.Dataset, west: xr.Dataset) -> xr.Dataset:
+    """Join WGS84 halves either side of the antimeridian into one continuous grid.
+
+    Both halves are on the source's global pixel grid, so they're joined by pixel position: the east columns before
+    the west half's first column (at -180), then the west half. Coordinates come from one GeoBox with longitudes
+    relative to 180 (the east half, e.g. 179.9 to 180, becomes -0.1 to 0, and the west half, e.g. -180 to -179.9,
+    becomes 0 to 0.1), in a WGS84 CRS with its prime meridian at 180. Coordinates from the two loads can't be matched
+    by value: odc gives -179.99999999999997 for -180, which would leave a duplicate column.
+
+    Args:
+        east: East half, with latitude/longitude dimensions.
+        west: West half, with latitude/longitude dimensions and the same rows.
+
+    Returns:
+        Merged dataset with x (longitude relative to 180) and y (latitude) dimensions and a +pm=180 CRS.
+    """
+    east_box, west_box = east.odc.geobox, west.odc.geobox
+    columns = round((west_box.affine.c + 360 - east_box.affine.c) / west_box.resolution.x)
+    merged_box = GeoBox(
+        (west_box.height, columns + west_box.width),
+        Affine.translation(180, 0) * west_box.translate_pix(-columns, 0).affine,
+        "+proj=longlat +datum=WGS84 +pm=180",
     )
-    # Pad each half to the joined grid with its declared nodata (odc.nodata, from STAC), or NaN if it has none (the
-    # DEM), so _first_valid treats the padding as empty.
-    empty = {name: np.nan if east[name].odc.nodata is None else east[name].odc.nodata for name in east.data_vars}
-    east, west = xr.align(east, west, join="outer", fill_value=empty)
-    merged = assign_crs(_first_valid(east, west), "+proj=longlat +datum=WGS84 +pm=180")
-    # Reproject the joined grid, with longitudes relative to 180, to the target geobox (EPSG:3832).
-    return merged.odc.reproject(geobox, resampling=resampling)
+    # join="override" raises if the halves have different numbers of rows.
+    merged = xr.concat([east.isel(longitude=slice(0, columns)), west], dim="longitude", join="override")
+    return assign_crs(merged.assign_coords(xr_coords(merged_box)), merged_box.crs).rename(longitude="x", latitude="y")
 
 
 def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:

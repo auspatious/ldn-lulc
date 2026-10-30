@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import xarray as xr
 from odc.geo.geobox import GeoBox
-from odc.geo.xr import xr_zeros
+from odc.geo.xr import assign_crs, xr_zeros
 from planetary_computer import sign_url
 from pyproj import Transformer
 from pystac import Item
@@ -18,7 +18,7 @@ from ldn.raster import (
     PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
     _compute_terrain,
-    _valid,
+    _merge_geographic_halves,
     add_processing_extension,
     build_pipeline_components,
     calculate_indices,
@@ -334,23 +334,6 @@ def _item(west: float, east: float, crs: str) -> Item:
     return item
 
 
-class TestValid:
-    def test_declared_nodata_is_empty(self):
-        """Like ESA WorldCover and CCI: uint8 with nodata 0."""
-        band = xr.DataArray(np.array([0, 1], dtype=np.uint8), dims="x", name="map", attrs={"nodata": 0})
-        assert _valid(band).values.tolist() == [False, True]
-
-    def test_float_without_nodata_uses_nan(self):
-        """Like the Copernicus DEM: float32 with no declared nodata, empty areas filled with NaN."""
-        band = xr.DataArray(np.array([np.nan, 0.0], dtype=np.float32), dims="x", name="data")
-        assert _valid(band).values.tolist() == [False, True]
-
-    def test_integer_without_nodata_raises(self):
-        band = xr.DataArray(np.array([0, 1], dtype=np.uint8), dims="x", name="map")
-        with pytest.raises(LdnError, match="no declared nodata"):
-            _valid(band)
-
-
 @pytest.mark.parametrize(
     "items",
     [[], [_item(179.0, 180.0, "EPSG:4326")], [_item(-180.0, -179.0, "EPSG:4326")]],
@@ -373,24 +356,40 @@ def test_load_across_antimeridian_loads_projected_items_onto_the_geobox():
     mock_load.assert_called_once_with(items, geobox=geobox, chunks={}, resampling="nearest", patch_url=sign_url)
 
 
+_STEP = 1 / 3600
+_LATITUDE = -18.0 + np.arange(-8, 9) * _STEP
+
+
+def _seam_half(longitude: np.ndarray, empty_last_column: bool) -> xr.Dataset:
+    """One side of the antimeridian at 1 arcsecond, all 100 m, optionally with an empty last column."""
+    data = np.full((len(_LATITUDE), len(longitude)), 100.0, dtype=np.float32)
+    if empty_last_column:
+        data[:, -1] = np.nan
+    half = xr.Dataset(
+        {"data": (("latitude", "longitude"), data)}, coords={"latitude": _LATITUDE, "longitude": longitude}
+    )
+    return assign_crs(half, "EPSG:4326")
+
+
+# east ends with an empty column at 180. west starts at -180 with the float error odc gives (-179.99999999999997).
+_EAST = _seam_half(180.0 - np.arange(8, -1, -1) * _STEP, empty_last_column=True)
+_WEST = _seam_half(np.nextafter(-180.0, 0) + np.arange(9) * _STEP, empty_last_column=False)
+
+
+def test_merge_geographic_halves_joins_the_180_columns_despite_float_error():
+    """The two 180 columns become one, at 0, so the grid is evenly spaced with no empty column."""
+    result = _merge_geographic_halves(_EAST, _WEST)
+    np.testing.assert_allclose(np.diff(result.x.values), _STEP)
+    assert result.x.size == 17
+    assert result.x.values[8] == pytest.approx(0.0, abs=1e-9)
+    np.testing.assert_array_equal(result["data"].values, 100.0)
+
+
 def test_load_across_antimeridian_has_no_gap_where_both_halves_have_a_180_column():
     """The east half's empty column at 180 and the west half's -180 column must not leave a gap or duplicate."""
-    step = 1 / 3600
-    latitude = -18.0 + np.arange(-8, 9) * step
-
-    def half(longitude: np.ndarray, empty_last_column: bool) -> xr.Dataset:
-        data = np.full((len(latitude), len(longitude)), 100.0, dtype=np.float32)
-        if empty_last_column:
-            data[:, -1] = np.nan
-        return xr.Dataset(
-            {"data": (("latitude", "longitude"), data)}, coords={"latitude": latitude, "longitude": longitude}
-        )
-
-    east = half(180.0 - np.arange(8, -1, -1) * step, empty_last_column=True)  # ends with an empty column at 180
-    west = half(-180.0 + np.arange(9) * step, empty_last_column=False)  # starts at -180
     geobox = _am_geobox()
     with patch("ldn.raster.stac_load") as mock_load:
-        mock_load.return_value.squeeze.side_effect = [east, west]
+        mock_load.return_value.squeeze.side_effect = [_EAST, _WEST]
         items = [_item(179.0, 180.0, "EPSG:4326"), _item(-180.0, -179.0, "EPSG:4326")]
         result = load_across_antimeridian(items, geobox, "bilinear")
     assert result["data"].shape == geobox.shape
