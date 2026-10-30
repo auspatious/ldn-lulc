@@ -10,6 +10,7 @@ import xarray as xr
 from odc.geo.geobox import GeoBox
 from pyproj import Transformer
 from pystac import Item
+from pystac.extensions.projection import ProjectionExtension
 
 from ldn.raster import (
     BAEI_MAX,
@@ -303,29 +304,42 @@ def _am_geobox() -> GeoBox:
     return GeoBox.from_bbox((x_am - 150, y_am - 150, x_am + 150, y_am + 150), "EPSG:3832", resolution=30)
 
 
-def _item(west: float, east: float) -> Item:
-    """STAC item with a polygon footprint spanning west to east longitude."""
+def _item(west: float, east: float, crs: str) -> Item:
+    """STAC item with a polygon footprint spanning west to east longitude, in a native CRS."""
     ring = [(west, -19.0), (east, -19.0), (east, -17.0), (west, -17.0), (west, -19.0)]
     geometry = {"type": "Polygon", "coordinates": [ring]}
-    return Item(
+    item = Item(
         id=f"{west}_{east}",
         geometry=geometry,
         bbox=[west, -19.0, east, -17.0],
         datetime=datetime(2020, 1, 1),
         properties={},
     )
+    ProjectionExtension.add_to(item)
+    ProjectionExtension.ext(item).code = crs
+    return item
 
 
 @pytest.mark.parametrize(
     "items",
-    [[], [_item(179.0, 180.0)], [_item(-180.0, -179.0)]],
+    [[], [_item(179.0, 180.0, "EPSG:4326")], [_item(-180.0, -179.0, "EPSG:4326")]],
     ids=["no items", "east only", "west only"],
 )
 def test_load_across_antimeridian_raises_without_items_on_both_sides(items):
     with patch("ldn.raster.stac_load") as mock_load:
         with pytest.raises(LdnError, match="Expected to load 2 halves"):
-            load_across_antimeridian(items, _am_geobox(), "bilinear", fail_on_error=False)
+            load_across_antimeridian(items, _am_geobox(), "bilinear")
     mock_load.assert_not_called()
+
+
+def test_load_across_antimeridian_loads_projected_items_onto_the_geobox():
+    """UTM footprints span -180 to 180 and UTM coordinates don't wrap, so they load directly without splitting."""
+    items = [_item(-180.0, 180.0, "EPSG:32760"), _item(-180.0, 180.0, "EPSG:32701")]
+    geobox = _am_geobox()
+    with patch("ldn.raster.stac_load") as mock_load:
+        load_across_antimeridian(items, geobox, "nearest")
+    mock_load.assert_called_once()
+    assert mock_load.call_args.kwargs["geobox"] is geobox
 
 
 def test_load_across_antimeridian_has_no_gap_where_both_halves_have_a_180_column():
@@ -346,8 +360,8 @@ def test_load_across_antimeridian_has_no_gap_where_both_halves_have_a_180_column
     geobox = _am_geobox()
     with patch("ldn.raster.stac_load") as mock_load:
         mock_load.return_value.squeeze.side_effect = [east, west]
-        items = [_item(179.0, 180.0), _item(-180.0, -179.0)]
-        result = load_across_antimeridian(items, geobox, "bilinear", fail_on_error=False)
+        items = [_item(179.0, 180.0, "EPSG:4326"), _item(-180.0, -179.0, "EPSG:4326")]
+        result = load_across_antimeridian(items, geobox, "bilinear")
     assert result["data"].shape == geobox.shape
     np.testing.assert_allclose(result["data"].values, 100.0)
 
