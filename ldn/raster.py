@@ -1,7 +1,11 @@
+import json
 import logging
+from datetime import UTC, datetime
+from importlib.metadata import distribution
 from typing import Literal
 
 import numpy as np
+import rioxarray  # noqa: F401  Registers the .rio accessor.
 import xarray as xr
 from antimeridian import fix_shape
 from dep_tools.aws import BaseClient, object_exists
@@ -17,7 +21,8 @@ from geopandas import GeoDataFrame
 from odc.geo.geobox import GeoBox
 from odc.stac import load as stac_load
 from planetary_computer import sign_url
-from pystac import ItemCollection
+from pystac import Item, ItemCollection, Link, Provider, ProviderRole
+from pystac.utils import datetime_to_str
 from pystac_client import Client as PyStacClient
 from rasterio.enums import Resampling
 from scipy.ndimage import sobel
@@ -27,6 +32,7 @@ from ldn.utils import (
     WGS84,
     LdnError,
     get_public_url_base,
+    source_coop_prefix,
 )
 
 logger = logging.getLogger(__name__)
@@ -366,6 +372,8 @@ def build_pipeline_components(
         return None
     logger.info("Either item does not exist or overwrite is True, proceeding with processing.")
 
+    # Items use the projection and raster extensions at v1.1.0, not their latest versions, because rio-stac (used by
+    # StacCreator) hard-codes them: https://github.com/developmentseed/rio-stac/issues/64
     stac_creator = StacCreator(
         collection_url_root=collection_url_root,
         itempath=itempath,
@@ -402,6 +410,121 @@ def _antimeridian_safe_bbox(area: GeoBox, fallback_bbox: list[float]) -> list[fl
     ]
 
 
+# TODO: Use pystac's processing extension (and validate items with it) once the extension is supported by pystac
+# https://github.com/stac-extensions/processing
+# https://github.com/stac-utils/pystac/pull/1589
+# https://github.com/stac-utils/pystac/pull/1785
+PROCESSING_EXTENSION = "https://stac-extensions.github.io/processing/v1.3.0/schema.json"
+# Processing was done by Auspatious on Digital Earth Pacific infrastructure.
+PROCESSING_FACILITY = "Digital Earth Pacific"
+
+
+def visualisation_link() -> Link:
+    """A link to the LDN LULC visualisation app, for STAC items and collections.
+
+    Returns:
+        A STAC Link.
+    """
+    return Link(
+        rel="related", target="https://auspatious.github.io/ldn-lulc", media_type="text/html", title="Visualisation"
+    )
+
+
+# Processing level and lineage of each dataset, recorded on the Auspatious provider.
+PROCESSING_LEVEL_LINEAGE = {
+    "geomad": {
+        "processing:level": "L3",
+        "processing:lineage": "Annual geometric median and median absolute deviations of Landsat Collection 2 Level-2 "
+        "surface reflectance",
+    },
+    "lulc": {
+        "processing:level": "L4",
+        "processing:lineage": "Random forest land use/land cover classification of annual Landsat GeoMAD, spectral "
+        "indices and Copernicus DEM terrain, trained on the agreement of ESA WorldCover, ESA CCI and Impact "
+        "Observatory land cover in 2020",
+    },
+}
+
+
+def stac_providers(dataset: Literal["geomad", "lulc"], source_coop: bool) -> list[Provider]:
+    """STAC providers for a dataset, shared by its collection and items so items describe themselves.
+
+    Digital Earth Pacific is always a processor, and the host unless the data is on Source Cooperative. Auspatious
+    is the processor on Digital Earth Pacific infrastructure, with the dataset's processing level and lineage.
+
+    Args:
+        dataset: Dataset ID, "geomad" or "lulc".
+        source_coop: Whether the data is hosted on Source Cooperative.
+
+    Returns:
+        List of STAC Providers.
+    """
+    return [
+        Provider(
+            name="Digital Earth Pacific",
+            roles=[ProviderRole.PROCESSOR] if source_coop else [ProviderRole.PROCESSOR, ProviderRole.HOST],
+            url="https://digitalearthpacific.org",
+        ),
+        *(
+            [
+                Provider(
+                    name="Source Cooperative",
+                    roles=[ProviderRole.HOST],
+                    url=f"https://source.coop/{source_coop_prefix(dataset)}",
+                )
+            ]
+            if source_coop
+            else []
+        ),
+        Provider(
+            name="Auspatious",
+            roles=[ProviderRole.PROCESSOR],
+            url="https://auspatious.com",
+            extra_fields={"processing:facility": PROCESSING_FACILITY, **PROCESSING_LEVEL_LINEAGE[dataset]},
+        ),
+        Provider(
+            name="USGS",
+            roles=[ProviderRole.PRODUCER, ProviderRole.PROCESSOR, ProviderRole.LICENSOR],
+            url="https://www.usgs.gov/landsat-missions/landsat-collection-2-level-2-science-products",
+        ),
+        Provider(name="NASA", roles=[ProviderRole.PRODUCER, ProviderRole.LICENSOR], url="https://www.nasa.gov/"),
+    ]
+
+
+def installed_version(name: str) -> str:
+    """Return the installed version of a package, with the commit appended if it was installed from git.
+
+    Args:
+        name: Installed package name.
+
+    Returns:
+        Version string, e.g. "2.5.2" or "0.5.4+fb8667b40bff46caf34193fe522b35f607020196".
+    """
+    dist = distribution(name)
+    direct_url = json.loads(dist.read_text("direct_url.json") or "{}")
+    commit = direct_url.get("vcs_info", {}).get("commit_id")
+    return f"{dist.version}+{commit}" if commit else dist.version
+
+
+def add_processing_extension(item: Item, software: list[str], providers: list[Provider]) -> None:
+    """Add processing extension fields and providers to a STAC item in place.
+
+    Records the ldn version (processing:version), software versions, the processing datetime in UTC, and the
+    providers (see stac_providers).
+
+    Args:
+        item: STAC item to update.
+        software: Installed package names whose versions are recorded in `processing:software`.
+        providers: STAC providers, from stac_providers.
+    """
+    if PROCESSING_EXTENSION not in item.stac_extensions:
+        item.stac_extensions.append(PROCESSING_EXTENSION)
+    item.properties["processing:version"] = installed_version("ldn")
+    item.properties["processing:software"] = {name: installed_version(name) for name in software}
+    item.properties["processing:datetime"] = datetime_to_str(datetime.now(UTC))
+    item.common_metadata.providers = providers
+
+
 # Shared by both GeoMAD creation and LULC classification tasks.
 class AwsStacTask(AreaTask):
     """Area task with search + STAC creation/writing for AWS workflows."""
@@ -414,7 +537,10 @@ class AwsStacTask(AreaTask):
         searcher: Searcher,
         loader: StacLoader,
         processor: Processor,
+        processing_software: list[str],
+        providers: list[Provider],
         post_processor: Processor | None = None,
+        links: list[Link] | None = None,
         logger: logging.Logger = logger,
         **kwargs,
     ):
@@ -426,12 +552,16 @@ class AwsStacTask(AreaTask):
         self.id = id
         self.searcher = searcher
         self.post_processor = post_processor
+        self.processing_software = processing_software
+        self.providers = providers
+        self.links = links or []
         self.stac_creator = stac_creator
         self.stac_writer = stac_writer
 
     def run(self):
         items = self.searcher.search(self.area)
         logger.info(f"Found {len(items)} items for this tile/year")
+        input_hrefs = [href for item in items if (href := item.get_self_href())]
         input_data = self.loader.load(items, self.area)
         logger.info(f"Loaded {len(input_data.time.values)} items for this tile/year")
 
@@ -447,6 +577,12 @@ class AwsStacTask(AreaTask):
             stac_item = self.stac_creator.process(output_data, self.id)
             stac_item.bbox = _antimeridian_safe_bbox(self.area, stac_item.bbox)
             stac_item.geometry = fix_shape(stac_item.geometry)
+            add_processing_extension(stac_item, self.processing_software, self.providers)
+            stac_item.add_links([*self.links, visualisation_link()])
+            # Link to the input items (Landsat scenes for GeoMAD, the GeoMAD item for LULC).
+            stac_item.add_links(
+                [Link(rel="derived_from", target=href, media_type="application/geo+json") for href in input_hrefs]
+            )
             self.stac_writer.write(stac_item, self.id)
 
         return paths

@@ -22,7 +22,7 @@ from ldn.geomad import (
 )
 from ldn.grids import get_gridspec
 from ldn.raster import AwsStacTask as Task
-from ldn.raster import build_pipeline_components
+from ldn.raster import build_pipeline_components, stac_providers
 from ldn.utils import (
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
@@ -282,6 +282,18 @@ def run(
                 searcher=searcher,
                 loader=loader,
                 processor=processor,
+                providers=stac_providers(GEOMAD_DATASET_ID, _is_source_coop),
+                processing_software=[
+                    "ldn",
+                    "dep-tools",
+                    "datacube-compute",
+                    "odc-stac",
+                    "odc-geo",
+                    "rasterio",
+                    "gdal",
+                    "numpy",
+                    "xarray",
+                ],
                 logger=logger,
                 writer=writer,
                 stac_creator=stac_creator,

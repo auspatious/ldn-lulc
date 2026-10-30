@@ -1,17 +1,26 @@
+import tomllib
+from datetime import datetime, timedelta
+from importlib.metadata import version
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 import xarray as xr
+from pystac import Item
 
 from ldn.raster import (
+    PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
     _compute_terrain,
     _load_dem_am,
+    add_processing_extension,
     build_pipeline_components,
     calculate_indices,
+    installed_version,
     load_dem_terrain,
     scale_offset_landsat,
+    stac_providers,
 )
 from ldn.utils import LdnError
 
@@ -623,3 +632,28 @@ def test_build_pipeline_components_proceeds_when_exists_and_overwrite(mock_aws):
             sensor="ls",
         )
     assert result is not None
+
+
+def test_add_processing_extension():
+    item = Item(id="t", geometry=None, bbox=None, datetime=datetime(2020, 1, 1), properties={})
+    providers = stac_providers("lulc", source_coop=False)
+    add_processing_extension(item, ["ldn", "pystac"], providers)
+    add_processing_extension(item, ["ldn", "pystac"], providers)  # Idempotent extension list.
+    assert item.stac_extensions.count(PROCESSING_EXTENSION) == 1
+    assert set(item.properties["processing:software"]) == {"ldn", "pystac"}
+    assert item.properties["processing:version"] == installed_version("ldn")
+    # RFC 3339 in UTC, as the extension requires.
+    processed = datetime.fromisoformat(item.properties["processing:datetime"])
+    assert item.properties["processing:datetime"].endswith("Z") and processed.utcoffset() == timedelta(0)
+    assert [p.name for p in item.common_metadata.providers] == ["Digital Earth Pacific", "Auspatious", "USGS", "NASA"]
+    auspatious = item.common_metadata.providers[1]
+    assert auspatious.extra_fields["processing:facility"] == "Digital Earth Pacific"
+    assert auspatious.extra_fields["processing:level"] == "L4"
+
+
+def test_installed_version_appends_pinned_git_commit():
+    """Git dependencies report the commit pinned in pyproject.toml, so STAC processing:software records it."""
+    assert installed_version("numpy") == np.__version__
+    sources = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())["tool"]["uv"]["sources"]
+    for name in ["dep-tools", "datacube-compute"]:
+        assert installed_version(name) == f"{version(name)}+{sources[name]['rev']}"

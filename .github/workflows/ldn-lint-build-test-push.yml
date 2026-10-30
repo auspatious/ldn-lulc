@@ -38,7 +38,7 @@ on:
       - ".github/workflows/ldn-lint-build-test-push.yml"
   release:
     types:
-      - created
+      - published # Not "created", which also fires for drafts.
 
 # Cancel older runs of this workflow if a newer one is created.
 concurrency:
@@ -65,7 +65,6 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          fetch-depth: 0
           persist-credentials: false
 
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
@@ -78,11 +77,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The version is set in pyproject.toml. Releases must be tagged v<version>.
       - name: Get version number
         id: get_version
+        env:
+          # Passed via env, not interpolated into the script, to avoid script injection.
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          git fetch --all --tags
-          echo "VERSION=$(git describe --tags --always)" >> $GITHUB_OUTPUT
+          VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [[ "${{ github.event_name }}" == "release" && "$RELEASE_TAG" != "v$VERSION" ]]; then
+            echo "Release tag $RELEASE_TAG does not match pyproject.toml version v$VERSION"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
       - name: Build test image
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
@@ -108,20 +116,27 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Smoketest production image
-        run: docker run --rm ldn-lulc:latest ldn --help
+        env:
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
+        run: |
+          docker run --rm ldn-lulc:latest ldn --help
+          IMAGE_VERSION=$(docker run --rm ldn-lulc:latest python -c "import ldn; print(ldn.__version__)")
+          if [[ "$IMAGE_VERSION" != "$VERSION" ]]; then
+            echo "Image reports ldn $IMAGE_VERSION, expected $VERSION. Is uv.lock up to date?"
+            exit 1
+          fi
 
+      # Main builds only get <version>-<short sha>. "latest" is the latest release.
       - name: Tag and push
         if: github.ref == 'refs/heads/main'
         run: |
-          docker tag ldn-lulc:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}
-          docker tag ldn-lulc:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          docker tag ldn-lulc:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}-${{ steps.get_version.outputs.SHORT_SHA }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}-${{ steps.get_version.outputs.SHORT_SHA }}
 
       - name: Tag and push release
         if: github.event_name == 'release'
         run: |
-          docker tag ldn-lulc:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}
+          docker tag ldn-lulc:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}
           docker tag ldn-lulc:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.VERSION }}
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest

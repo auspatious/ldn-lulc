@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ldn"
-version = "0.1.0"
+version = "0.2.0"
 description = "Land Degradation Neutrality Land Use/Land Cover tools"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -36,14 +36,17 @@ dependencies = [
     "requests>=2.33.1,<3.0.0",
     "pystac>=1.14.3,<2.0.0",
     "scikit-learn>=1.8.0,<1.9.0", # TODO: Upgrade to make a new model and classification (together for compatibility)
+    "rioxarray>=0.20.0,<0.21.0",
 ]
 
 [project.scripts]
 ldn = "ldn.cli:app"
 
 [tool.uv.sources]
-datacube-compute = { git = "https://github.com/auspatious/datacube-compute.git" }
-dep-tools = { git = "https://github.com/digitalearthpacific/dep-tools.git" }
+# Pinned by commit (no tags at these commits). STAC processing:software records the commit.
+datacube-compute = { git = "https://github.com/auspatious/datacube-compute.git", rev = "76e683cb958978cdc056aedf94df99162514b117" }
+# TODO: Update to bacf51d (the geopolygon fix, dep-tools#103) with the GeoMAD geobox loading change (#130).
+dep-tools = { git = "https://github.com/digitalearthpacific/dep-tools.git", rev = "fb8667b40bff46caf34193fe522b35f607020196" }
 
 [dependency-groups]
 dev = [
@@ -69,6 +72,3 @@ select = ["E", "F", "I"]
 
 [tool.ruff.lint.per-file-ignores]
 "ldn/cli.py" = ["E402", "I001"]
-
-[tool.hatch.build.targets.wheel]
-packages = ["ldn"]

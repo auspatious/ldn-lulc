@@ -9,7 +9,6 @@ from pystac import (
     Extent,
     ItemCollection,
     Link,
-    Provider,
     SpatialExtent,
     Summaries,
     TemporalExtent,
@@ -17,6 +16,7 @@ from pystac import (
 from shapely import box, unary_union
 
 from ldn.aws import s3_client
+from ldn.raster import PROCESSING_EXTENSION, stac_providers, visualisation_link
 from ldn.utils import (
     GEOMAD_VERSION,
     LULC_VERSION,
@@ -36,12 +36,16 @@ collection_app = typer.Typer()
 logger = logging.getLogger(__name__)
 
 
-def _run_create_collection(dataset: Literal["geomad", "lulc"], extent: Extent, single_region: bool) -> Collection:
+def _run_create_collection(
+    dataset: Literal["geomad", "lulc"], extent: Extent, single_region: bool, source_coop: bool
+) -> Collection:
     """Create a STAC Collection for the GeoMAD or LULC dataset.
 
     Args:
         extent (Extent): The spatial and temporal extent of the collection.
         single_region (bool): Whether the collection is for a single region (changes path/id).
+        source_coop (bool): Whether the data is hosted on Source Cooperative, otherwise Digital Earth Pacific hosts it.
+            Digital Earth Pacific is always a processor.
 
     Returns:
         Collection: A STAC Collection object.
@@ -58,21 +62,9 @@ def _run_create_collection(dataset: Literal["geomad", "lulc"], extent: Extent, s
             extent=extent,
             license="CC-BY-4.0",
             keywords=["Landsat", "GeoMAD", "Pacific"],
+            stac_extensions=[PROCESSING_EXTENSION],
             # stac_version="1.1.0", # Automatic from pystac.
-            providers=[
-                # TODO: Update DEP provider for different buckets? e.g. Source.Coop as host.
-                Provider(
-                    name="Digital Earth Pacific",
-                    roles=["processor", "host"],
-                    url="https://digitalearthpacific.org",
-                ),
-                Provider(
-                    name="USGS",
-                    roles=["producer", "processor", "licensor"],
-                    url="https://www.usgs.gov/landsat-missions/landsat-collection-2-level-2-science-products",
-                ),
-                Provider(name="NASA", roles=["licensor"], url="https://www.nasa.gov/"),
-            ],
+            providers=stac_providers(dataset, source_coop),
             summaries=Summaries(
                 {
                     "gsd": [30],
@@ -189,11 +181,12 @@ def create_collection(
 
     item_collection = load_stac_geoparquet_features(bucket, parquet_key)
     extent = calc_stac_extent(item_collection)
-    collection = _run_create_collection(dataset, extent, single_region)
+    collection = _run_create_collection(dataset, extent, single_region, _is_source_coop)
 
     collection.remove_links("root")
     collection.remove_links("self")
     collection.set_self_href(f"{collection_url_root}")
+    collection.add_link(visualisation_link())
     if has_stac_api:
         collection.add_link(Link(rel="root", target=public_url, media_type="application/json"))
         collection.add_link(Link(rel="items", target=f"{collection_url_root}/items", media_type="application/geo+json"))

@@ -33,7 +33,7 @@ spec:
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc"
       - name: image-tag
-        value: "latest"
+        value: "0.2.0"
       - name: dataset
         # "geomad", or "lulc"
         value: "geomad"
