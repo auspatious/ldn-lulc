@@ -157,6 +157,10 @@ def reshape_array_to_2d(
 ) -> xr.DataArray:
     """Reshape a 1D stacked array back to a 2D DataArray.
 
+    scikit-learn predicts on a table with one row per pixel, so its outputs are 1D and are reshaped back to the
+    raster here. The output is uint8 for storage, not for the random forest: class values and probabilities (0-100)
+    fit in 0-255, so it keeps the COGs small, and nodata_value (e.g. 255) marks pixels without a prediction.
+
     Args:
         stacked_array: Flattened prediction or probability values.
         template_ds: Dataset whose y/x coordinates define the output shape.
@@ -170,7 +174,8 @@ def reshape_array_to_2d(
     da = xr.DataArray(array, coords={"y": template_ds.y, "x": template_ds.x}, dims=["y", "x"])
     # nodata_value as NoData. Ensure any remaining NaNs are also set to nodata_value before casting.
     da = da.where(~original_mask, nodata_value).fillna(nodata_value)
-    return da.astype("uint8")
+    # Round, as casting truncates (e.g. a probability of 99.9 would become 99).
+    return da.round().astype("uint8")
 
 
 def do_prediction(
@@ -286,7 +291,8 @@ class LulcProcessor(Processor):
         """Build features (scaled GeoMAD, indices, DEM terrain) and predict/classify LULC.
 
         Args:
-            input_data: GeoMAD dataset loaded on the tile geobox padded by FOCAL_PAD pixels.
+            input_data: Raw GeoMAD bands loaded on the tile geobox padded by FOCAL_PAD pixels. The features (scaled
+                bands, indices, terrain and focal statistics) are built from it here.
 
         Returns:
             Dataset with classification and probability bands.
