@@ -158,13 +158,29 @@ def spectral_ds():
 
 @pytest.mark.parametrize(
     "num, den, expected",
-    [(1.0, 2.0, 0.5), (np.nan, 2.0, np.nan), (1.0, np.nan, np.nan), (np.nan, 0.0, np.nan), (0.0, 0.0, 9.0)],
-    ids=["divides", "nan numerator", "nan denominator", "nan numerator and zero denominator", "zero denominator"],
+    [
+        (1.0, 2.0, 0.5),
+        (0.0001, 0.01, 0.01),
+        (np.nan, 2.0, np.nan),
+        (1.0, np.nan, np.nan),
+        (np.nan, 0.0, np.nan),
+        (0.0, 0.0, 9.0),
+        (0.004, 0.004, 9.0),
+    ],
+    ids=[
+        "divides",
+        "divides at the threshold",
+        "nan numerator",
+        "nan denominator",
+        "nan numerator and zero denominator",
+        "zero denominator",
+        "denominator below threshold",
+    ],
 )
 def test_safe_divide(num, den, expected):
-    """NaN if either input is NaN, zero_value if the denominator is 0, otherwise the quotient."""
+    """NaN if either input is NaN, zero_value if the denominator is below MIN_SIGNAL, otherwise the quotient."""
     result = safe_divide(xr.DataArray(np.float32(num)), xr.DataArray(np.float32(den)), 9.0)
-    np.testing.assert_equal(result.item(), expected)
+    np.testing.assert_allclose(result.item(), expected, rtol=1e-6)
     assert result.dtype == np.float32
 
 
@@ -219,6 +235,13 @@ class TestCalculateIndices:
     def test_all_zero_inputs_yield_finite_values(self, index):
         ds = _spectral_dataset(nir=0.0, red=0.0, green=0.0, blue=0.0, swir16=0.0, swir22=0.0)
         assert np.isfinite(calculate_indices(ds)[index].item())
+
+    def test_ndvi_is_zero_over_open_water(self):
+        """The MIN_SIGNAL example: red -0.004 (clipped to 0) and nir 0.004 over open water give NDVI 0, not 1."""
+        scaled = {"red": -0.004, "nir08": 0.004, "green": 0.006, "blue": 0.01, "swir16": 0.018, "swir22": 0.01}
+        raw = {band: round((value - OFFSET) / SCALE) for band, value in scaled.items()}
+        ds = _band_dataset(**{band: np.array([[value]]) for band, value in raw.items()})
+        assert calculate_indices(scale_offset_landsat(ds))["ndvi"].item() == 0.0
 
     def test_baei_zero_denominator_is_max(self):
         ds = _spectral_dataset(green=0.0, swir16=0.0)

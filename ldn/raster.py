@@ -1,6 +1,5 @@
 import json
 import logging
-import math
 from collections.abc import Callable
 from datetime import UTC, datetime
 from importlib.metadata import distribution
@@ -42,8 +41,17 @@ logger = logging.getLogger(__name__)
 # Landsat Collection 2 scaling constants (USGS)
 LANDSAT_SCALE = 0.0000275
 LANDSAT_OFFSET = -0.2
-# Largest valid baei: max numerator (red = 1) over the smallest positive scaled reflectance (raw 7273 -> 0.0000075).
-BAEI_MAX = (1 + 0.3) / (math.ceil(-LANDSAT_OFFSET / LANDSAT_SCALE) * LANDSAT_SCALE + LANDSAT_OFFSET)
+# Smallest index denominator (a sum of reflectances) that's measurable signal rather than noise. Landsat 8 surface
+# reflectance uncertainty is 0.0040 for red and 0.0026 for nir (Vermote et al. 2016, Table 1,
+# https://doi.org/10.1016/j.rse.2016.04.008), so a red + nir sum has an uncertainty of about 0.005, and 0.01 is about
+# twice that. Example from open water on tile 033_031 (2020): red is -0.004 (atmospheric correction overshoots below
+# 0 over dark water) and nir is 0.004, both within their uncertainty of 0. Clipped, red is 0 and
+# NDVI = (0.004 - 0) / (0.004 + 0) = 1, the value for dense vegetation. Unclipped, the denominator is
+# 0.004 + -0.004 = 0 and NDVI is infinite. Either way it's noise: there's no measurable contrast, so these pixels get
+# the zero denominator value (0 for normalised differences). Land has red + nir well above 0.1.
+MIN_SIGNAL = 0.01
+# Largest baei with a measurable denominator: max numerator (red = 1) over MIN_SIGNAL.
+BAEI_MAX = (1 + 0.3) / MIN_SIGNAL
 
 
 def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
@@ -68,30 +76,32 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     for band in bands_to_scale:
         raw = data[band]
         nodata = (raw == nodata_values[0]) | (raw == nodata_values[1])
-        # Reflectance <= 0 is clipped to 0: a valid very dark pixel, not nodata. safe_divide handles the zeros.
+        # Reflectance <= 0 is clipped to 0: a valid very dark pixel, not nodata. safe_divide handles near-zero sums.
         scaled = (raw * LANDSAT_SCALE + LANDSAT_OFFSET).clip(0, 1).astype("float32")
         data[band] = scaled.where(~nodata, other=np.nan)
     return data
 
 
 def safe_divide(num: xr.DataArray, den: xr.DataArray, zero_value: float) -> xr.DataArray:
-    """Divide, with explicit results for nodata and a zero denominator.
+    """Divide, with explicit results for nodata and a denominator too small to measure.
 
-    Bands are clipped to [0, 1], so a denominator of 0 means every band in it is 0. That's a valid, very dark pixel
-    (e.g. water in SWIR), not nodata, so it gets zero_value instead of NaN.
+    Bands are clipped to [0, 1], so the denominator (a sum of bands) is below MIN_SIGNAL only when every band in it is
+    within noise of 0. That's a valid, very dark pixel (e.g. open water), not nodata, so it gets zero_value instead
+    of a ratio of noise (see MIN_SIGNAL).
 
     Args:
         num: Numerator.
         den: Denominator.
-        zero_value: Result where den is 0 (and neither input is NaN).
+        zero_value: Result where den is below MIN_SIGNAL (and neither input is NaN).
 
     Returns:
-        NaN where num or den is NaN (nodata), zero_value where den is 0, otherwise num / den.
+        NaN where num or den is NaN (nodata), zero_value where den is below MIN_SIGNAL, otherwise num / den.
     """
-    # Divide only where den isn't 0, avoiding divide by zero warnings.
-    result = num / den.where(den != 0)
-    # Zero denominator: a valid very dark pixel.
-    result = result.where(den != 0, zero_value)
+    measurable = den >= MIN_SIGNAL
+    # Divide only where den is measurable, avoiding divide by zero warnings.
+    result = num / den.where(measurable)
+    # Denominator within noise of 0: a valid very dark pixel.
+    result = result.where(measurable, zero_value)
     # Either input is nodata.
     return result.where(num.notnull() & den.notnull())
 
@@ -100,9 +110,9 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     """Compute spectral indices from scaled geomedian bands.
 
     Adds index bands to the dataset in place. Bands must already be scaled and clipped to [0, 1]
-    (see scale_offset_landsat) so normalised differences stay in [-1, 1]. A zero denominator (every band
-    involved is 0, a valid very dark pixel) gives 0 for normalised differences (0 / 0: no contrast) and BAEI_MAX
-    for baei. NaN inputs (nodata) give NaN.
+    (see scale_offset_landsat) so normalised differences stay in [-1, 1]. A denominator below MIN_SIGNAL (every band
+    involved within noise of 0, a valid very dark pixel such as open water) gives 0 for normalised differences (no
+    measurable contrast) and BAEI_MAX for baei. NaN inputs (nodata) give NaN.
 
     Args:
         geomad: GeoMedian/GeoMAD dataset containing at least `nir08`, `red`, `green`,
@@ -116,7 +126,7 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     # dilute feature importance and add compute. Candidates: bui (linear combination of NDBI and ndvi, and NDBI is
     # -NDMI), ndwi (strongly anti-correlated with ndvi), mbi vs bsi (both bare soil), baei vs bui (both built-up).
     # Compare with feature importance or drop-column accuracy in notebooks/1_Train_Model.ipynb.
-    # A normalised difference (a - b) / (a + b) with a + b = 0 has a = b = 0: no contrast, so 0.
+    # A normalised difference (a - b) / (a + b) with a + b below MIN_SIGNAL has no measurable contrast, so 0.
     no_contrast = 0.0
     nir = geomad.nir08
     red = geomad.red
@@ -137,7 +147,7 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     # Modified Bare soil Index (Nguyen 2021).
     geomad["mbi"] = safe_divide(swir1 - swir2 - nir, swir1 + swir2 + nir, no_contrast) + 0.5
     # Built-up Area Extraction Index (Bouzekri 2015). Not a normalised difference: grows without bound as the
-    # denominator approaches 0, so use the max, not 0.
+    # denominator approaches 0, so use its largest measurable value, not 0.
     geomad["baei"] = safe_divide(red + 0.3, green + swir1, BAEI_MAX)
     # Normalised Difference Built-up Index (Zha 2003), intermediate, not stored.
     ndbi = safe_divide(swir1 - nir, swir1 + nir, no_contrast)
