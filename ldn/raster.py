@@ -69,6 +69,10 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
         raw = data[band]
         nodata = (raw == nodata_values[0]) | (raw == nodata_values[1])
         # Reflectance <= 0 is clipped to 0: a valid very dark pixel, not nodata. safe_divide handles the zeros.
+        # Known limitation: over deep water, red is often slightly negative from atmospheric correction noise (e.g.
+        # -0.004) while nir is about 0.004, so after clipping NDVI = (0.004 - 0) / (0.004 + 0) = 1, the value for
+        # dense vegetation (24% of sea pixels on tile 033_031). Left as is: training samples are within 100 m of land,
+        # so the model never learns from deep water, and the raw bands (all near 0) still identify it.
         scaled = (raw * LANDSAT_SCALE + LANDSAT_OFFSET).clip(0, 1).astype("float32")
         data[band] = scaled.where(~nodata, other=np.nan)
     return data
