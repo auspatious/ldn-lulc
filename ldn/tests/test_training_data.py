@@ -1,5 +1,6 @@
 import geopandas as gpd
 import numpy as np
+import pytest
 import xarray as xr
 from shapely.geometry import Point
 
@@ -12,9 +13,10 @@ from ldn.training_data import (
     extract_geomad_dem_indices_values,
     filter_outliers,
     find_agreement,
+    lulc_products_for_year,
     remove_nan_samples,
 )
-from ldn.utils import parse_tile_id
+from ldn.utils import LdnError, parse_tile_id
 
 
 class TestWcQualityFilter:
@@ -95,59 +97,67 @@ class TestCciQualityFilter:
 
 
 class TestFindAgreement:
-    def _make_lulc_ds(self, band_name, values):
-        """Create a single-band LULC dataset."""
-        return xr.Dataset(
-            {
-                band_name: xr.DataArray(
-                    values,
-                    dims=("y", "x"),
-                    coords={
-                        "y": np.arange(values.shape[0]),
-                        "x": np.arange(values.shape[1]),
-                    },
-                )
-            }
-        )
+    @staticmethod
+    def _lulc(value: int) -> xr.DataArray:
+        """5x5 single class LULC layer."""
+        values = np.full((5, 5), value, dtype="uint8")
+        return xr.DataArray(values, dims=("y", "x"), coords={"y": np.arange(5), "x": np.arange(5)})
 
     def test_all_agree(self):
         """All three products agree on class 1."""
-        vals = np.full((5, 5), 1, dtype="uint8")
-        wc = self._make_lulc_ds("esa_wc", vals)
-        cci = self._make_lulc_ds("esa_cci", vals)
-        io = self._make_lulc_ds("io", vals)
-
-        result = find_agreement(wc, cci, io)
+        result = find_agreement([self._lulc(1), self._lulc(1), self._lulc(1)])
         # Centre pixels (not edges) should have agreement
         assert result.values[2, 2] == 1
 
     def test_no_agreement(self):
         """No two products agree, result should be nodata (255)."""
-        wc = self._make_lulc_ds("esa_wc", np.full((5, 5), 1, dtype="uint8"))
-        cci = self._make_lulc_ds("esa_cci", np.full((5, 5), 2, dtype="uint8"))
-        io = self._make_lulc_ds("io", np.full((5, 5), 3, dtype="uint8"))
-
-        result = find_agreement(wc, cci, io)
+        result = find_agreement([self._lulc(1), self._lulc(2), self._lulc(3)])
         assert (result.values == 255).all()
 
     def test_two_of_three_agree(self):
         """Two products agree, one disagrees."""
-        wc = self._make_lulc_ds("esa_wc", np.full((5, 5), 6, dtype="uint8"))
-        cci = self._make_lulc_ds("esa_cci", np.full((5, 5), 6, dtype="uint8"))
-        io = self._make_lulc_ds("io", np.full((5, 5), 2, dtype="uint8"))
-
-        result = find_agreement(wc, cci, io)
+        result = find_agreement([self._lulc(6), self._lulc(6), self._lulc(2)])
         assert result.values[2, 2] == 6
 
     def test_nodata_excluded(self):
         """Products with value 0 (nodata) don't count."""
-        wc = self._make_lulc_ds("esa_wc", np.full((5, 5), 1, dtype="uint8"))
-        cci = self._make_lulc_ds("esa_cci", np.full((5, 5), 0, dtype="uint8"))
-        io = self._make_lulc_ds("io", np.full((5, 5), 1, dtype="uint8"))
-
-        result = find_agreement(wc, cci, io)
-        # wc and io agree on class 1
+        result = find_agreement([self._lulc(1), self._lulc(0), self._lulc(1)])
+        # The first and third agree on class 1
         assert result.values[2, 2] == 1
+
+    def test_two_products_agree(self):
+        """With 2 products (e.g. CCI and IO for 2017-2019), both must agree."""
+        assert find_agreement([self._lulc(3), self._lulc(3)]).values[2, 2] == 3
+
+    def test_two_products_disagree(self):
+        assert (find_agreement([self._lulc(3), self._lulc(5)]).values == 255).all()
+
+    def test_shared_nodata_is_not_agreement(self):
+        """Products that are both nodata (255) don't agree, so pixels next to nodata fail the neighbourhood filter."""
+        values = np.full((5, 5), 1, dtype="uint8")
+        values[:, :2] = 255  # Nodata in the first 2 columns
+        layer = xr.DataArray(values, dims=("y", "x"), coords={"y": np.arange(5), "x": np.arange(5)})
+        result = find_agreement([layer, layer])
+        assert result.values[2, 2] == 255  # Next to nodata
+        assert result.values[2, 3] == 1
+
+
+class TestLulcProductsForYear:
+    @pytest.mark.parametrize(
+        "year,expected",
+        [
+            ("2017", ["esa-cci-lc", "io-lulc-annual-v02"]),
+            ("2020", ["esa-worldcover", "esa-cci-lc", "io-lulc-annual-v02"]),
+            ("2021", ["esa-worldcover", "io-lulc-annual-v02"]),
+        ],
+    )
+    def test_products_with_data(self, year, expected):
+        assert [p["product"] for p in lulc_products_for_year(year)] == expected
+
+    @pytest.mark.parametrize("year", ["2010", "2022"])
+    def test_fewer_than_two_products_raises(self, year):
+        with pytest.raises(LdnError, match="at least 2"):
+            lulc_products_for_year(year)
 
 
 class TestRemoveNanSamples:

@@ -1,12 +1,13 @@
 """Generate training data for LULC classification.
 
-Loads 3 LULC products, finds agreement, generates stratified random samples,
+Loads the LULC products with data for the year, finds where at least 2 agree, generates stratified random samples,
 extracts GeoMAD band values, filters outliers via K-Means clustering, and
 uploads the result to S3.
 """
 
 import io
 import logging
+from itertools import combinations
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -254,6 +255,8 @@ def _cci_quality_filter(ds):
 LULC_PRODUCTS = [
     {
         "product": "esa-worldcover",
+        # First and last years with data on Planetary Computer.
+        "years": (2020, 2021),
         "native_band": "map",
         "output_band": "esa_wc",
         "class_map": world_cover_map,
@@ -262,6 +265,7 @@ LULC_PRODUCTS = [
     },
     {
         "product": "esa-cci-lc",
+        "years": (1992, 2020),
         "native_band": "lccs_class",
         "output_band": "esa_cci",
         "class_map": cci_lc_map,
@@ -270,6 +274,7 @@ LULC_PRODUCTS = [
     },
     {
         "product": "io-lulc-annual-v02",
+        "years": (2017, 2023),
         "native_band": "data",
         "output_band": "io",
         "class_map": io_map,
@@ -277,6 +282,25 @@ LULC_PRODUCTS = [
         "quality_bands": [],
     },
 ]
+
+
+def lulc_products_for_year(year: str) -> list[dict]:
+    """The LULC_PRODUCTS with data for a year. At least 2 are needed to find agreement.
+
+    Args:
+        year: Year string (e.g. "2020").
+
+    Returns:
+        Product configuration dicts from LULC_PRODUCTS.
+
+    Raises:
+        LdnError: If fewer than 2 products have data for the year.
+    """
+    products = [product for product in LULC_PRODUCTS if product["years"][0] <= int(year) <= product["years"][1]]
+    if len(products) < 2:
+        coverage = ", ".join(f"{p['product']} {p['years'][0]}-{p['years'][1]}" for p in LULC_PRODUCTS)
+        raise LdnError(f"{len(products)} LULC product(s) have data for {year}, at least 2 are needed ({coverage})")
+    return products
 
 
 def load_and_prepare(
@@ -297,9 +321,14 @@ def load_and_prepare(
         xarray Dataset with standardised class band, clipped to the
         buffered country geometry..
     """
-    product, native_band, output_band, class_map, quality_fn, quality_bands = product_dict.values()
+    native_band, output_band, quality_fn = (
+        product_dict["native_band"],
+        product_dict["output_band"],
+        product_dict["quality_fn"],
+    )
+    quality_bands = product_dict["quality_bands"]
 
-    ds = load_lulc_for_tile(product, geobox, year)
+    ds = load_lulc_for_tile(product_dict["product"], geobox, year)
     ds[output_band] = ds[native_band]
 
     bands_to_keep = {output_band} | set(quality_bands)
@@ -314,7 +343,7 @@ def load_and_prepare(
     ds = ds.drop_vars([v for v in ds.data_vars if v != output_band])
     ds = ds.load()
     ds[output_band] = ds[output_band].astype("uint8")
-    ds[output_band] = standardise_class(ds[output_band], class_map)
+    ds[output_band] = standardise_class(ds[output_band], product_dict["class_map"])
 
     country_prj = country_wgs84_buffered.to_crs(geobox.crs)
     clip_geom = Geometry(country_prj.union_all(), crs=geobox.crs)
@@ -329,53 +358,30 @@ def load_and_prepare(
     return ds
 
 
-def find_agreement(wc: xr.Dataset, cci: xr.Dataset, io_ds: xr.Dataset) -> xr.DataArray:
-    """Find 2-of-3 product agreement with neighbourhood filtering.
+def find_agreement(products: list[xr.DataArray]) -> xr.DataArray:
+    """Find where at least 2 products agree on a class, with neighbourhood filtering.
+
+    With 3 products at most one class can have 2 votes, so the first agreeing pair gives the class.
 
     Args:
-        wc: WorldCover dataset with 'esa_wc' variable.
-        cci: CCI-LC dataset with 'esa_cci' variable.
-        io_ds: IO dataset with 'io' variable.
+        products: 2 or 3 standardised class DataArrays on the same grid, with 0 or product_nodata_value for nodata.
 
     Returns:
-        DataArray of agreed class values.
+        DataArray of agreed class values, product_nodata_value where fewer than 2 products agree or a pixel has a
+        neighbour without agreement.
     """
+    # Drop leftover scalar coordinates that cause merge conflicts.
+    products = [da.drop_vars([c for c in da.coords if c not in da.dims]) for da in products]
+    agreed = xr.zeros_like(products[0])
+    for first, second in combinations(products, 2):
+        pair = (first == second) & (first > 0) & (first != product_nodata_value)
+        agreed = agreed.where(agreed > 0, first.where(pair, 0))
 
-    def _clean(da):
-        """Drop leftover scalar coordinates that cause merge conflicts."""
-        drop = [c for c in da.coords if c not in da.dims]
-        return da.drop_vars(drop)
-
-    wc_da = _clean(wc["esa_wc"])
-    cci_da = _clean(cci["esa_cci"])
-    io_da = _clean(io_ds["io"])
-
-    wc_ok = wc_da > 0
-    cci_ok = cci_da > 0
-    io_ok = io_da > 0
-    has_data_count = wc_ok.astype("uint8") + cci_ok.astype("uint8") + io_ok.astype("uint8")
-    valid = has_data_count >= 2
-
-    wc_cci_agree = (wc_da == cci_da) & wc_ok & cci_ok
-    cci_io_agree = (cci_da == io_da) & cci_ok & io_ok
-    wc_io_agree = (wc_da == io_da) & wc_ok & io_ok
-
-    pair_agree_count = wc_cci_agree.astype("uint8") + cci_io_agree.astype("uint8") + wc_io_agree.astype("uint8")
-
-    two_of_three = (pair_agree_count >= 1) & valid
-    majority_class = xr.where(wc_cci_agree, wc_da, xr.where(wc_io_agree, wc_da, io_da))
-
-    neighbour_mask = xr.DataArray(
-        minimum_filter(two_of_three.values.astype("float32"), size=3, mode="constant", cval=0) == 1,
-        coords=two_of_three.coords,
-        dims=two_of_three.dims,
-    )
-
-    agreed_class = majority_class.where(neighbour_mask & two_of_three, other=0).rename(CLASS_ATTR).astype("uint8")
-    agreed_class = agreed_class.where(agreed_class != 0, product_nodata_value).astype("uint8")
-    agreed_class.attrs["nodata"] = product_nodata_value
-
-    return agreed_class
+    # Keep a pixel only if its whole 3x3 neighbourhood agrees, dropping isolated agreeing pixels.
+    neighbourhood = minimum_filter((agreed > 0).values.astype("uint8"), size=3, mode="constant", cval=0) == 1
+    agreed = agreed.where(neighbourhood & (agreed > 0), product_nodata_value).rename(CLASS_ATTR).astype("uint8")
+    agreed.attrs["nodata"] = product_nodata_value
+    return agreed
 
 
 def generate_samples(
@@ -648,8 +654,8 @@ def make_training_data(
 ):
     """Generate training data for a single tile and upload to S3 as CSV.
 
-    End-to-end pipeline: loads GeoMAD (from any bucket), loads 3 LULC products, finds
-    agreement, samples, extracts band values, filters outliers, and
+    End-to-end pipeline: loads GeoMAD (from any bucket), loads the 2 or 3 LULC products with data for the year,
+    finds agreement, samples, extracts band values, filters outliers, and
     writes results locally and to S3 (to any bucket, can be different from the GeoMAD bucket).
     We do not support writing training data to Source.Coop. We can if needed.
 
@@ -674,6 +680,9 @@ def make_training_data(
     Returns:
         GeoDataFrame of final training samples.
     """
+    # Fail before loading anything if the year doesn't have enough products to agree.
+    products = lulc_products_for_year(year)
+
     logger.info("Getting buffered country geometry")
     analysis_crs = get_analysis_epsg(region)
     country_wgs84_buffered = get_buffered_country(country_of_interest, analysis_crs)
@@ -715,13 +724,10 @@ def make_training_data(
     )
     geobox = geomad_dem_indices.odc.geobox
 
-    logger.info("Loading 3 LULC products")
-    wc = load_and_prepare(geobox, country_wgs84_buffered, LULC_PRODUCTS[0], year)
-    cci = load_and_prepare(geobox, country_wgs84_buffered, LULC_PRODUCTS[1], year)
-    io_ds = load_and_prepare(geobox, country_wgs84_buffered, LULC_PRODUCTS[2], year)
-
-    logger.info("Finding product agreement")
-    agreed = find_agreement(wc, cci, io_ds)
+    logger.info(f"Loading {len(products)} LULC products: {', '.join(p['product'] for p in products)}")
+    agreed = find_agreement(
+        [load_and_prepare(geobox, country_wgs84_buffered, p, year)[p["output_band"]] for p in products]
+    )
 
     logger.info("Generating samples")
     samples = generate_samples(
