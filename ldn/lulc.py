@@ -1,6 +1,8 @@
 import logging
+import re
 from datetime import UTC
 from datetime import datetime as dt
+from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -19,6 +21,7 @@ from geopandas import GeoDataFrame
 from joblib import load as joblib_load
 from odc.geo.geobox import GeoBox
 from pystac import Item, ItemCollection, Link
+from pystac.extensions.classification import ClassificationExtension
 from rustac import search_sync
 from sklearn.ensemble import RandomForestClassifier
 from typing_extensions import Annotated
@@ -34,6 +37,7 @@ from ldn.raster import (
 from ldn.raster import (
     AwsStacTask as Task,
 )
+from ldn.typology import classes_flipped, stac_classes
 from ldn.utils import (
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
@@ -229,7 +233,7 @@ def do_prediction(
     Returns:
         A (classification, probabilities) tuple where classification is the
         argmax class where max probability >= threshold (else nodata), and
-        probabilities is a dict mapping "probability_1" through "probability_N"
+        probabilities is a dict mapping "probability_{class value}" (e.g. "probability_1" for Tree cover)
         to uint8 DataArrays of per-class probability (0-100).
     """
     stacked = ds.to_array().stack(dims=["y", "x"])
@@ -269,11 +273,11 @@ def do_prediction(
     nodata_mask_2d = nodata_mask.unstack("dims")
     predictions_2d = reshape_array_to_2d(full_predictions, ds, nodata_mask_2d, nodata_value=nodata_value)
 
-    # Per-class probability bands.
+    # Per-class probability bands, named by class value (predict_proba columns follow model.classes_).
     probabilities = {}
-    for i in range(n_classes):
+    for i, class_value in enumerate(model.classes_):
         series = pd.Series(full_probabilities[:, i], index=obs.index)
-        probabilities[f"probability_{i + 1}"] = reshape_array_to_2d(
+        probabilities[f"probability_{int(class_value)}"] = reshape_array_to_2d(
             series, ds, nodata_mask_2d, nodata_value=nodata_value
         )
 
@@ -396,6 +400,31 @@ def _set_stac_properties(ds: xr.Dataset, year: str) -> xr.Dataset:
     )
 
     return ds
+
+
+def _add_lulc_stac_metadata(item: Item, model_path: str, nodata_value: int) -> None:
+    """Link the model used, describe the classification classes and title the assets of a LULC STAC item, in place.
+
+    Args:
+        item: LULC STAC item.
+        model_path: Path or URL to the model used for classification, e.g. ".../models/0-1-1/2020/model.joblib".
+        nodata_value: Integer nodata value of the classification band.
+    """
+    # Models are stored under models/{MODEL_VERSION}/, so the version is in the path.
+    version = re.search(r"/models/([^/]+)/", model_path)
+    # TODO: Publish a STAC item for the model (e.g. with the MLM extension) and link to it with derived_from instead.
+    item.add_link(
+        Link(
+            rel="related",
+            target=model_path,
+            title=f"LULC classification model {version.group(1)}" if version else "LULC classification model",
+        )
+    )
+    item.assets["classification"].title = "Land use/land cover class"
+    ClassificationExtension.ext(item.assets["classification"], add_if_missing=True).classes = stac_classes(nodata_value)
+    for name, asset in item.assets.items():
+        if name.startswith("probability_"):
+            asset.title = f"Probability of {classes_flipped[int(name.removeprefix('probability_'))]} (%)"
 
 
 def run_classify_task(
@@ -569,7 +598,7 @@ def run_classify_task(
                     "xarray",
                     "scikit-learn",
                 ],
-                links=[Link(rel="related", target=model_path, title="LULC classification model")],
+                update_item=partial(_add_lulc_stac_metadata, model_path=model_path, nodata_value=nodata_value),
                 logger=logger,
                 writer=writer,
                 stac_creator=stac_creator,

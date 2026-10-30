@@ -1,7 +1,13 @@
-import numpy as np
-import xarray as xr
+from datetime import datetime
 
-from ldn.lulc import geomad_searcher
+import numpy as np
+import pandas as pd
+import xarray as xr
+from pystac import Asset, Item
+from pystac.extensions.classification import ClassificationExtension
+from sklearn.ensemble import RandomForestClassifier
+
+from ldn.lulc import _add_lulc_stac_metadata, do_prediction, geomad_searcher
 from ldn.raster import calculate_indices, scale_offset_landsat
 
 
@@ -222,3 +228,33 @@ class TestGeomadSearcher:
 
 
 # TODO: Add tests for further prediction functions.
+
+
+def test_add_lulc_stac_metadata():
+    """Model link, classification classes and asset titles are added, with nodata using the output nodata value."""
+    item = Item(id="t", geometry=None, bbox=None, datetime=datetime(2020, 1, 1), properties={})
+    for name in ["classification", "probability_1", "probability_5"]:
+        item.add_asset(name, Asset(href=f"{name}.tif"))
+    model_path = "https://example.com/dep_ls_lulc/models/0-1-1/2020/lulc_random_forest_model_2020.joblib"
+    _add_lulc_stac_metadata(item, model_path, nodata_value=0)
+
+    model_link = item.get_single_link("related")
+    assert (model_link.href, model_link.title) == (model_path, "LULC classification model 0-1-1")
+    assert item.assets["probability_1"].title == "Probability of Tree cover (%)"
+    assert item.assets["probability_5"].title == "Probability of Built-up (%)"
+    assert ClassificationExtension.get_schema_uri() in item.stac_extensions
+    classes = {c.name: c for c in ClassificationExtension.ext(item.assets["classification"]).classes}
+    assert len(classes) == 8
+    assert (classes["no_data"].value, classes["no_data"].nodata) == (0, True)
+    assert (classes["tree_cover"].value, classes["tree_cover"].title) == (1, "Tree cover")
+    assert classes["tree_cover"].color_hint == "006400"
+
+
+def test_probability_bands_are_named_by_class_value():
+    """Bands follow the model's classes, so a class missing from training doesn't shift the names."""
+    features = pd.DataFrame({"a": [0.0, 1.0, 0.0, 1.0], "b": [0.0, 0.0, 1.0, 1.0]})
+    model = RandomForestClassifier(n_estimators=2, random_state=0).fit(features, [1, 3, 1, 3])
+    values = np.array([[0.0, 1.0]], dtype=np.float32)
+    ds = xr.Dataset({"a": (("y", "x"), values), "b": (("y", "x"), values)}, coords={"y": [0], "x": [0, 1]})
+    _, probabilities = do_prediction(ds, model, 0, 255)
+    assert list(probabilities) == ["probability_1", "probability_3"]

@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from importlib.metadata import distribution
 from typing import Literal
@@ -410,6 +411,23 @@ def _antimeridian_safe_bbox(area: GeoBox, fallback_bbox: list[float]) -> list[fl
     ]
 
 
+def _antimeridian_safe_geometry(area: GeoBox, geometry: dict) -> dict:
+    """Split a STAC geometry at the antimeridian, only if the area crosses it.
+
+    antimeridian.fix_shape mangles small polygons next to the antimeridian that don't cross it (e.g. the 5 x 5 pixel
+    integration test corner of tile 066_020 raises "Too few points in geometry component"), so it's only applied to
+    areas that cross.
+
+    Args:
+        area: The tile or test area the geometry covers.
+        geometry: GeoJSON geometry from rio_stac.
+
+    Returns:
+        A GeoJSON MultiPolygon split at the antimeridian if the area crosses it, otherwise the geometry unchanged.
+    """
+    return fix_shape(geometry) if isinstance(bbox_across_180(area), tuple) else geometry
+
+
 # TODO: Use pystac's processing extension (and validate items with it) once the extension is supported by pystac
 # https://github.com/stac-extensions/processing
 # https://github.com/stac-utils/pystac/pull/1589
@@ -540,7 +558,7 @@ class AwsStacTask(AreaTask):
         processing_software: list[str],
         providers: list[Provider],
         post_processor: Processor | None = None,
-        links: list[Link] | None = None,
+        update_item: Callable[[Item], None] | None = None,
         logger: logging.Logger = logger,
         **kwargs,
     ):
@@ -554,7 +572,7 @@ class AwsStacTask(AreaTask):
         self.post_processor = post_processor
         self.processing_software = processing_software
         self.providers = providers
-        self.links = links or []
+        self.update_item = update_item
         self.stac_creator = stac_creator
         self.stac_writer = stac_writer
 
@@ -576,13 +594,15 @@ class AwsStacTask(AreaTask):
         if self.stac_creator is not None and self.stac_writer is not None:
             stac_item = self.stac_creator.process(output_data, self.id)
             stac_item.bbox = _antimeridian_safe_bbox(self.area, stac_item.bbox)
-            stac_item.geometry = fix_shape(stac_item.geometry)
+            stac_item.geometry = _antimeridian_safe_geometry(self.area, stac_item.geometry)
             add_processing_extension(stac_item, self.processing_software, self.providers)
-            stac_item.add_links([*self.links, visualisation_link()])
+            stac_item.add_link(visualisation_link())
             # Link to the input items (Landsat scenes for GeoMAD, the GeoMAD item for LULC).
             stac_item.add_links(
                 [Link(rel="derived_from", target=href, media_type="application/geo+json") for href in input_hrefs]
             )
+            if self.update_item is not None:
+                self.update_item(stac_item)
             self.stac_writer.write(stac_item, self.id)
 
         return paths

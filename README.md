@@ -53,6 +53,20 @@ Output files are Cloud-Optimized GeoTIFFs structured by grid index and year (`x/
 
 All outputs for a tile/year are bundled into a STAC item JSON, e.g.: https://data.source.coop/auspatious/geomad-sids/ci_ls_geomad/0-2-1/118/125/2000/ci_ls_geomad_118_125_2000.stac-item.json
 
+#### STAC metadata
+
+Items record their provenance, so they describe themselves even without a collection:
+
+- [Processing extension](https://github.com/stac-extensions/processing): `processing:version` (ldn version),
+  `processing:software` (exact package versions, with the commit for git dependencies) and `processing:datetime` (UTC).
+- Providers: Digital Earth Pacific (processor, and host unless on Source Cooperative), Source Cooperative (host),
+  Auspatious (processor, with `processing:facility`, level and lineage), USGS and NASA.
+- Links: `derived_from` to the input items (Landsat scenes for GeoMAD, the GeoMAD item for LULC), the LULC model, and
+  the [visualisation](https://auspatious.github.io/ldn-lulc).
+- LULC only: the [classification extension](https://github.com/stac-extensions/classification) describes each class
+  (value, name, title, colour, nodata) on the `classification` asset, and each `probability_{class value}` asset is
+  titled with its class.
+
 ### Product 1. Geomedian with GeoMAD
 
 #### Geometric Median Mosaic
@@ -225,7 +239,7 @@ Classification runs per tile/year using a pre-trained **random forest** model (l
 1. **Search:** the tile's GeoMAD item is located via its STAC-GeoParquet index, matched by tile ID and year.
 2. **Load:** GeoMAD bands are loaded through an antimeridian-safe loader that queries by geopolygon (not geobox), then crops back to the exact tile extent - this avoids the failures a plain bbox/geobox load hits on tiles spanning ±180°.
 3. **Feature prep:** reflectance bands are scaled, spectral indices computed, and DEM terrain features (elevation, slope, aspect) merged in - mirroring the training feature set.
-4. **Predict:** the random forest outputs a per-class probability for every pixel. Final classification is the highest-probability class, unless it falls below a configurable `probability_threshold`, in which case the pixel is set to nodata. Per-class probability bands (`probability_1`, `probability_2`, …) are retained alongside the classification band.
+4. **Predict:** the random forest outputs a per-class probability for every pixel. Final classification is the highest-probability class, unless it falls below a configurable `probability_threshold`, in which case the pixel is set to nodata. Per-class probability bands are retained alongside the classification band, named by class value: `probability_1` is Tree cover, `probability_2` Grassland, and so on (see `typology_mapping.yaml`).
 5. **Write:** output COGs and STAC metadata are written to S3.
 
 Processing is distributed with Dask (configurable workers/threads/memory), and supports faster low-fidelity modes for testing:

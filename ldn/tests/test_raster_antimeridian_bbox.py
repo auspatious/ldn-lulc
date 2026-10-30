@@ -1,6 +1,8 @@
 from odc.geo.geobox import GeoBox
+from shapely.geometry import mapping
 
-from ldn.raster import _antimeridian_safe_bbox
+from ldn.grids import get_gridspec
+from ldn.raster import _antimeridian_safe_bbox, _antimeridian_safe_geometry
 
 # EPSG:3832 (WGS 84 / PDC Mercator) x=3_330_000 is roughly where longitude
 # wraps from +180 to -180 at this latitude.
@@ -25,3 +27,24 @@ def test_antimeridian_safe_bbox_passes_through_non_crossing_tile() -> None:
     fallback = [149.9, -18, 150.1, -17]
 
     assert _antimeridian_safe_bbox(gb, fallback_bbox=fallback) == fallback
+
+
+def test_antimeridian_safe_geometry_splits_crossing_tile() -> None:
+    """Tile 066_020 crosses the antimeridian, so its footprint is split into a MultiPolygon."""
+    tile = get_gridspec("pacific").tile_geobox((66, 20))
+    footprint = mapping(tile.extent.to_crs("EPSG:4326").geom)
+    assert _antimeridian_safe_geometry(tile, footprint)["type"] == "MultiPolygon"
+
+
+def test_antimeridian_safe_geometry_keeps_small_area_next_to_antimeridian() -> None:
+    """The 5 x 5 pixel corner of tile 066_020 is just west of the antimeridian and doesn't cross it.
+
+    This counter-clockwise ring (as rio_stac writes it) made antimeridian.fix_shape raise.
+    """
+    corner = get_gridspec("pacific").tile_geobox((66, 20))[0:5, 0:5]
+    west, south, east, north = 179.967798, -17.654105, 179.969145, -17.652813
+    footprint = {
+        "type": "Polygon",
+        "coordinates": [[(west, south), (east, south), (east, north), (west, north), (west, south)]],
+    }
+    assert _antimeridian_safe_geometry(corner, footprint) == footprint
