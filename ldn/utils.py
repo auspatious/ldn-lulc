@@ -108,6 +108,8 @@ LULC_DATASET_ID = "lulc"
 
 LS7_YEAR_THRESHOLD = 2012
 TRAINING_DATA_YEAR = "2020"
+# Years with training data: those where at least 2 of the LULC products have data (see plan-label-propagation2.md).
+TRAINING_DATA_YEARS = ["2017", "2018", "2019", "2020", "2021"]
 CLASS_ATTR = "lulc"
 WGS84 = "EPSG:4326"
 
