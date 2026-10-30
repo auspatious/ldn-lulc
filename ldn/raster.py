@@ -196,16 +196,16 @@ def _compute_terrain(dem_da: xr.DataArray) -> xr.Dataset:
 # Focal (regional) statistics, named "{band}_{stat}_{size}" with a size x size pixel window. Candidates for model
 # training, which keeps only the groups that improve accuracy. TPI is elevation minus its focal mean.
 _FOCAL_SIZES = [3, 7, 15]
+_TPI_SIZES = [15, 51]
 FOCAL_FEATURES = (
     [f"{band}_{stat}_{size}" for band in INDEX_BANDS for stat in ["mean", "std"] for size in _FOCAL_SIZES]
     + [f"{band}_mean_{size}" for band in REFLECTANCE_BANDS for size in _FOCAL_SIZES]
     + [f"{band}_mean_7" for band in MAD_BANDS]
-    + [f"elevation_tpi_{size}" for size in [15, 51]]
+    + [f"elevation_tpi_{size}" for size in _TPI_SIZES]
 )
-# Pixels to pad each side of a tile so the widest window is complete at tile edges.
-# FOCAL_PAD is 25 pixels because the largest focal window is 51x51 (including the focal pixel), and we need half of
-# that on each side.
-FOCAL_PAD = max(int(name.rsplit("_", 1)[1]) for name in FOCAL_FEATURES) // 2
+# Pixels to pad each side of a tile so the widest window is complete at tile edges: half the widest window (51 x 51,
+# including the focal pixel), so 25.
+FOCAL_PAD = max(_FOCAL_SIZES + _TPI_SIZES) // 2
 
 # Copernicus DEM collection on MS PC.
 DEM_CATALOG = "https://planetarycomputer.microsoft.com/api/stac/v1/"
@@ -402,7 +402,8 @@ def crop_padding(data: xr.Dataset, pad: int) -> xr.Dataset:
     Returns:
         The cropped dataset.
     """
-    return data.isel(x=slice(pad, -pad), y=slice(pad, -pad))
+    # Slicing returns a view, without copying data. slice(pad, -pad) would be empty for pad = 0.
+    return data.isel(x=slice(pad, data.sizes["x"] - pad), y=slice(pad, data.sizes["y"] - pad))
 
 
 def make_features(geomad: xr.Dataset, features: list[str]) -> xr.Dataset:
@@ -432,7 +433,8 @@ def make_features(geomad: xr.Dataset, features: list[str]) -> xr.Dataset:
 
     # Assign GeoMAD coords to DEM before merge
     dem = dem.assign_coords(x=data.x, y=data.y)
-    # Override join prefers GeoMAD coords and metadata. Computed because focal statistics need numpy arrays.
+    # Override join prefers GeoMAD coords and metadata. Computed because focal statistics and scikit-learn need numpy
+    # arrays, and sending a large lazy graph to Dask workers is slow.
     merged = xr.merge([data, dem], join="override").compute()
     return merged.assign(focal_features(merged, [name for name in features if name in FOCAL_FEATURES]))
 
