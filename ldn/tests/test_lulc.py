@@ -368,11 +368,11 @@ def test_add_lulc_stac_metadata():
     item = Item(id="t", geometry=None, bbox=None, datetime=datetime(2020, 1, 1), properties={})
     for name in ["classification", "probability_1", "probability_5"]:
         item.add_asset(name, Asset(href=f"{name}.tif"))
-    model_path = "https://example.com/dep_ls_lulc/models/0-1-1/2020/lulc_random_forest_model_2020.joblib"
+    model_path = "https://example.com/dep_ls_lulc/models/0-2-0/lulc_random_forest_model.joblib"
     _add_lulc_stac_metadata(item, model_path, nodata_value=0)
 
     model_link = item.get_single_link("related")
-    assert (model_link.href, model_link.title) == (model_path, "LULC classification model 0-1-1")
+    assert (model_link.href, model_link.title) == (model_path, "LULC classification model 0-2-0")
     assert item.assets["probability_1"].title == "Probability of Tree cover (%)"
     assert item.assets["probability_5"].title == "Probability of Built-up (%)"
     assert ClassificationExtension.get_schema_uri() in item.stac_extensions

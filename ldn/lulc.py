@@ -443,7 +443,8 @@ def _add_lulc_stac_metadata(item: Item, model_path: str, nodata_value: int) -> N
 
     Args:
         item: LULC STAC item.
-        model_path: Path or URL to the model used for classification, e.g. ".../models/0-1-1/2020/model.joblib".
+        model_path: Path or URL to the model used for classification, e.g.
+            ".../models/0-2-0/lulc_random_forest_model.joblib".
         nodata_value: Integer nodata value of the classification band.
     """
     # Models are stored under models/{MODEL_VERSION}/, so the version is in the path.

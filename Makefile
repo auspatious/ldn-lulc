@@ -201,7 +201,7 @@ lulc-predict-test:
 				--geomad-version 0-2-1 \
 				$$geomad_args \
 				--output-bucket dep-public-staging \
-				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-2-0/2020/lulc_random_forest_model_2020.joblib" \
+				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-2-0/lulc_random_forest_model.joblib" \
 				--gap-fill-years 2 \
 				--no-overwrite; \
 		done; \
