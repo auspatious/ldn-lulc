@@ -17,6 +17,11 @@ Generate training data for each year 2017-2021 from the products available that 
 | 2021 | WorldCover, IO | both |
 
 These are real labels, not propagated, so real change (e.g. the clearing since 2017) is labelled correctly each year.
+2022 has only IO (WorldCover is 2020-2021 and CCI on Planetary Computer ends in 2020), so it can't be labelled.
+
+Agreement on real data (labelled pixels): PNG 025_034 has 66% in 2018, 87% in 2020 and 77% in 2021. Nauru 050_041 has
+81 pixels in 2018 but 6,401 in 2020 and 9,383 in 2021: on small islands, 300 m CCI pixels mix land and sea and rarely
+match IO, so 2017-2019 add few samples there.
 2021 is a La Nina year, and 2017-2018 had a weak one, so this adds dry conditions. All years are Landsat 7 and 8.
 
 Changes:
