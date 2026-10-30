@@ -56,21 +56,60 @@ from ldn.utils import (
 logger = logging.getLogger(__name__)
 
 
-class StacGeoparquetSearcher(Searcher):
-    """Search a STAC-Geoparquet file for a tile's item and its neighbours by ID using rustac."""
+class GeomadSearcher(Searcher):
+    """Search the GeoMAD STAC-Geoparquet index for a tile's item and its neighbours for one year, using rustac.
 
-    def __init__(self, stac_geoparquet_url: str, item_id: str, neighbour_ids: list[str]):
-        """Create a searcher for a STAC-Geoparquet file.
+    Item IDs are built the same way as the GeoMAD writer's. The neighbours are needed for focal (regional) statistics:
+    pixels along a tile's edges need the surrounding tiles' pixels to fill their windows (see FOCAL_PAD).
+    """
+
+    def __init__(
+        self,
+        geomad_bucket: str,
+        region: Literal["pacific", "non-pacific"],
+        product_owner: str | None,
+        single_region: bool,
+        sensor: str,
+        geomad_version: str,
+        year: str,
+        tile_id_tuple: tuple[int, int],
+    ):
+        """Create a searcher for a GeoMAD tile and its neighbours.
+
+        Neighbours are the grid tiles overlapping the tile geobox padded by FOCAL_PAD pixels, found in the grid's own
+        CRS (no WGS84 or antimeridian handling).
 
         Args:
-            stac_geoparquet_url: HTTP(S) URL to the STAC-Geoparquet file.
-            item_id: Full STAC item ID of the tile, e.g. "dep_ls_geomad_028_030_2000". Must exist.
-            neighbour_ids: Item IDs of the surrounding tiles. Missing ones (e.g. open ocean) are skipped.
+            geomad_bucket: S3 bucket where the GeoMAD data is stored.
+            region: Grid region, either "pacific" or "non-pacific".
+            product_owner: Override the region-derived owner prefix.
+            single_region: If True, search the owner's single region index (e.g. 'dep_ls_geomad'), otherwise the
+                many-region index (e.g. 'ls_geomad').
+            sensor: Sensor name (e.g. 'ls').
+            geomad_version: GeoMAD version string (e.g. "0-3-0").
+            year: Year string (e.g. "2020").
+            tile_id_tuple: Grid tile index (x, y).
         """
         super().__init__()
-        self._url = stac_geoparquet_url
-        self._item_id = item_id
-        self._neighbour_ids = neighbour_ids
+        owner = owner_for_region(region, product_owner)
+        key = get_stac_geoparquet_key(
+            geomad_bucket, owner if single_region else None, sensor, GEOMAD_DATASET_ID, geomad_version
+        )
+        self._url = get_stac_geoparquet_url(geomad_bucket, key)
+        # Same ID construction as the GeoMAD writer (itempath.basename), without its bucket region lookup.
+        itempath = GenericItemPath(
+            sensor=sensor,
+            dataset_id=GEOMAD_DATASET_ID,
+            version=geomad_version,
+            time=year,
+            prefix=owner,
+        )
+        self._item_id = itempath.basename(tile_id_tuple)
+        grid = get_gridspec(region)
+        padded = grid.tile_geobox(tile_id_tuple).pad(FOCAL_PAD)
+        self._neighbour_ids = [
+            itempath.basename(tile) for tile, _ in grid.tiles(padded.boundingbox) if tile != tile_id_tuple
+        ]
 
     def search(self, area: GeoBox | None = None) -> ItemCollection:
         """Search for the tile's item and any neighbouring items.
@@ -80,7 +119,8 @@ class StacGeoparquetSearcher(Searcher):
                 Searcher interface that AwsStacTask calls with the tile area.
 
         Returns:
-            A pystac ItemCollection with the tile's item first, then the neighbours found.
+            A pystac ItemCollection with the tile's item first, then the neighbours found. Missing neighbours (e.g.
+            open ocean) are skipped.
 
         Raises:
             LdnError: If the tile's item is not found.
@@ -91,57 +131,6 @@ class StacGeoparquetSearcher(Searcher):
             raise LdnError(f"GeoMAD item {self._item_id} not found")
 
         return ItemCollection(tile_items + [item for item in items if item.id != self._item_id])
-
-
-def geomad_searcher(
-    geomad_bucket: str,
-    region: Literal["pacific", "non-pacific"],
-    product_owner: str | None,
-    single_region: bool,
-    sensor: str,
-    geomad_version: str,
-    year: str,
-    tile_id_tuple: tuple[int, int],
-) -> StacGeoparquetSearcher:
-    """Return a searcher for a GeoMAD tile and its neighbours for one year, using the GeoMAD writer's item IDs.
-
-    Neighbours are the grid tiles overlapping the tile geobox padded by FOCAL_PAD pixels, found in the grid's own CRS
-    (no WGS84 or antimeridian handling). They fill the padding needed for focal statistics at tile edges.
-
-    Args:
-        geomad_bucket: S3 bucket where the GeoMAD data is stored.
-        region: Grid region, either "pacific" or "non-pacific".
-        product_owner: Override the region-derived owner prefix.
-        single_region: If True, search the owner's single region index (e.g. 'dep_ls_geomad'), otherwise the
-            many-region index (e.g. 'ls_geomad').
-        sensor: Sensor name (e.g. 'ls').
-        geomad_version: GeoMAD version string (e.g. "0-3-0").
-        year: Year string (e.g. "2020").
-        tile_id_tuple: Grid tile index (x, y).
-
-    Returns:
-        A StacGeoparquetSearcher for the items.
-    """
-    owner = owner_for_region(region, product_owner)
-    key = get_stac_geoparquet_key(
-        geomad_bucket, owner if single_region else None, sensor, GEOMAD_DATASET_ID, geomad_version
-    )
-    # Same ID construction as the GeoMAD writer (itempath.basename), without its bucket region lookup.
-    itempath = GenericItemPath(
-        sensor=sensor,
-        dataset_id=GEOMAD_DATASET_ID,
-        version=geomad_version,
-        time=year,
-        prefix=owner,
-    )
-    grid = get_gridspec(region)
-    padded = grid.tile_geobox(tile_id_tuple).pad(FOCAL_PAD)
-    neighbour_ids = [itempath.basename(tile) for tile, _ in grid.tiles(padded.boundingbox) if tile != tile_id_tuple]
-    return StacGeoparquetSearcher(
-        stac_geoparquet_url=get_stac_geoparquet_url(geomad_bucket, key),
-        item_id=itempath.basename(tile_id_tuple),
-        neighbour_ids=neighbour_ids,
-    )
 
 
 class PaddedOdcLoader(OdcLoader):
@@ -514,7 +503,7 @@ def run_classify_task(
         return  # Skip due to no overwrite.
     itempath, stac_creator, writer = components
 
-    searcher = geomad_searcher(
+    searcher = GeomadSearcher(
         geomad_bucket,
         region,
         product_owner,

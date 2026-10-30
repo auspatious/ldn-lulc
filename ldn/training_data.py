@@ -33,7 +33,7 @@ from sklearn.preprocessing import StandardScaler
 
 from ldn.aws import s3_client
 from ldn.grids import get_gadm, get_gridspec
-from ldn.lulc import geomad_searcher
+from ldn.lulc import GeomadSearcher
 from ldn.random_sampling import random_sampling
 from ldn.raster import FOCAL_FEATURES, FOCAL_PAD, crop_padding, load_across_antimeridian, make_features
 from ldn.typology import cci_lc_map, io_map, world_cover_map
@@ -907,7 +907,7 @@ def search_and_load_geomad_indices_dem(
         logger.info(f"Using latest GeoMAD version {GEOMAD_VERSION}")
 
     # The tile's item (raises if missing) and any neighbouring items to fill the focal statistics padding.
-    geomad_items = geomad_searcher(
+    geomad_items = GeomadSearcher(
         bucket, region, product_owner, single_region, sensor, geomad_version, year, parse_tile_id(tile_id)
     ).search()
     logger.info(f"Found GeoMAD item {geomad_items[0].id} and {len(geomad_items) - 1} neighbours for year {year}")

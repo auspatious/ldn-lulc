@@ -9,7 +9,7 @@ from pystac import Asset, Item
 from pystac.extensions.classification import ClassificationExtension
 from sklearn.ensemble import RandomForestClassifier
 
-from ldn.lulc import StacGeoparquetSearcher, _add_lulc_stac_metadata, do_prediction, geomad_searcher
+from ldn.lulc import GeomadSearcher, _add_lulc_stac_metadata, do_prediction
 from ldn.raster import calculate_indices, scale_offset_landsat
 from ldn.utils import LdnError
 
@@ -211,7 +211,7 @@ class TestCalculateIndices:
 class TestGeomadSearcher:
     def test_many_region_index_with_padded_id(self):
         """Non-Pacific tile without single region uses the combined index and the writer's zero-padded ID."""
-        searcher = geomad_searcher(
+        searcher = GeomadSearcher(
             "us-west-2.opendata.source.coop", "non-pacific", "ci", False, "ls", "0-2-1", "2020", (334, 92)
         )
         assert searcher._item_id == "ci_ls_geomad_334_092_2020"
@@ -219,19 +219,19 @@ class TestGeomadSearcher:
 
     def test_single_region_index(self):
         """Single region uses the owner's own index."""
-        searcher = geomad_searcher("dep-public-staging", "pacific", "dep", True, "ls", "0-2-1", "2020", (58, 43))
+        searcher = GeomadSearcher("dep-public-staging", "pacific", "dep", True, "ls", "0-2-1", "2020", (58, 43))
         assert searcher._item_id == "dep_ls_geomad_058_043_2020"
         assert searcher._url.endswith("/dep-public-staging/dep_ls_geomad/0-2-1/dep_ls_geomad.parquet")
 
     def test_region_owner_when_no_override(self):
         """Without an owner override the ID uses the region's owner."""
-        searcher = geomad_searcher("dep-public-staging", "non-pacific", None, False, "ls", "0-2-1", "2020", (119, 126))
+        searcher = GeomadSearcher("dep-public-staging", "non-pacific", None, False, "ls", "0-2-1", "2020", (119, 126))
         assert searcher._item_id == "ci_ls_geomad_119_126_2020"
 
     @pytest.mark.parametrize("region,owner,tile", [("pacific", "dep", (66, 20)), ("non-pacific", "ci", (119, 126))])
     def test_neighbour_ids_are_the_8_surrounding_tiles(self, region, owner, tile):
         """The padded tile overlaps its 8 neighbours, including across the antimeridian (Pacific 066_020)."""
-        searcher = geomad_searcher("dep-public-staging", region, owner, True, "ls", "0-2-1", "2020", tile)
+        searcher = GeomadSearcher("dep-public-staging", region, owner, True, "ls", "0-2-1", "2020", tile)
         x, y = tile
         expected = {
             f"{owner}_ls_geomad_{x + dx:03d}_{y + dy:03d}_2020"
@@ -241,22 +241,22 @@ class TestGeomadSearcher:
         }
         assert set(searcher._neighbour_ids) == expected
 
-
-class TestStacGeoparquetSearcher:
     @staticmethod
     def _doc(item_id: str) -> dict:
+        """STAC item dict as returned by rustac."""
         return Item(id=item_id, geometry=None, bbox=None, datetime=datetime(2020, 6, 30), properties={}).to_dict()
 
     def test_tile_item_first_and_missing_neighbours_skipped(self):
-        searcher = StacGeoparquetSearcher("https://example.com/x.parquet", "tile", ["n1", "n2"])
-        with patch("ldn.lulc.search_sync", return_value=[self._doc("n1"), self._doc("tile")]):
+        searcher = GeomadSearcher("dep-public-staging", "pacific", "dep", True, "ls", "0-2-1", "2020", (58, 43))
+        neighbour = "dep_ls_geomad_057_043_2020"
+        with patch("ldn.lulc.search_sync", return_value=[self._doc(neighbour), self._doc(searcher._item_id)]):
             items = searcher.search()
-        assert [item.id for item in items] == ["tile", "n1"]
+        assert [item.id for item in items] == [searcher._item_id, neighbour]
 
     def test_missing_tile_item_raises(self):
-        searcher = StacGeoparquetSearcher("https://example.com/x.parquet", "tile", ["n1"])
-        with patch("ldn.lulc.search_sync", return_value=[self._doc("n1")]):
-            with pytest.raises(LdnError, match="tile not found"):
+        searcher = GeomadSearcher("dep-public-staging", "pacific", "dep", True, "ls", "0-2-1", "2020", (58, 43))
+        with patch("ldn.lulc.search_sync", return_value=[self._doc("dep_ls_geomad_057_043_2020")]):
+            with pytest.raises(LdnError, match="dep_ls_geomad_058_043_2020 not found"):
                 searcher.search()
 
 
