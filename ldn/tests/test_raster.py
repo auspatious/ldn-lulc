@@ -10,7 +10,6 @@ import xarray as xr
 from pystac import Item
 
 from ldn.raster import (
-    BAEI_MAX,
     PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
     _compute_terrain,
@@ -158,12 +157,12 @@ def spectral_ds():
 
 @pytest.mark.parametrize(
     "num, den, expected",
-    [(1.0, 2.0, 0.5), (np.nan, 2.0, np.nan), (1.0, np.nan, np.nan), (np.nan, 0.0, np.nan), (0.0, 0.0, 9.0)],
-    ids=["divides", "nan numerator", "nan denominator", "nan numerator and zero denominator", "zero denominator"],
+    [(1.0, 2.0, 0.5), (np.nan, 2.0, np.nan), (1.0, np.nan, np.nan), (0.0, 0.0, np.nan), (1.0, 0.0, np.nan)],
+    ids=["divides", "nan numerator", "nan denominator", "zero over zero", "nonzero over zero"],
 )
 def test_safe_divide(num, den, expected):
-    """NaN if either input is NaN, zero_value if the denominator is 0, otherwise the quotient."""
-    result = safe_divide(xr.DataArray(np.float32(num)), xr.DataArray(np.float32(den)), 9.0)
+    """NaN if the denominator is 0 or either input is NaN, otherwise the quotient."""
+    result = safe_divide(xr.DataArray(np.float32(num)), xr.DataArray(np.float32(den)))
     np.testing.assert_equal(result.item(), expected)
     assert result.dtype == np.float32
 
@@ -211,25 +210,22 @@ class TestCalculateIndices:
     def test_ndbi_is_intermediate_only_not_stored(self, spectral_ds):
         assert "ndbi" not in calculate_indices(spectral_ds)
 
-    def test_all_output_bands_present(self, spectral_ds):
-        result = calculate_indices(spectral_ds)
-        assert {"ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"}.issubset(result.data_vars)
+    def test_adds_indices_and_keeps_original_bands(self, spectral_ds):
+        indices = {"ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"}
+        bands = {"nir08", "red", "green", "blue", "swir16", "swir22"}
+        assert indices | bands <= set(calculate_indices(spectral_ds).data_vars)
 
     @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"])
-    def test_all_zero_inputs_yield_finite_values(self, index):
+    def test_all_zero_inputs_yield_nan(self, index):
         ds = _spectral_dataset(nir=0.0, red=0.0, green=0.0, blue=0.0, swir16=0.0, swir22=0.0)
-        assert np.isfinite(calculate_indices(ds)[index].item())
+        assert np.isnan(calculate_indices(ds)[index].item())
 
-    def test_baei_zero_denominator_is_max(self):
+    def test_baei_zero_denominator_is_nan_not_inf(self):
         ds = _spectral_dataset(green=0.0, swir16=0.0)
-        assert calculate_indices(ds)["baei"].item() == pytest.approx(BAEI_MAX)
+        assert np.isnan(calculate_indices(ds)["baei"].item())
 
     def test_mutates_and_returns_same_dataset_object(self, spectral_ds):
         assert calculate_indices(spectral_ds) is spectral_ds
-
-    def test_preserves_original_bands(self, spectral_ds):
-        result = calculate_indices(spectral_ds)
-        assert {"nir08", "red", "green", "blue", "swir16", "swir22"} <= set(result.data_vars)
 
     @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi", "ndti", "bsi"])
     def test_normalised_differences_in_range(self, spectral_ds, index):
@@ -241,7 +237,7 @@ class TestCalculateIndices:
         assert np.isnan(calculate_indices(ds)[index].item())
 
 
-# Terrain derivation  - pure scipy/numpy, zero mocks
+# Terrain derivation
 
 
 class TestComputeTerrain:
