@@ -8,6 +8,8 @@ import numpy as np
 import pytest
 import xarray as xr
 from odc.geo.geobox import GeoBox
+from odc.geo.xr import xr_zeros
+from planetary_computer import sign_url
 from pyproj import Transformer
 from pystac import Item
 from pystac.extensions.projection import ProjectionExtension
@@ -16,6 +18,7 @@ from ldn.raster import (
     PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
     _compute_terrain,
+    _valid,
     add_processing_extension,
     build_pipeline_components,
     calculate_indices,
@@ -331,6 +334,23 @@ def _item(west: float, east: float, crs: str) -> Item:
     return item
 
 
+class TestValid:
+    def test_declared_nodata_is_empty(self):
+        """Like ESA WorldCover and CCI: uint8 with nodata 0."""
+        band = xr.DataArray(np.array([0, 1], dtype=np.uint8), dims="x", name="map", attrs={"nodata": 0})
+        assert _valid(band).values.tolist() == [False, True]
+
+    def test_float_without_nodata_uses_nan(self):
+        """Like the Copernicus DEM: float32 with no declared nodata, empty areas filled with NaN."""
+        band = xr.DataArray(np.array([np.nan, 0.0], dtype=np.float32), dims="x", name="data")
+        assert _valid(band).values.tolist() == [False, True]
+
+    def test_integer_without_nodata_raises(self):
+        band = xr.DataArray(np.array([0, 1], dtype=np.uint8), dims="x", name="map")
+        with pytest.raises(LdnError, match="no declared nodata"):
+            _valid(band)
+
+
 @pytest.mark.parametrize(
     "items",
     [[], [_item(179.0, 180.0, "EPSG:4326")], [_item(-180.0, -179.0, "EPSG:4326")]],
@@ -349,8 +369,8 @@ def test_load_across_antimeridian_loads_projected_items_onto_the_geobox():
     geobox = _am_geobox()
     with patch("ldn.raster.stac_load") as mock_load:
         load_across_antimeridian(items, geobox, "nearest")
-    mock_load.assert_called_once()
-    assert mock_load.call_args.kwargs["geobox"] is geobox
+    # Every item, unsplit, straight onto the geobox and lazy.
+    mock_load.assert_called_once_with(items, geobox=geobox, chunks={}, resampling="nearest", patch_url=sign_url)
 
 
 def test_load_across_antimeridian_has_no_gap_where_both_halves_have_a_180_column():
@@ -374,7 +394,7 @@ def test_load_across_antimeridian_has_no_gap_where_both_halves_have_a_180_column
         items = [_item(179.0, 180.0, "EPSG:4326"), _item(-180.0, -179.0, "EPSG:4326")]
         result = load_across_antimeridian(items, geobox, "bilinear")
     assert result["data"].shape == geobox.shape
-    np.testing.assert_allclose(result["data"].values, 100.0)
+    np.testing.assert_array_equal(result["data"].values, 100.0)
 
 
 # load_dem_terrain guards
@@ -407,94 +427,46 @@ class TestLoadDemTerrainGuards:
             with pytest.raises(LdnError, match="Too many DEM items"):
                 load_dem_terrain(MagicMock())
 
-    @pytest.mark.parametrize("n", [1, 4, 9])
-    def test_valid_item_counts_proceed_past_guard(self, mock_stac_client, n):
-        """1-9 items must not trigger either guard clause."""
-        geobox = MagicMock()
-        geobox.crs = "EPSG:6933"
-        geobox.extent.geom = MagicMock()
 
-        # stac_load returns an object whose .odc accessor is then called.
-        # xr.Dataset.odc is a registered read-only accessor property, so we
-        # cannot assign to it on a real Dataset.  Use a plain MagicMock for
-        # the entire stac_load return chain - attribute access just works.
-        with (
-            patch(f"{_MOD}.search_across_180", return_value=_stac_items(n)),
-            patch(f"{_MOD}.GeoDataFrame") as mock_gdf,
-            patch(f"{_MOD}.bbox_across_180", return_value=None),
-            patch(f"{_MOD}.stac_load"),
-            patch(f"{_MOD}._compute_terrain"),
-        ):
-            mock_gdf.return_value.to_crs.return_value = MagicMock()
-            load_dem_terrain(geobox)  # must not raise
+def _non_am_geobox() -> GeoBox:
+    """A small EPSG:3832 geobox at 170E, 18S, away from the antimeridian."""
+    x, y = Transformer.from_crs("EPSG:4326", "EPSG:3832", always_xy=True).transform(170.0, -18.0)
+    return GeoBox.from_bbox((x - 150, y - 150, x + 150, y + 150), "EPSG:3832", resolution=30)
 
 
-class TestLoadDemTerrainBranching:
-    """Antimeridian branching - verifies routing, not I/O results."""
+class TestLoadDemTerrainRouting:
+    """load_dem_terrain on real geoboxes. Only the STAC search and the loads (network) are mocked, and the loads
+    return a real DEM on the geobox, so the antimeridian check, CRS assignment and terrain run for real."""
 
-    def _setup(self, crosses_am: bool):
-        """Return (geobox, bbox_return) for the given AM scenario.
-
-        xr.Dataset.odc is a registered read-only accessor property - you
-        cannot assign a MagicMock to it on a real Dataset.  We therefore
-        keep all stac_load / load_across_antimeridian return values as plain MagicMocks
-        whose attribute chains resolve freely without raising AttributeError.
-        """
-        bbox_return = ((170, -10, 180, 10), (-180, -10, -170, 10)) if crosses_am else None
-        geobox = MagicMock()
-        geobox.crs = "EPSG:3832" if crosses_am else "EPSG:6933"
-        geobox.extent.geom = MagicMock()
-        return geobox, bbox_return
-
-    def test_non_am_tile_uses_stac_load_not_load_dem_am(self):
-        geobox, bbox_return = self._setup(crosses_am=False)
+    @staticmethod
+    def _run(geobox: GeoBox, n_items: int):
+        """Run load_dem_terrain with mocked network calls, returning the result and the two load mocks."""
+        items = _stac_items(n_items)
+        dem = xr_zeros(geobox, dtype="float32").to_dataset(name="data")
         with (
             patch(f"{_MOD}.PyStacClient.open"),
-            patch(f"{_MOD}.search_across_180", return_value=_stac_items(1)),
-            patch(f"{_MOD}.GeoDataFrame") as mock_gdf,
-            patch(f"{_MOD}.bbox_across_180", return_value=bbox_return),
-            patch(f"{_MOD}.stac_load") as mock_stac_load,
-            patch(f"{_MOD}.load_across_antimeridian") as mock_am,
-            patch(f"{_MOD}._compute_terrain"),
+            patch(f"{_MOD}.search_across_180", return_value=items),
+            patch(f"{_MOD}.stac_load", return_value=dem.expand_dims(time=1)) as stac_load,
+            patch(f"{_MOD}.load_across_antimeridian", return_value=dem) as load_across_antimeridian,
         ):
-            mock_gdf.return_value.to_crs.return_value = MagicMock()
-            load_dem_terrain(geobox)
+            result = load_dem_terrain(geobox)
+        return result, items, stac_load, load_across_antimeridian
 
-        mock_stac_load.assert_called_once()
-        mock_am.assert_not_called()
+    @pytest.mark.parametrize("n_items", [1, 4, 9])
+    def test_tile_loads_onto_the_geobox(self, n_items):
+        geobox = _non_am_geobox()
+        result, items, stac_load, load_across_antimeridian = self._run(geobox, n_items)
+        stac_load.assert_called_once_with(items, geobox=geobox, resampling="bilinear", patch_url=sign_url, chunks={})
+        load_across_antimeridian.assert_not_called()
+        assert set(result.data_vars) == {"elevation", "slope", "aspect"}
+        assert result["elevation"].shape == geobox.shape
 
-    def test_am_tile_uses_load_dem_am_not_stac_load(self):
-        geobox, bbox_return = self._setup(crosses_am=True)
-        with (
-            patch(f"{_MOD}.PyStacClient.open"),
-            patch(f"{_MOD}.search_across_180", return_value=_stac_items(1)),
-            patch(f"{_MOD}.GeoDataFrame") as mock_gdf,
-            patch(f"{_MOD}.bbox_across_180", return_value=bbox_return),
-            patch(f"{_MOD}.load_across_antimeridian") as mock_am,
-            patch(f"{_MOD}.stac_load") as mock_stac_load,
-            patch(f"{_MOD}._compute_terrain"),
-        ):
-            mock_gdf.return_value.to_crs.return_value = MagicMock()
-            load_dem_terrain(geobox)
-
-        mock_am.assert_called_once()
-        mock_stac_load.assert_not_called()
-
-    def test_stac_load_receives_chunks_empty_dict_for_lazy_loading(self):
-        """Lazy-loading contract: chunks={} must be forwarded to stac_load."""
-        geobox, _ = self._setup(crosses_am=False)
-        with (
-            patch(f"{_MOD}.PyStacClient.open"),
-            patch(f"{_MOD}.search_across_180", return_value=_stac_items(1)),
-            patch(f"{_MOD}.GeoDataFrame") as mock_gdf,
-            patch(f"{_MOD}.bbox_across_180", return_value=None),
-            patch(f"{_MOD}.stac_load") as mock_stac_load,
-            patch(f"{_MOD}._compute_terrain"),
-        ):
-            mock_gdf.return_value.to_crs.return_value = MagicMock()
-            load_dem_terrain(geobox)
-
-        assert mock_stac_load.call_args.kwargs.get("chunks") == {}
+    def test_antimeridian_tile_loads_each_side(self):
+        geobox = _am_geobox()
+        result, items, stac_load, load_across_antimeridian = self._run(geobox, 4)
+        load_across_antimeridian.assert_called_once_with(items, geobox, resampling="bilinear")
+        stac_load.assert_not_called()
+        assert result["elevation"].shape == geobox.shape
 
 
 # PrefixedS3ItemPath

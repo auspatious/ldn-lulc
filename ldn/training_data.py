@@ -193,8 +193,8 @@ def load_lulc_for_tile(product: str, geobox, year: str) -> xr.Dataset:
     logger.info(f"Found {len(lulc_items)} {product} items")
     assert 0 < len(lulc_items) < 30
 
-    geobox_wgs84 = gpd.GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(WGS84)
-    crosses_am = isinstance(bbox_across_180(geobox_wgs84), tuple)
+    footprint_wgs84 = gpd.GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(WGS84)
+    crosses_am = isinstance(bbox_across_180(footprint_wgs84), tuple)
 
     if crosses_am:
         logger.info("AM-crossing tile, using split load")
