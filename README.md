@@ -179,7 +179,7 @@ Data is written here https://dep-public-staging.s3.us-west-2.amazonaws.com/index
 
 2. **Find 2-of-3 agreement:** a pixel is kept where at least 2 of the 3 products agree on class, requiring ≥2 products to have valid data at that pixel. A 3×3 neighbourhood minimum filter is then applied so isolated agreeing pixels (with no agreeing neighbours) are dropped.
 3. **Stratified random sampling** from the agreement map, masked to areas with valid GeoMAD data. Default: 2,100 total samples, minimum 300 per class.
-4. **Feature extraction:** GeoMAD reflectance bands, spectral indices, and DEM terrain features (elevation, slope, northness, eastness) are sampled at each point's location.
+4. **Feature extraction:** the model features (see [Model features](#model-features)) are sampled at each point's location.
 5. **Cleanup:** samples with NaN feature values are dropped. K-Means-based per-class outlier filtering (removing the furthest-from-centroid samples within each class) is implemented but currently disabled pending an ablation study on whether it improves the model.
 6. **Output:** written locally as GeoJSON + CSV and uploaded to S3 as CSV. Outputs are versioned and record their region, tile index, and year. Source.Coop is not currently supported as a training-data destination.
 
@@ -232,13 +232,27 @@ The data that is made in CEO is stored in [the same place](https://drive.google.
 Human or AI labelled points used for the formal validation report (step 7 of the workflow above). This is separate from the test data and not yet created.
 
 
+#### Model features
+
+Training data and prediction build the features with the same function (`make_features` in `ldn/raster.py`), so the model always sees them computed the same way. There are 92, all float32 (scikit-learn's random forest converts its inputs to float32 anyway). A pixel with any NaN feature is nodata in prediction and is dropped from training data.
+
+| Group | Features | Count | Values |
+| - | - | - | - |
+| Reflectance | `red`, `green`, `blue`, `nir08`, `swir16`, `swir22` | 6 | GeoMAD geomedian surface reflectance in [0, 1], scaled from the uint16 Landsat Collection 2 digital numbers |
+| MAD | `emad`, `smad`, `bcmad` | 3 | GeoMAD Euclidean, spectral and Bray-Curtis median absolute deviations, as stored |
+| Spectral indices | `ndvi`, `ndwi`, `mndwi`, `ndti`, `bsi`, `mbi`, `baei`, `bui` | 8 | Normalised differences in [-1, 1], except `mbi` in [-0.5, 1.5], `bui` in [-2, 2] and `baei` (positive, unbounded). NaN where every band in a denominator is 0 |
+| Terrain | `elevation`, `slope`, `northness`, `eastness` | 4 | From Copernicus DEM GLO-30, computed on its native grid: metres, degrees, and northness and eastness in [-1, 1] (aspect weighted by sin(slope)) |
+| Focal statistics | `{band}_{stat}_{size}` | 71 | Statistics over a size x size pixel window around each pixel: the mean and std of each index at 3, 7 and 15 (48), the mean of each reflectance band at 3, 7 and 15 (18), the mean of each MAD band at 7 (3), and the elevation TPI (elevation minus its focal mean) at 15 and 51 (2) |
+
+The focal statistics are candidates (`FOCAL_FEATURES`): model training keeps the ones that improve accuracy, and prediction computes only the ones the model was trained with. Training data CSVs also have `lulc`, the label (a class value 1-7, see `typology_mapping.yaml`), and `geometry`, the sample point in WGS84.
+
 #### Model & Prediction
 
 Classification runs per tile/year using a pre-trained **random forest** model (loaded from a local `.joblib` file or downloaded from a S3 URL):
 
-1. **Search:** the tile's GeoMAD item is located via its STAC-GeoParquet index, matched by tile ID and year.
+1. **Search:** the tile's GeoMAD item and its neighbouring tiles' items (for focal statistics at the tile edges) are located via the STAC-GeoParquet index, matched by tile ID and year.
 2. **Load:** GeoMAD bands are loaded directly onto the tile geobox, which is the GeoMAD items' native grid, so there is no reprojection or cropping and antimeridian-crossing tiles load correctly.
-3. **Feature prep:** reflectance bands are scaled, spectral indices computed, and DEM terrain features (elevation, slope, northness, eastness) merged in - mirroring the training feature set.
+3. **Feature prep:** the model features (see [Model features](#model-features)) are built the same way as for training data. Only the focal statistics the model uses are computed.
 4. **Predict:** the random forest outputs a per-class probability for every pixel. Final classification is the highest-probability class, unless it falls below a configurable `probability_threshold`, in which case the pixel is set to nodata. Per-class probability bands are retained alongside the classification band, named by class value: `probability_1` is Tree cover, `probability_2` Grassland, and so on (see `typology_mapping.yaml`).
 5. **Write:** output COGs and STAC metadata are written to S3.
 

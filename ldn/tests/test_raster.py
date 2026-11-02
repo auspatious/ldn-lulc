@@ -335,6 +335,13 @@ class TestComputeTerrain:
         sin_slope = np.sin(np.radians(result["slope"]))
         np.testing.assert_allclose(result["northness"] ** 2 + result["eastness"] ** 2, sin_slope**2, rtol=1e-4)
 
+    def test_outputs_are_float32(self):
+        """float32 like the other features, although the latitudes are float64."""
+        result = _calculate_terrain_features(_x_ramp_dem(lat=-18.0))
+        assert {name: str(result[name].dtype) for name in result.data_vars} == dict.fromkeys(
+            result.data_vars, "float32"
+        )
+
     def test_output_spatial_coordinates_match_input(self):
         dem = _x_ramp_dem()
         result = _calculate_terrain_features(dem)

@@ -395,13 +395,10 @@ def generate_samples(
     Returns:
         GeoDataFrame of sample points with class labels.
     """
-    agree_computed = agreed.compute()
-
-    geomad_valid = geomad_dem_indices["red"].notnull().compute().astype("uint8")
-    geomad_valid_matched = geomad_valid.sel(x=agree_computed.x, y=agree_computed.y, method="nearest")
-    geomad_valid_matched = geomad_valid_matched.assign_coords(x=agree_computed.x, y=agree_computed.y)
-
-    agree_masked = agree_computed.where(geomad_valid_matched == 1, other=product_nodata_value)
+    # The agreement map is loaded on the features' geobox and cropped to the same country, so they align exactly.
+    # join="exact" raises if they ever don't.
+    agreed, geomad_valid = xr.align(agreed, geomad_dem_indices["red"].notnull(), join="exact")
+    agree_masked = agreed.where(geomad_valid, other=product_nodata_value).compute()
 
     # Trim to bounding box of valid pixels
     valid_mask = agree_masked.values != product_nodata_value
@@ -728,8 +725,9 @@ def make_training_data(
     logger.info("Extracting GeoMAD values at sample points")
     samples = extract_geomad_dem_indices_values(samples, geomad_dem_indices, analysis_crs)
 
-    logger.info("Removing NaN samples")
+    n_samples = len(samples)
     samples = remove_nan_samples(samples)
+    logger.info(f"Removed {n_samples - len(samples)} of {n_samples} samples with NaN features")
 
     # TODO: Run a baseline version and then test if outlier filtering improves the model and classification.
     # logger.info("Filtering outliers")
@@ -921,11 +919,11 @@ def search_and_load_geomad_indices_dem(
         fail_on_error=True,  # We control the data so it shouldn't fail.
         geobox=get_gridspec(region=region).tile_geobox(parse_tile_id(tile_id)).pad(FOCAL_PAD),
     ).squeeze()
-    logger.info(f"GeoMAD shape (padded): {geomad_ds.dims}")
+    logger.info(f"GeoMAD shape (padded): {dict(geomad_ds.sizes)}")
 
     # All candidate focal statistics, so model training can choose which to keep.
     merged = crop_padding(make_features(geomad_ds, FOCAL_FEATURES), FOCAL_PAD)
-    logger.info(f"Merged GeoMAD+DEM shape: {merged.dims}")
+    logger.info(f"Merged GeoMAD+DEM shape: {dict(merged.sizes)}")
 
     # Clip to intersection of tile extent and buffered country
     country_prj = country_wgs84_buffered.to_crs(merged.odc.geobox.crs)
@@ -938,5 +936,5 @@ def search_and_load_geomad_indices_dem(
     )
     merged = merged.odc.crop(clip_geom, apply_mask=True, all_touched=True)
 
-    logger.info(f"Merged GeoMAD/DEM shape (after country clip): {merged.dims}")
+    logger.info(f"Merged GeoMAD/DEM shape (after country clip): {dict(merged.sizes)}")
     return merged

@@ -185,14 +185,9 @@ def _calculate_terrain_features(dem: xr.DataArray) -> xr.Dataset:
     grad = np.hypot(dz_dx, dz_dy)
     # Equals cos/sin(aspect) * sin(slope), without computing aspect.
     hypotenuse = np.sqrt(1 + grad**2)
-    return xr.Dataset(
-        {
-            "elevation": dem,
-            "slope": np.degrees(np.arctan(grad)),
-            "northness": -dz_dy / hypotenuse,
-            "eastness": -dz_dx / hypotenuse,
-        }
-    )
+    terrain = {"slope": np.degrees(np.arctan(grad)), "northness": -dz_dy / hypotenuse, "eastness": -dz_dx / hypotenuse}
+    # float32 like the other features: the float64 latitudes would otherwise promote these to float64.
+    return xr.Dataset({"elevation": dem, **{name: value.astype("float32") for name, value in terrain.items()}})
 
 
 # Focal (regional) statistics, named "{band}_{stat}_{size}" with a size x size pixel window. Candidates for model
@@ -478,7 +473,7 @@ def make_features(geomad: xr.Dataset, features: list[str]) -> xr.Dataset:
     dem = load_dem_terrain(data.odc.geobox)
     # Computed because focal statistics and scikit-learn need numpy arrays, and sending a large lazy graph to Dask
     # workers is slow.
-    merged = xr.merge([data, dem], join="exact").compute()
+    merged = xr.merge([data, dem], join="exact", compat="no_conflicts").compute()
     return merged.assign(focal_features(merged, [name for name in features if name in FOCAL_FEATURES]))
 
 
