@@ -52,19 +52,24 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     Modifies the dataset in place and returns it.
 
     Args:
-        data: Input dataset with Landsat integer reflectance bands.
-            Expected nodata values are 0 and 65535.
+        data: GeoMAD dataset loaded with odc-stac. The reflectance bands are uint16 digital numbers in the Landsat
+            Collection 2 surface reflectance scale, with nodata 0 declared in the STAC items (`raster:bands`), which
+            odc-stac sets as each band's `odc.nodata`. The MAD bands (float32) and count (uint16) aren't scaled.
 
     Returns:
-        The same dataset with bands scaled to float32 in [0, 1].
-    """
-    nodata_values = (0, 65_535)
+        The same dataset with bands scaled to float32 in [0, 1] and nodata as NaN.
 
+    Raises:
+        LdnError: If a reflectance band has no declared nodata.
+    """
     bands_to_scale = [band for band in data.data_vars if band not in ["count", "emad", "smad", "bcmad"]]
 
     for band in bands_to_scale:
         raw = data[band]
-        nodata = (raw == nodata_values[0]) | (raw == nodata_values[1])
+        # Without a declared nodata, nodata pixels would silently become valid black (0 scales to -0.2, clipped to 0).
+        if raw.odc.nodata is None:
+            raise LdnError(f"Band {band} has no declared nodata. Load it with odc-stac so the STAC nodata is set.")
+        nodata = raw == raw.odc.nodata
         # Reflectance <= 0 is clipped to 0: a valid very dark pixel, not nodata. Indices are NaN where every band in
         # their denominator is 0 (see safe_divide).
         # Known limitation: over deep water, red is often slightly negative from atmospheric correction noise (e.g.
