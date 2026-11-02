@@ -82,19 +82,18 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
 
 
 def safe_divide(num: xr.DataArray, den: xr.DataArray) -> xr.DataArray:
-    """Divide, giving NaN where the denominator is 0 or either input is NaN (nodata).
+    """Divide, giving NaN where the result is undefined (the denominator is 0) or unknown (either input is NaN).
 
-    Input bands are clipped to [0, 1], so for an index this happens only when every band in the
-    denominator is 0: no measurable signal, so the index is unknown.
+    Input bands are clipped to [0, 1], so for an index the denominator is 0 only when every band in it is 0: no
+    measurable signal. NaN marks both cases, so the pixel is treated as nodata.
 
     Args:
         num: Numerator.
         den: Denominator.
 
     Returns:
-        num / den unless the denominator is 0 or either input is NaN then NaN is returned
+        num / den, or NaN where the denominator is 0 or either input is NaN.
     """
-    # Undefined where either input is NaN (nodata) or the denominator is 0.
     defined = num.notnull() & den.notnull() & (den != 0)
     return num.where(defined) / den.where(defined)
 
