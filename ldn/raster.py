@@ -302,7 +302,12 @@ def _merge_geographic_halves(east: xr.Dataset, west: xr.Dataset) -> xr.Dataset:
         Merged dataset with x (longitude relative to 180) and y (latitude) dimensions and a +pm=180 CRS.
     """
     east_box, west_box = east.odc.geobox, west.odc.geobox
-    columns = round((west_box.affine.c + 360 - east_box.affine.c) / west_box.resolution.x)
+    # East columns before the west half's first column (at -180, so 180 relative to the east half). Both halves are on
+    # the source's global pixel grid, so this is a whole number up to float error (e.g. 118.00000000006).
+    offset = (west_box.affine.c + 360 - east_box.affine.c) / west_box.resolution.x
+    columns = round(offset)
+    if abs(offset - columns) > 1e-6:
+        raise LdnError(f"The halves aren't on the same pixel grid: the west half starts {offset} east columns in")
     merged_box = GeoBox(
         (west_box.height, columns + west_box.width),
         Affine.translation(180, 0) * west_box.translate_pix(-columns, 0).affine,
@@ -387,18 +392,10 @@ def make_features(geomad: xr.Dataset) -> xr.Dataset:
     """
     data = calculate_indices(scale_offset_landsat(geomad.squeeze(drop=True)))
 
-    # Load DEM aligned to the GeoMAD grid
+    # The DEM is reprojected by odc onto the same geobox odc-stac loaded the GeoMAD on, so their coordinates and
+    # spatial_ref match exactly. join="exact" raises if they ever don't.
     dem = load_dem_terrain(data.odc.geobox)
-
-    # Drop spatial_ref from DEM to avoid WKT encoding conflicts with
-    # the GeoMAD spatial_ref during merge (odc vs rioxarray encodings).
-    if "spatial_ref" in dem.coords:
-        dem = dem.drop_vars("spatial_ref")
-
-    # Assign GeoMAD coords to DEM before merge
-    dem = dem.assign_coords(x=data.x, y=data.y)
-    # Override join prefers GeoMAD coords and metadata
-    return xr.merge([data, dem], join="override")
+    return xr.merge([data, dem], join="exact")
 
 
 # This is needed to support Source.Coop prefix.

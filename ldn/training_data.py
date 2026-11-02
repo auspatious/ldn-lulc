@@ -13,7 +13,6 @@ from typing import Annotated, Literal
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import rioxarray  # noqa: F401
 import shapely
 import typer
 import xarray as xr

@@ -265,7 +265,7 @@ class TestCalculateIndices:
 
 class TestComputeTerrain:
     """
-    _calculate_terrain_features differentiates a geographic DEM and converts to ground metres - pure computation.
+    _calculate_terrain_features differentiates a geographic DEM and converts to ground metres.
     We verify the analytic cases we can reason about exactly:
     flat (slope = 0, no facing), ramps (slope = arctan(rise / run), facing away from the rise), the cos(latitude)
     shrinking of east-west distances, plus invariants that hold for any DEM.
@@ -411,6 +411,13 @@ def test_merge_geographic_halves_joins_the_180_columns_despite_float_error():
     assert result.x.size == 17
     assert result.x.values[8] == pytest.approx(0.0, abs=1e-9)
     np.testing.assert_array_equal(result["data"].values, 100.0)
+
+
+def test_merge_geographic_halves_raises_for_halves_on_different_grids():
+    """Halves shifted by half a pixel can't be joined by pixel position."""
+    west = _seam_half(-180.0 + (np.arange(9) + 0.5) * _STEP, empty_last_column=False)
+    with pytest.raises(LdnError, match="same pixel grid"):
+        _merge_geographic_halves(_EAST, west)
 
 
 def test_load_across_antimeridian_has_no_gap_where_both_halves_have_a_180_column():

@@ -1,6 +1,7 @@
 import geopandas as gpd
 import numpy as np
 import xarray as xr
+from odc.geo.xr import assign_crs
 from shapely.geometry import Point
 
 from ldn.random_sampling import random_sampling
@@ -255,8 +256,7 @@ class TestExtractGeomadDemIndicesValues:
                 "red": xr.DataArray(red, dims=("y", "x"), coords={"y": y, "x": x}),
             }
         )
-        # TODO: use odc crs?
-        ds = ds.rio.write_crs("EPSG:3832")
+        ds = assign_crs(ds, "EPSG:3832")
 
         # Sample at pixel centres
         samples = gpd.GeoDataFrame(
