@@ -29,13 +29,11 @@ from ldn.grids import get_gridspec
 from ldn.raster import (
     FOCAL_PAD,
     GEOMAD_BANDS,
+    AwsStacTask,
     build_pipeline_components,
     crop_padding,
     make_features,
     stac_providers,
-)
-from ldn.raster import (
-    AwsStacTask as Task,
 )
 from ldn.typology import classes_flipped, stac_classes
 from ldn.utils import (
@@ -67,7 +65,7 @@ class GeomadSearcher(Searcher):
         self,
         geomad_bucket: str,
         region: Literal["pacific", "non-pacific"],
-        product_owner: str | None,
+        geomad_product_owner: str | None,
         single_region: bool,
         sensor: str,
         geomad_version: str,
@@ -82,7 +80,7 @@ class GeomadSearcher(Searcher):
         Args:
             geomad_bucket: S3 bucket where the GeoMAD data is stored.
             region: Grid region, either "pacific" or "non-pacific".
-            product_owner: Override the region-derived owner prefix.
+            geomad_product_owner: Override the region-derived owner prefix of the GeoMAD.
             single_region: If True, search the owner's single region index (e.g. 'dep_ls_geomad'), otherwise the
                 many-region index (e.g. 'ls_geomad').
             sensor: Sensor name (e.g. 'ls').
@@ -91,7 +89,7 @@ class GeomadSearcher(Searcher):
             tile_id_tuple: Grid tile index (x, y).
         """
         super().__init__()
-        owner = owner_for_region(region, product_owner)
+        owner = owner_for_region(region, geomad_product_owner)
         key = get_stac_geoparquet_key(
             geomad_bucket, owner if single_region else None, sensor, GEOMAD_DATASET_ID, geomad_version
         )
@@ -106,9 +104,9 @@ class GeomadSearcher(Searcher):
         )
         self._item_id = itempath.basename(tile_id_tuple)
         grid = get_gridspec(region)
-        padded = grid.tile_geobox(tile_id_tuple).pad(FOCAL_PAD)
+        padded_geobox = grid.tile_geobox(tile_id_tuple).pad(FOCAL_PAD)
         self._neighbour_ids = [
-            itempath.basename(tile) for tile, _ in grid.tiles(padded.boundingbox) if tile != tile_id_tuple
+            itempath.basename(tile) for tile, _ in grid.tiles(padded_geobox.boundingbox) if tile != tile_id_tuple
         ]
 
     def search(self, area: GeoBox | None = None) -> ItemCollection:
@@ -141,7 +139,7 @@ class PaddedOdcLoader(OdcLoader):
 
         Args:
             items: GeoMAD items for the tile and its neighbours.
-            areas: Tile geobox.
+            areas: Tile geobox (unpadded).
 
         Returns:
             Dataset on the tile geobox padded by FOCAL_PAD pixels.
@@ -540,7 +538,7 @@ def run_classify_task(
             threads_per_worker=threads_per_worker,
             memory_limit=memory_limit,
         ):
-            paths = Task(
+            paths = AwsStacTask(
                 itempath=itempath,
                 id=tile_id_tuple,
                 area=geobox,

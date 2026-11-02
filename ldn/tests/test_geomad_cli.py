@@ -73,7 +73,7 @@ def stub_geomad_processing(monkeypatch):
         )
         return [stac_key]
 
-    monkeypatch.setattr("ldn.cli_geomad.Task.run", fake_run)
+    monkeypatch.setattr("ldn.cli_geomad.AwsStacTask.run", fake_run)
 
 
 @pytest.fixture(autouse=True)

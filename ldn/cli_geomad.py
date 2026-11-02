@@ -19,8 +19,7 @@ from ldn.geomad import (
     InsufficientScenesError,
 )
 from ldn.grids import get_gridspec
-from ldn.raster import LANDSAT_OFFSET, LANDSAT_SCALE, build_pipeline_components, stac_providers
-from ldn.raster import AwsStacTask as Task
+from ldn.raster import LANDSAT_OFFSET, LANDSAT_SCALE, AwsStacTask, build_pipeline_components, stac_providers
 from ldn.utils import (
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
@@ -273,7 +272,7 @@ def run(
             threads_per_worker=threads_per_worker,
             memory_limit=memory_limit,
         ):
-            paths = Task(
+            paths = AwsStacTask(
                 itempath=itempath,
                 id=tile_id_tuple,
                 area=geobox,

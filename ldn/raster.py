@@ -3,6 +3,7 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from importlib.metadata import distribution
+from itertools import groupby
 from typing import Literal
 
 import numpy as np
@@ -392,7 +393,7 @@ def _focal_mean(values: np.ndarray, size: int) -> np.ndarray:
     """NaN-aware mean over a size x size window around each pixel.
 
     Args:
-        values: 2D array, NaN for nodata.
+        values: 2D float64 array, NaN for nodata (see focal_features for why float64).
         size: Window width in pixels.
 
     Returns:
@@ -417,17 +418,25 @@ def focal_features(data: xr.Dataset, names: list[str]) -> dict[str, xr.DataArray
         Mapping of feature name to float32 DataArray on the same grid as data.
     """
     features = {}
-    for name in names:
-        band, stat, size = name.rsplit("_", 2)
+    # One band at a time, so only one band's float64 copy and focal means are in memory, and each focal mean is
+    # computed once even when several features use it (e.g. ndvi_mean_7 and ndvi_std_7).
+    for band, band_names in groupby(sorted(names), key=lambda name: name.rsplit("_", 2)[0]):
+        # float64 because the std is E[x^2] - E[x]^2, which loses precision in float32: on a full width tile row the
+        # std was off by up to 4e-4 (float64 matches a direct calculation). Results are stored as float32.
         values = data[band].values.astype("float64")
-        mean = _focal_mean(values, int(size))
-        if stat == "mean":
-            result = mean
-        elif stat == "std":
-            result = np.sqrt(np.maximum(_focal_mean(values**2, int(size)) - mean**2, 0))
-        else:
-            result = values - mean
-        features[name] = data[band].copy(data=result.astype("float32"))
+        means = {}
+        for name in band_names:
+            _, stat, size = name.rsplit("_", 2)
+            size = int(size)
+            if size not in means:
+                means[size] = _focal_mean(values, size)
+            if stat == "mean":
+                result = means[size]
+            elif stat == "std":
+                result = np.sqrt(np.maximum(_focal_mean(values**2, size) - means[size] ** 2, 0))
+            else:
+                result = values - means[size]
+            features[name] = data[band].copy(data=result.astype("float32"))
     return features
 
 
@@ -441,8 +450,10 @@ def crop_padding(data: xr.Dataset, pad: int) -> xr.Dataset:
     Returns:
         The cropped dataset.
     """
-    # Slicing returns a view, without copying data. slice(pad, -pad) would be empty for pad = 0.
-    return data.isel(x=slice(pad, data.sizes["x"] - pad), y=slice(pad, data.sizes["y"] - pad))
+    if pad == 0:
+        return data
+    # Slicing returns a view, without copying data.
+    return data.isel(x=slice(pad, -pad), y=slice(pad, -pad))
 
 
 def make_features(geomad: xr.Dataset, features: list[str]) -> xr.Dataset:

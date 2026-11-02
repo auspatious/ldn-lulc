@@ -795,4 +795,4 @@ def test_crop_padding_removes_pad_from_each_side():
     cropped = crop_padding(data, 2)
     assert cropped["a"].shape == (6, 8)
     assert cropped.x.values[0] == 2 and cropped.y.values[-1] == 7
-    assert crop_padding(data, 0)["a"].shape == (10, 12)
+    assert crop_padding(data, 0) is data
