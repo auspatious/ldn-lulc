@@ -375,7 +375,7 @@ def _load_dem_geographic(dem_items: ItemCollection, geobox: GeoBox) -> xr.DataAr
             .rename(longitude="x", latitude="y")
         )
     # Compute once: the DEM is lazy, and every use would otherwise download it again.
-    return dem["data"].rename("elevation").astype("float32").compute()
+    return dem["data"].rename("elevation").compute()
 
 
 def make_features(geomad: xr.Dataset) -> xr.Dataset:
