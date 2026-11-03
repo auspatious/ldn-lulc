@@ -38,6 +38,10 @@ from ldn.utils import (
 
 logger = logging.getLogger(__name__)
 
+# Landsat Collection 2 scaling constants (USGS)
+LANDSAT_SCALE = 0.0000275
+LANDSAT_OFFSET = -0.2
+
 
 def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     """Scale Landsat Collection 2 reflectance values and mask nodata.
@@ -48,33 +52,59 @@ def scale_offset_landsat(data: xr.Dataset) -> xr.Dataset:
     Modifies the dataset in place and returns it.
 
     Args:
-        data: Input dataset with Landsat integer reflectance bands.
-            Expected nodata values are 0 and 65535.
+        data: GeoMAD dataset loaded with odc-stac. The reflectance bands are uint16 digital numbers in the Landsat
+            Collection 2 surface reflectance scale, with nodata 0 declared in the STAC items (`raster:bands`), which
+            odc-stac sets as each band's `odc.nodata`. The MAD bands (float32) and count (uint16) aren't scaled.
 
     Returns:
-        The same dataset with bands scaled to float32 in [0, 1].
-    """
-    # Landsat Collection 2 scaling constants (USGS)
-    scale_factor = 0.0000275
-    offset = -0.2
-    nodata_values = (0, 65_535)
+        The same dataset with bands scaled to float32 in [0, 1] and nodata as NaN.
 
+    Raises:
+        LdnError: If a reflectance band has no declared nodata.
+    """
     bands_to_scale = [band for band in data.data_vars if band not in ["count", "emad", "smad", "bcmad"]]
 
     for band in bands_to_scale:
         raw = data[band]
-        nodata = (raw == nodata_values[0]) | (raw == nodata_values[1])
-        # TODO: Clip to 0.01 instead of 0 so indices still work? Also would clipping to 0 mean that this becomes nodata?
-        scaled = (raw * scale_factor + offset).clip(0, 1).astype("float32")
+        # Without a declared nodata, nodata pixels would silently become valid black (0 scales to -0.2, clipped to 0).
+        if raw.odc.nodata is None:
+            raise LdnError(f"Band {band} has no declared nodata. Load it with odc-stac so the STAC nodata is set.")
+        nodata = raw == raw.odc.nodata
+        # Reflectance <= 0 is clipped to 0: a valid very dark pixel, not nodata. Indices are NaN where every band in
+        # their denominator is 0 (see safe_divide).
+        # Known limitation: over deep water, red is often slightly negative from atmospheric correction noise (e.g.
+        # -0.004) while nir is about 0.004, so after clipping NDVI = (0.004 - 0) / (0.004 + 0) = 1, the value for
+        # dense vegetation (24% of sea pixels on tile 033_031). Left as is: training samples are within 100 m of land,
+        # so the model never learns from deep water, and the raw bands (all near 0) still identify it.
+        scaled = (raw * LANDSAT_SCALE + LANDSAT_OFFSET).clip(0, 1).astype("float32")
         data[band] = scaled.where(~nodata, other=np.nan)
     return data
+
+
+def safe_divide(num: xr.DataArray, den: xr.DataArray) -> xr.DataArray:
+    """Divide, giving NaN where the result is undefined (the denominator is 0) or unknown (either input is NaN).
+
+    Input bands are clipped to [0, 1], so for an index the denominator is 0 only when every band in it is 0: no
+    measurable signal. NaN marks both cases, so the pixel is treated as nodata.
+
+    Args:
+        num: Numerator.
+        den: Denominator.
+
+    Returns:
+        num / den, or NaN where the denominator is 0 or either input is NaN.
+    """
+    defined = num.notnull() & den.notnull() & (den != 0)
+    return num.where(defined) / den.where(defined)
 
 
 def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     """Compute spectral indices from scaled geomedian bands.
 
-    Adds index bands to the dataset in place. Division-by-zero cases
-    (e.g. when both bands are 0 or NaN) will produce NaN values.
+    Adds index bands to the dataset in place. Bands must already be scaled and clipped to [0, 1]
+    (see scale_offset_landsat) so normalised differences stay in [-1, 1]. An index is NaN where every band in its
+    denominator is 0 (no measurable signal, so the index is unknown) or an input is NaN (nodata). Pixels with a NaN
+    index are nodata in prediction and dropped from training data.
 
     Args:
         geomad: GeoMedian/GeoMAD dataset containing at least `nir08`, `red`, `green`,
@@ -84,20 +114,33 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
         The same dataset with additional bands: `ndvi`, `ndwi`, `mndwi`,
         `ndti`, `bsi`, `mbi`, `baei`, and `bui`.
     """
+    # TODO: Check whether every index is needed. The random forest copes with correlated features, but redundant ones
+    # dilute feature importance and add compute. Candidates: bui (linear combination of NDBI and ndvi, and NDBI is
+    # -NDMI), ndwi (strongly anti-correlated with ndvi), mbi vs bsi (both bare soil), baei vs bui (both built-up).
+    # Compare with feature importance or drop-column accuracy in notebooks/1_Train_Model.ipynb.
     nir = geomad.nir08
     red = geomad.red
     green = geomad.green
     blue = geomad.blue
     swir1 = geomad.swir16
     swir2 = geomad.swir22
-    geomad["ndvi"] = (nir - red) / (nir + red)
-    geomad["ndwi"] = (green - nir) / (green + nir)
-    geomad["mndwi"] = (green - swir1) / (green + swir1)
-    geomad["ndti"] = (red - green) / (red + green)
-    geomad["bsi"] = ((swir1 + red) - (nir + blue)) / ((swir1 + red) + (nir + blue))
-    geomad["mbi"] = ((swir1 - swir2 - nir) / (swir1 + swir2 + nir)) + 0.5
-    geomad["baei"] = (red + 0.3) / (green + swir1)
-    ndbi = (swir1 - nir) / (swir1 + nir)  # intermediate, not stored
+    # Normalised Difference Vegetation Index (Rouse 1974).
+    geomad["ndvi"] = safe_divide(nir - red, nir + red)
+    # Normalised Difference Water Index (McFeeters 1996).
+    geomad["ndwi"] = safe_divide(green - nir, green + nir)
+    # Modified Normalised Difference Water Index (Xu 2006).
+    geomad["mndwi"] = safe_divide(green - swir1, green + swir1)
+    # Normalised Difference Turbidity Index (Lacaux 2007).
+    geomad["ndti"] = safe_divide(red - green, red + green)
+    # Bare Soil Index (Rikimaru 2002).
+    geomad["bsi"] = safe_divide((swir1 + red) - (nir + blue), (swir1 + red) + (nir + blue))
+    # Modified Bare soil Index (Nguyen 2021).
+    geomad["mbi"] = safe_divide(swir1 - swir2 - nir, swir1 + swir2 + nir) + 0.5
+    # Built-up Area Extraction Index (Bouzekri 2015). Not a normalised difference, so not bounded to [-1, 1].
+    geomad["baei"] = safe_divide(red + 0.3, green + swir1)
+    # Normalised Difference Built-up Index (Zha 2003), intermediate, not stored.
+    ndbi = safe_divide(swir1 - nir, swir1 + nir)
+    # Built-Up Index (He 2010).
     geomad["bui"] = ndbi - geomad["ndvi"]
     return geomad
 
