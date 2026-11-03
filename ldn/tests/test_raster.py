@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 import xarray as xr
 from dep_tools.utils import bbox_across_180
-from geopandas import GeoDataFrame
 from odc.geo.geobox import GeoBox
 from odc.geo.xr import assign_crs, xr_zeros
 from planetary_computer import sign_url
@@ -341,9 +340,12 @@ class TestComputeTerrain:
 
 
 def _am_geobox() -> GeoBox:
-    """A small EPSG:3832 geobox centred on the antimeridian at 18S."""
+    """A small EPSG:3832 geobox centred on the antimeridian at 18S.
+
+    1.2 km wide: bbox_across_180 can't split the footprint of a geobox under ~1 km across the antimeridian.
+    """
     x_am, y_am = Transformer.from_crs("EPSG:4326", "EPSG:3832", always_xy=True).transform(180.0, -18.0)
-    return GeoBox.from_bbox((x_am - 150, y_am - 150, x_am + 150, y_am + 150), "EPSG:3832", resolution=30)
+    return GeoBox.from_bbox((x_am - 600, y_am - 600, x_am + 600, y_am + 600), "EPSG:3832", resolution=30)
 
 
 def _item(west: float, east: float, crs: str) -> Item:
@@ -385,7 +387,9 @@ def test_load_across_antimeridian_loads_projected_items_onto_the_geobox():
 
 
 _STEP = 1 / 3600
-_LATITUDE = -18.0 + np.arange(-8, 9) * _STEP
+# Pixels each side of 180 and of 18S: 30 arcseconds is ~900 m, so the halves cover _am_geobox.
+_HALF_WIDTH = 30
+_LATITUDE = -18.0 + np.arange(-_HALF_WIDTH, _HALF_WIDTH + 1) * _STEP
 
 
 def _seam_half(longitude: np.ndarray, empty_last_column: bool) -> xr.Dataset:
@@ -400,23 +404,23 @@ def _seam_half(longitude: np.ndarray, empty_last_column: bool) -> xr.Dataset:
 
 
 # east ends with an empty column at 180. west starts at -180 with the float error odc gives (-179.99999999999997).
-_EAST = _seam_half(180.0 - np.arange(8, -1, -1) * _STEP, empty_last_column=True)
-_WEST = _seam_half(np.nextafter(-180.0, 0) + np.arange(9) * _STEP, empty_last_column=False)
+_EAST = _seam_half(180.0 - np.arange(_HALF_WIDTH, -1, -1) * _STEP, empty_last_column=True)
+_WEST = _seam_half(np.nextafter(-180.0, 0) + np.arange(_HALF_WIDTH + 1) * _STEP, empty_last_column=False)
 
 
 def test_merge_geographic_halves_joins_the_180_columns_despite_float_error():
     """The two 180 columns become one, at 0, so the grid is evenly spaced with no empty column."""
     result = _merge_geographic_halves(_EAST, _WEST)
     np.testing.assert_allclose(np.diff(result.x.values), _STEP)
-    assert result.x.size == 17
-    assert result.x.values[8] == pytest.approx(0.0, abs=1e-9)
+    assert result.x.size == 2 * _HALF_WIDTH + 1
+    assert result.x.values[_HALF_WIDTH] == pytest.approx(0.0, abs=1e-9)
     np.testing.assert_array_equal(result["data"].values, 100.0)
 
 
 def test_merge_geographic_halves_raises_for_halves_on_different_grids():
     """Halves shifted by half a pixel can't be joined by pixel position."""
-    west = _seam_half(-180.0 + (np.arange(9) + 0.5) * _STEP, empty_last_column=False)
-    with pytest.raises(LdnError, match="same pixel grid"):
+    west = _seam_half(-180.0 + (np.arange(_HALF_WIDTH + 1) + 0.5) * _STEP, empty_last_column=False)
+    with pytest.raises(ValueError, match="Incompatible grids"):
         _merge_geographic_halves(_EAST, west)
 
 
@@ -468,11 +472,6 @@ def _non_am_geobox() -> GeoBox:
     return GeoBox.from_bbox((x - 150, y - 150, x + 150, y + 150), "EPSG:3832", resolution=30)
 
 
-def _footprint_wgs84(geobox: GeoBox) -> GeoDataFrame:
-    """A geobox's footprint in WGS84."""
-    return GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs("EPSG:4326")
-
-
 def _wgs84_dem(bbox: tuple[float, float, float, float], elevation: float) -> xr.Dataset:
     """Constant DEM on a 1 arcsecond WGS84 grid covering bbox, with a time dimension, as stac_load returns it."""
     geobox = GeoBox.from_bbox(bbox, "EPSG:4326", resolution=1 / 3600)
@@ -504,17 +503,17 @@ class TestLoadDemTerrain:
 
     def test_tile_loads_native_grid_limited_to_the_padded_tile(self):
         geobox = _non_am_geobox()
-        padded = tuple(_footprint_wgs84(geobox.pad(2)).total_bounds)
+        padded = tuple(geobox.pad(2).footprint("EPSG:4326").boundingbox)
         result, stac_load = self._run(geobox, _stac_items(1), [_wgs84_dem(padded, 100.0)])
         kwargs = stac_load.call_args.kwargs
         assert kwargs["chunks"] == {} and "geobox" not in kwargs  # Native grid, lazy.
-        assert kwargs["geopolygon"].union_all().contains(_footprint_wgs84(geobox).union_all())
+        assert kwargs["geopolygon"].contains(geobox.footprint("EPSG:4326"))
         self._assert_flat_terrain_on(result, geobox)
 
     def test_antimeridian_tile_loads_and_joins_both_sides(self):
         geobox = _am_geobox()
         items = [_item(179.0, 180.0, "EPSG:4326"), _item(-180.0, -179.0, "EPSG:4326")]
-        east, west = bbox_across_180(_footprint_wgs84(geobox.pad(2)))
+        east, west = bbox_across_180(geobox.pad(2))
         result, stac_load = self._run(geobox, items, [_wgs84_dem(east, 100.0), _wgs84_dem(west, 100.0)])
         assert stac_load.call_count == 2
         self._assert_flat_terrain_on(result, geobox)

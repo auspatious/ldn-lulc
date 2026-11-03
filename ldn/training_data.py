@@ -192,8 +192,7 @@ def load_lulc_for_tile(product: str, geobox, year: str) -> xr.Dataset:
     logger.info(f"Found {len(lulc_items)} {product} items")
     assert 0 < len(lulc_items) < 30
 
-    footprint_wgs84 = gpd.GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(WGS84)
-    crosses_am = isinstance(bbox_across_180(footprint_wgs84), tuple)
+    crosses_am = isinstance(bbox_across_180(geobox), tuple)
 
     if crosses_am:
         logger.info("AM-crossing tile, using split load")
@@ -685,13 +684,12 @@ def make_training_data(
     tile_id_tuple = parse_tile_id(tile_id)
     grid = get_gridspec(region=region)
     tile_geobox = grid.tile_geobox(tile_id_tuple)
-    tile_footprint_wgs84 = gpd.GeoDataFrame(geometry=[tile_geobox.extent.geom], crs=tile_geobox.crs).to_crs(WGS84)
-    tile_crosses_am = isinstance(bbox_across_180(tile_footprint_wgs84), tuple)
+    tile_crosses_am = isinstance(bbox_across_180(tile_geobox), tuple)
     if tile_crosses_am:
         logger.info("AM-crossing tile — skipping country clip to tile footprint")
     else:
         country_wgs84_buffered = gpd.GeoDataFrame(
-            geometry=country_wgs84_buffered.intersection(tile_footprint_wgs84.union_all()),
+            geometry=country_wgs84_buffered.intersection(tile_geobox.footprint(WGS84).geom),
             crs=WGS84,
         )
         # Drop parts of the country outside the tile. Intersection gives empty (never missing) geometries.

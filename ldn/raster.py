@@ -20,7 +20,7 @@ from dep_tools.utils import bbox_across_180, join_path_or_url, search_across_180
 from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from geopandas import GeoDataFrame
 from odc.geo.crs import CRS
-from odc.geo.geobox import GeoBox
+from odc.geo.geobox import GeoBox, bounding_box_in_pixel_domain
 from odc.geo.xr import assign_crs, xr_coords
 from odc.stac import load as stac_load
 from planetary_computer import sign_url
@@ -201,6 +201,8 @@ GEOMAD_BANDS = [
 # Copernicus DEM collection on MS PC.
 DEM_CATALOG = "https://planetarycomputer.microsoft.com/api/stac/v1/"
 DEM_COLLECTION = "cop-dem-glo-30"
+# WGS84 with its prime meridian at 180, so a grid across the antimeridian is continuous.
+PM180_CRS = "+proj=longlat +datum=WGS84 +pm=180"
 
 
 def load_across_antimeridian(items: ItemCollection, geobox: GeoBox, resampling: str) -> xr.Dataset:
@@ -262,8 +264,7 @@ def _load_halves(items: ItemCollection, geobox: GeoBox, resampling: str) -> tupl
     Raises:
         LdnError: If either side of the antimeridian has no items.
     """
-    footprint_wgs84 = GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(WGS84)
-    sides = [box(*bbox) for bbox in bbox_across_180(footprint_wgs84)]
+    sides = [box(*bbox) for bbox in bbox_across_180(geobox)]
     # Each side loads the items whose footprint intersects it. An EPSG:4326 item's footprint can't cross ±180, so it
     # can't intersect both sides.
     east_items, west_items = ([item for item in items if shape(item.geometry).intersects(side)] for side in sides)
@@ -300,21 +301,21 @@ def _merge_geographic_halves(east: xr.Dataset, west: xr.Dataset) -> xr.Dataset:
 
     Returns:
         Merged dataset with x (longitude relative to 180) and y (latitude) dimensions and a +pm=180 CRS.
+
+    Raises:
+        ValueError: If the halves aren't on the same pixel grid or have different rows.
     """
-    east_box, west_box = east.odc.geobox, west.odc.geobox
-    # East columns before the west half's first column (at -180, so 180 relative to the east half). Both halves are on
-    # the source's global pixel grid, so this is a whole number up to float error (e.g. 118.00000000006).
-    offset = (west_box.affine.c + 360 - east_box.affine.c) / west_box.resolution.x
-    columns = round(offset)
-    if abs(offset - columns) > 1e-6:
-        raise LdnError(f"The halves aren't on the same pixel grid: the west half starts {offset} east columns in")
-    merged_box = GeoBox(
-        (west_box.height, columns + west_box.width),
-        Affine.translation(180, 0) * west_box.translate_pix(-columns, 0).affine,
-        "+proj=longlat +datum=WGS84 +pm=180",
+    # Shift each half's grid to longitudes relative to 180. Only the affine changes, so no pixels move.
+    east_box, west_box = (
+        GeoBox(half.odc.geobox.shape, Affine.translation(shift, 0) * half.odc.geobox.affine, PM180_CRS)
+        for half, shift in ((east, -180), (west, 180))
     )
+    # East columns before the west half's first column, in whole pixels (rounded from e.g. 118.00000000006). Raises
+    # ValueError if the halves aren't on the same pixel grid.
+    west_start = bounding_box_in_pixel_domain(west_box, east_box).left
+    merged_box = GeoBox((east_box.height, west_start + west_box.width), east_box.affine, PM180_CRS)
     # join="override" raises if the halves have different numbers of rows.
-    merged = xr.concat([east.isel(longitude=slice(0, columns)), west], dim="longitude", join="override")
+    merged = xr.concat([east.isel(longitude=slice(0, west_start)), west], dim="longitude", join="override")
     return assign_crs(merged.assign_coords(xr_coords(merged_box)), merged_box.crs).rename(longitude="x", latitude="y")
 
 
@@ -359,15 +360,14 @@ def _load_dem_geographic(dem_items: ItemCollection, geobox: GeoBox) -> xr.DataAr
     """
     # 2 pixels of margin so gradients at the tile edge use real neighbours.
     area = geobox.pad(2)
-    area_wgs84 = GeoDataFrame(geometry=[area.extent.geom], crs=area.crs).to_crs(WGS84)
-    if isinstance(bbox_across_180(area_wgs84), tuple):
+    if isinstance(bbox_across_180(area), tuple):
         logger.info("Tile crosses the antimeridian, loading each side and joining them")
         dem = _merge_geographic_halves(*_load_halves(dem_items, area, "nearest"))
     else:
         dem = (
             stac_load(
                 dem_items,
-                geopolygon=area_wgs84,
+                geopolygon=area.footprint(WGS84),
                 patch_url=sign_url,
                 chunks={},  # Force lazy
             )
