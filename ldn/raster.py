@@ -435,27 +435,28 @@ def focal_features(data: xr.Dataset, names: list[str]) -> dict[str, xr.DataArray
     return features
 
 
-def crop_padding(data: xr.Dataset, pad: int) -> xr.Dataset:
-    """Remove pad pixels from each side, e.g. to go from a padded geobox back to the tile.
+def crop_to_geobox(data: xr.Dataset, geobox: GeoBox) -> xr.Dataset:
+    """Crop data to a geobox on its pixel grid, e.g. from a padded geobox back to the tile.
 
     Args:
-        data: Dataset with x and y dimensions.
-        pad: Pixels to remove from each side.
+        data: Dataset on a geobox containing geobox.
+        geobox: Geobox to crop to.
 
     Returns:
-        The cropped dataset.
+        The cropped dataset, a view without copying data.
+
+    Raises:
+        ValueError: If geobox isn't on the data's pixel grid.
     """
-    if pad == 0:
-        return data
-    # Slicing returns a view, without copying data.
-    return data.isel(x=slice(pad, -pad), y=slice(pad, -pad))
+    y, x = data.odc.geobox.overlap_roi(geobox)
+    return data.isel(y=y, x=x)
 
 
 def make_features(geomad: xr.Dataset, features: list[str]) -> xr.Dataset:
     """Build the model features from a GeoMAD dataset: scaled bands, spectral indices, DEM terrain and focal statistics.
 
     Used for both training data and prediction, so the model always sees features computed the same way. Load the
-    GeoMAD padded by FOCAL_PAD pixels so focal statistics are complete at tile edges, then crop_padding the result.
+    GeoMAD padded by FOCAL_PAD pixels so focal statistics are complete at tile edges, then crop_to_geobox the result.
 
     Args:
         geomad: Raw GeoMAD dataset for one tile and year (a single time step).

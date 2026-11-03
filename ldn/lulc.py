@@ -31,7 +31,7 @@ from ldn.raster import (
     GEOMAD_BANDS,
     AwsStacTask,
     build_pipeline_components,
-    crop_padding,
+    crop_to_geobox,
     make_features,
     stac_providers,
 )
@@ -268,12 +268,14 @@ class LulcProcessor(Processor):
         probability_threshold: float,
         nodata_value: int,
         year: str,
+        geobox: GeoBox,
         **kwargs,
     ):
         """Create a LULC prediction/classification processor.
 
         Args:
             model: Fitted scikit-learn RandomForestClassifier.
+            geobox: Tile geobox (unpadded) the output is cropped to.
             nodata_value: Integer nodata value for output bands.
             probability_threshold: Probability threshold for classification.
             logger: Logger instance.
@@ -284,6 +286,7 @@ class LulcProcessor(Processor):
         self._nodata_value = nodata_value
         self._logger = logger
         self._year = year
+        self._geobox = geobox
 
     def process(self, input_data: xr.Dataset) -> xr.Dataset:
         """Build features (scaled GeoMAD, indices, DEM terrain) and predict/classify LULC.
@@ -297,7 +300,7 @@ class LulcProcessor(Processor):
         """
         self._logger.info("Building features: scaling GeoMAD, computing indices, loading DEM terrain, focal statistics")
         # Only the focal statistics the model uses are computed. Crop back to the tile once they're complete.
-        merged = crop_padding(make_features(input_data, list(self._model.feature_names_in_)), FOCAL_PAD)
+        merged = crop_to_geobox(make_features(input_data, list(self._model.feature_names_in_)), self._geobox)
 
         self._logger.info("Running LULC prediction")
         classification, probabilities = do_prediction(
@@ -530,6 +533,7 @@ def run_classify_task(
         logger=logger,
         probability_threshold=probability_threshold,
         year=year,
+        geobox=geobox,
     )
 
     try:

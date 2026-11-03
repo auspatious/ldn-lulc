@@ -34,7 +34,7 @@ from ldn.aws import s3_client
 from ldn.grids import get_gadm, get_gridspec
 from ldn.lulc import GeomadSearcher
 from ldn.random_sampling import random_sampling
-from ldn.raster import FOCAL_FEATURES, FOCAL_PAD, crop_padding, load_across_antimeridian, make_features
+from ldn.raster import FOCAL_FEATURES, FOCAL_PAD, crop_to_geobox, load_across_antimeridian, make_features
 from ldn.typology import cci_lc_map, io_map, world_cover_map
 from ldn.utils import (
     CLASS_ATTR,
@@ -912,17 +912,18 @@ def search_and_load_geomad_indices_dem(
 
     # The tile geobox is the GeoMAD items' native grid, so this loads with no reprojection. Padded so focal
     # statistics are complete at tile edges, the same as prediction.
+    tile_geobox = get_gridspec(region=region).tile_geobox(parse_tile_id(tile_id))
     geomad_ds = stac_load(
         geomad_items,
         chunks={},  # Force lazy.
         bands=bands,
         fail_on_error=True,  # We control the data so it shouldn't fail.
-        geobox=get_gridspec(region=region).tile_geobox(parse_tile_id(tile_id)).pad(FOCAL_PAD),
+        geobox=tile_geobox.pad(FOCAL_PAD),
     ).squeeze()
     logger.info(f"GeoMAD shape (padded): {dict(geomad_ds.sizes)}")
 
     # All candidate focal statistics, so model training can choose which to keep.
-    merged = crop_padding(make_features(geomad_ds, FOCAL_FEATURES), FOCAL_PAD)
+    merged = crop_to_geobox(make_features(geomad_ds, FOCAL_FEATURES), tile_geobox)
     logger.info(f"Merged GeoMAD+DEM shape: {dict(merged.sizes)}")
 
     # Clip to intersection of tile extent and buffered country

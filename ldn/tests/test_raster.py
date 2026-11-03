@@ -27,7 +27,7 @@ from ldn.raster import (
     add_processing_extension,
     build_pipeline_components,
     calculate_indices,
-    crop_padding,
+    crop_to_geobox,
     focal_features,
     installed_version,
     load_across_antimeridian,
@@ -797,9 +797,17 @@ def test_focal_pad_covers_every_window():
     assert all(int(name.rsplit("_", 1)[1]) // 2 <= FOCAL_PAD for name in FOCAL_FEATURES)
 
 
-def test_crop_padding_removes_pad_from_each_side():
-    data = xr.Dataset({"a": (("y", "x"), np.zeros((10, 12)))}, coords={"x": np.arange(12), "y": np.arange(10)})
-    cropped = crop_padding(data, 2)
-    assert cropped["a"].shape == (6, 8)
-    assert cropped.x.values[0] == 2 and cropped.y.values[-1] == 7
-    assert crop_padding(data, 0) is data
+def test_crop_to_geobox_undoes_padding():
+    """Data on a padded geobox crops back to exactly the unpadded geobox."""
+    geobox = _non_am_geobox()
+    data = xr_zeros(geobox.pad(FOCAL_PAD), dtype="float32").to_dataset(name="a")
+    assert crop_to_geobox(data, geobox).odc.geobox == geobox
+    assert crop_to_geobox(data, geobox.pad(FOCAL_PAD))["a"].shape == data["a"].shape
+
+
+def test_crop_to_geobox_raises_for_another_pixel_grid():
+    """A geobox half a pixel off the data's grid can't be cropped to."""
+    geobox = _non_am_geobox()
+    data = xr_zeros(geobox.pad(2), dtype="float32").to_dataset(name="a")
+    with pytest.raises(ValueError, match="Incompatible grids"):
+        crop_to_geobox(data, geobox.translate_pix(0.5, 0))
