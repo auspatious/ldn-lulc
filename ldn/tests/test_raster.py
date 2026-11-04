@@ -1,4 +1,5 @@
 import tomllib
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from importlib.metadata import version
 from pathlib import Path
@@ -14,8 +15,11 @@ from planetary_computer import sign_url
 from pyproj import Geod, Transformer
 from pystac import Item
 from pystac.extensions.projection import ProjectionExtension
+from scipy.ndimage import generic_filter
 
 from ldn.raster import (
+    FOCAL_FEATURES,
+    FOCAL_PAD,
     PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
     _calculate_terrain_features,
@@ -23,6 +27,8 @@ from ldn.raster import (
     add_processing_extension,
     build_pipeline_components,
     calculate_indices,
+    crop_to_geobox,
+    focal_features,
     installed_version,
     load_across_antimeridian,
     load_dem_terrain,
@@ -328,6 +334,13 @@ class TestComputeTerrain:
         assert np.all(result["slope"].values >= 0)
         sin_slope = np.sin(np.radians(result["slope"]))
         np.testing.assert_allclose(result["northness"] ** 2 + result["eastness"] ** 2, sin_slope**2, rtol=1e-4)
+
+    def test_outputs_are_float32(self):
+        """float32 like the other features, although the latitudes are float64."""
+        result = _calculate_terrain_features(_x_ramp_dem(lat=-18.0))
+        assert {name: str(result[name].dtype) for name in result.data_vars} == dict.fromkeys(
+            result.data_vars, "float32"
+        )
 
     def test_output_spatial_coordinates_match_input(self):
         dem = _x_ramp_dem()
@@ -737,3 +750,64 @@ def test_installed_version_appends_pinned_git_commit():
     sources = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())["tool"]["uv"]["sources"]
     for name in ["dep-tools", "datacube-compute"]:
         assert installed_version(name) == f"{version(name)}+{sources[name]['rev']}"
+
+
+# Focal statistics - compared against scipy's generic_filter with NaN-aware numpy functions, a slow but independent
+# calculation of the same windows (NaN outside the array, so edge windows only use in-bounds pixels).
+
+
+def _reference(values: np.ndarray, function: Callable, size: int) -> np.ndarray:
+    """Apply function to the size x size window around every pixel, ignoring pixels outside the array."""
+    return generic_filter(values, function, size=size, mode="constant", cval=np.nan)
+
+
+class TestFocalFeatures:
+    @pytest.fixture
+    def data(self) -> xr.Dataset:
+        rng = np.random.default_rng(0)
+        values = rng.uniform(0, 1, (9, 9)).astype(np.float32)
+        values[2, 3] = values[6, 6] = np.nan
+        return xr.Dataset({"ndvi": (("y", "x"), values)})
+
+    @pytest.mark.parametrize("size", [3, 7])
+    def test_mean_std_and_tpi_match_reference_ignoring_nan(self, data, size):
+        values = data["ndvi"].values.astype("float64")
+        names = [f"ndvi_mean_{size}", f"ndvi_std_{size}", f"ndvi_tpi_{size}"]
+        result = focal_features(data, names)
+        mean = _reference(values, np.nanmean, size)
+        np.testing.assert_allclose(result[names[0]].values, mean, rtol=1e-5)
+        np.testing.assert_allclose(result[names[1]].values, _reference(values, np.nanstd, size), rtol=1e-4, atol=1e-6)
+        np.testing.assert_allclose(result[names[2]].values, values - mean, rtol=1e-5, atol=1e-6)
+
+    def test_window_with_no_valid_pixels_is_nan(self):
+        values = np.ones((7, 7), dtype=np.float32)
+        values[:4, :4] = np.nan
+        result = focal_features(xr.Dataset({"ndvi": (("y", "x"), values)}), ["ndvi_mean_3"])
+        assert np.isnan(result["ndvi_mean_3"].values[1, 1])
+        assert result["ndvi_mean_3"].values[3, 3] == pytest.approx(1.0)
+
+    def test_outputs_are_float32_on_input_grid(self, data):
+        result = focal_features(data, ["ndvi_mean_7"])["ndvi_mean_7"]
+        assert result.dtype == np.float32
+        assert result.dims == data["ndvi"].dims and result.shape == data["ndvi"].shape
+
+
+def test_focal_pad_covers_every_window():
+    """Every feature's window fits in the padding, so tile edge pixels have complete windows."""
+    assert all(int(name.rsplit("_", 1)[1]) // 2 <= FOCAL_PAD for name in FOCAL_FEATURES)
+
+
+def test_crop_to_geobox_undoes_padding():
+    """Data on a padded geobox crops back to exactly the unpadded geobox."""
+    geobox = _non_am_geobox()
+    data = xr_zeros(geobox.pad(FOCAL_PAD), dtype="float32").to_dataset(name="a")
+    assert crop_to_geobox(data, geobox).odc.geobox == geobox
+    assert crop_to_geobox(data, geobox.pad(FOCAL_PAD))["a"].shape == data["a"].shape
+
+
+def test_crop_to_geobox_raises_for_another_pixel_grid():
+    """A geobox half a pixel off the data's grid can't be cropped to."""
+    geobox = _non_am_geobox()
+    data = xr_zeros(geobox.pad(2), dtype="float32").to_dataset(name="a")
+    with pytest.raises(ValueError, match="Incompatible grids"):
+        crop_to_geobox(data, geobox.translate_pix(0.5, 0))

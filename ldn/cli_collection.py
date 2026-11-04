@@ -16,7 +16,7 @@ from pystac import (
 from shapely import box, unary_union
 
 from ldn.aws import s3_client
-from ldn.raster import PROCESSING_EXTENSION, stac_providers, visualisation_link
+from ldn.raster import MAD_BANDS, PROCESSING_EXTENSION, REFLECTANCE_BANDS, stac_providers, visualisation_link
 from ldn.utils import (
     GEOMAD_VERSION,
     LULC_VERSION,
@@ -51,8 +51,7 @@ def _run_create_collection(
         Collection: A STAC Collection object.
     """
     if dataset == "geomad":
-        LS_BANDS = ["red", "green", "blue", "nir08", "swir16", "swir22"]
-        MAD_BANDS = [("emad", "Euclidean"), ("smad", "Spectral"), ("bcmad", "Bray-curtis")]
+        mad_names = {"emad": "Euclidean", "smad": "Spectral", "bcmad": "Bray-curtis"}
 
         collection_id = "dep_ls_geomad" if single_region else "ls_geomad"
         return Collection(
@@ -77,13 +76,13 @@ def _run_create_collection(
                             max=36_000,
                             nodata=0,
                         )
-                        for band in LS_BANDS
+                        for band in REFLECTANCE_BANDS
                     ]
                     + [
                         dict(
-                            name=band[0],
-                            common_name=f"{band[1]} MAD",
-                            description=f"{band[1]} median absolute deviations across all bands",
+                            name=band,
+                            common_name=f"{mad_names[band]} MAD",
+                            description=f"{mad_names[band]} median absolute deviations across all bands",
                             min=0,
                             max=36_000,
                             nodata=0,
