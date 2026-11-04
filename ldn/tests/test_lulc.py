@@ -116,6 +116,8 @@ class TestGapFill:
         assert filled["red"].values.tolist() == [[30, 21, 12, 0]]
         np.testing.assert_array_equal(filled["emad"].values, [[30, 21, 12, np.nan]])
         assert "time" not in filled.dims
+        # 2021 and 2022 weren't used.
+        assert source_years(gap_filled, 2020) == {2018, 2019, 2020}
 
     def test_year_after_gives_positive_offset(self):
         """Pixel 2's 2019 is unusable, so a valid 2021 (+1) wins over 2018 (-2)."""
@@ -149,17 +151,6 @@ class TestGapFill:
         filled, gap_filled = gap_fill(data, 2020, 2)
         assert gap_filled.values.tolist() == [[0, 0, 0, 0]]
         assert filled["red"].values.tolist() == [[1, 1, 1, 1]]
-
-    def test_source_years_are_the_year_and_the_years_filled_from(self):
-        """2019 and 2018 filled pixels, 2021 and 2022 weren't used."""
-        _, gap_filled = gap_fill(self._data(), 2020, 2)
-        assert source_years(gap_filled, 2020) == {2018, 2019, 2020}
-
-    def test_source_years_without_gaps_is_the_year(self):
-        data = self._data()
-        data["red"][2] = 1
-        data["emad"][2] = 1.0
-        _, gap_filled = gap_fill(data, 2020, 2)
         assert source_years(gap_filled, 2020) == {2020}
 
 

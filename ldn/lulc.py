@@ -270,13 +270,12 @@ def _valid_pixels(data: xr.Dataset) -> xr.DataArray:
     Returns:
         Boolean DataArray on the dataset's grid.
     """
-    masks = [
-        data[band].notnull()
-        if data[band].odc.nodata is None
-        else data[band].notnull() & (data[band] != data[band].odc.nodata)
-        for band in data.data_vars
-    ]
-    return xr.concat(masks, dim="band").all("band")
+    valid = True
+    for band in data.data_vars:
+        valid = valid & data[band].notnull()
+        if data[band].odc.nodata is not None:
+            valid = valid & (data[band] != data[band].odc.nodata)
+    return valid
 
 
 # Nodata for the gap_filled band, which holds the signed year offset (source year - year) where a pixel was filled.
