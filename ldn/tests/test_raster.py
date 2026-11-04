@@ -22,18 +22,18 @@ from ldn.raster import (
     FOCAL_PAD,
     PROCESSING_EXTENSION,
     PrefixedS3ItemPath,
+    _add_processing_extension,
+    _calculate_indices,
     _calculate_terrain_features,
+    _focal_features,
+    _installed_version,
+    _load_dem_terrain,
     _merge_geographic_halves,
-    add_processing_extension,
+    _safe_divide,
+    _scale_offset_landsat,
     build_pipeline_components,
-    calculate_indices,
     crop_to_geobox,
-    focal_features,
-    installed_version,
     load_across_antimeridian,
-    load_dem_terrain,
-    safe_divide,
-    scale_offset_landsat,
     stac_providers,
 )
 from ldn.utils import LdnError
@@ -47,7 +47,7 @@ def _band_dataset(**bands: np.ndarray) -> xr.Dataset:
 
 
 def _spectral_dataset(nir=0.8, red=0.2, green=0.4, blue=0.1, swir16=0.5, swir22=0.3) -> xr.Dataset:
-    """1x1 float Dataset with all bands required by calculate_indices."""
+    """1x1 float Dataset with all bands required by _calculate_indices."""
     return xr.Dataset(
         {
             "nir08": xr.DataArray([[nir]]),
@@ -113,55 +113,55 @@ class TestScaleOffsetLandsat:
     def test_valid_pixel_applies_usgs_formula(self):
         raw = 10_000
         ds = _band_dataset(red=np.array([[raw]]))
-        result = scale_offset_landsat(ds)
+        result = _scale_offset_landsat(ds)
         expected = float(np.clip(raw * SCALE + OFFSET, 0, 1))
         assert result["red"].item() == pytest.approx(expected)
 
     def test_declared_nodata_becomes_nan(self):
         ds = _band_dataset(red=np.array([[0]]))
-        assert np.isnan(scale_offset_landsat(ds)["red"].item())
+        assert np.isnan(_scale_offset_landsat(ds)["red"].item())
 
     def test_missing_nodata_raises(self):
         ds = xr.Dataset({"red": (("y", "x"), np.array([[0]], dtype=np.uint16))})
         with pytest.raises(LdnError, match="no declared nodata"):
-            scale_offset_landsat(ds)
+            _scale_offset_landsat(ds)
 
     def test_low_raw_value_clips_to_zero(self):
         # 1 * 0.0000275 − 0.2 = −0.19997…  → clipped to 0
         ds = _band_dataset(red=np.array([[1]]))
-        assert scale_offset_landsat(ds)["red"].item() == pytest.approx(0.0)
+        assert _scale_offset_landsat(ds)["red"].item() == pytest.approx(0.0)
 
     def test_high_raw_value_clips_to_one(self):
         # 50 000 * 0.0000275 − 0.2 = 1.175  → clipped to 1
         ds = _band_dataset(red=np.array([[50_000]]))
-        assert scale_offset_landsat(ds)["red"].item() == pytest.approx(1.0)
+        assert _scale_offset_landsat(ds)["red"].item() == pytest.approx(1.0)
 
     def test_output_dtype_is_float32(self):
         ds = _band_dataset(red=np.array([[10_000]]))
-        assert scale_offset_landsat(ds)["red"].dtype == np.float32
+        assert _scale_offset_landsat(ds)["red"].dtype == np.float32
 
     @pytest.mark.parametrize("passthrough_band", ["count", "emad", "smad", "bcmad"])
     def test_non_spectral_bands_pass_through_unmodified(self, passthrough_band):
         ds = _band_dataset(red=np.array([[10_000]]), **{passthrough_band: np.array([[42]])})
-        result = scale_offset_landsat(ds)
+        result = _scale_offset_landsat(ds)
         assert result[passthrough_band].item() == 42
         assert result[passthrough_band].dtype == np.uint16
 
     def test_multiple_spectral_bands_scaled_independently(self):
         ds = _band_dataset(red=np.array([[10_000]]), nir08=np.array([[20_000]]))
-        result = scale_offset_landsat(ds)
+        result = _scale_offset_landsat(ds)
         assert result["red"].item() == pytest.approx(float(np.clip(10_000 * SCALE + OFFSET, 0, 1)))
         assert result["nir08"].item() == pytest.approx(float(np.clip(20_000 * SCALE + OFFSET, 0, 1)))
 
     def test_nodata_and_valid_coexist_in_same_band(self):
         ds = _band_dataset(red=np.array([[0, 10_000]]))
-        red = scale_offset_landsat(ds)["red"].values[0]
+        red = _scale_offset_landsat(ds)["red"].values[0]
         assert np.isnan(red[0])
         assert red[1] == pytest.approx(float(np.clip(10_000 * SCALE + OFFSET, 0, 1)))
 
     def test_mutates_and_returns_same_dataset_object(self):
         ds = _band_dataset(red=np.array([[10_000]]))
-        assert scale_offset_landsat(ds) is ds
+        assert _scale_offset_landsat(ds) is ds
 
 
 # Spectral indices  - pure arithmetic, zero mocks
@@ -190,7 +190,7 @@ def spectral_ds():
 )
 def test_safe_divide(num, den, expected):
     """NaN if the denominator is 0 or either input is NaN, otherwise the quotient."""
-    result = safe_divide(xr.DataArray(np.float32(num)), xr.DataArray(np.float32(den)))
+    result = _safe_divide(xr.DataArray(np.float32(num)), xr.DataArray(np.float32(den)))
     np.testing.assert_equal(result.item(), expected)
     assert result.dtype == np.float32
 
@@ -203,66 +203,66 @@ class TestCalculateIndices:
 
     def test_ndvi(self, spectral_ds):
         expected = (_NIR - _RED) / (_NIR + _RED)
-        assert calculate_indices(spectral_ds)["ndvi"].item() == pytest.approx(expected)
+        assert _calculate_indices(spectral_ds)["ndvi"].item() == pytest.approx(expected)
 
     def test_ndwi(self, spectral_ds):
         expected = (_GREEN - _NIR) / (_GREEN + _NIR)
-        assert calculate_indices(spectral_ds)["ndwi"].item() == pytest.approx(expected)
+        assert _calculate_indices(spectral_ds)["ndwi"].item() == pytest.approx(expected)
 
     def test_mndwi(self, spectral_ds):
         expected = (_GREEN - _SWIR1) / (_GREEN + _SWIR1)
-        assert calculate_indices(spectral_ds)["mndwi"].item() == pytest.approx(expected)
+        assert _calculate_indices(spectral_ds)["mndwi"].item() == pytest.approx(expected)
 
     def test_ndti(self, spectral_ds):
         expected = (_RED - _GREEN) / (_RED + _GREEN)
-        assert calculate_indices(spectral_ds)["ndti"].item() == pytest.approx(expected)
+        assert _calculate_indices(spectral_ds)["ndti"].item() == pytest.approx(expected)
 
     def test_bsi(self, spectral_ds):
         num = (_SWIR1 + _RED) - (_NIR + _BLUE)
         den = (_SWIR1 + _RED) + (_NIR + _BLUE)
-        assert calculate_indices(spectral_ds)["bsi"].item() == pytest.approx(num / den)
+        assert _calculate_indices(spectral_ds)["bsi"].item() == pytest.approx(num / den)
 
     def test_mbi(self, spectral_ds):
         expected = (_SWIR1 - _SWIR2 - _NIR) / (_SWIR1 + _SWIR2 + _NIR) + 0.5
-        assert calculate_indices(spectral_ds)["mbi"].item() == pytest.approx(expected)
+        assert _calculate_indices(spectral_ds)["mbi"].item() == pytest.approx(expected)
 
     def test_baei(self, spectral_ds):
         expected = (_RED + 0.3) / (_GREEN + _SWIR1)
-        assert calculate_indices(spectral_ds)["baei"].item() == pytest.approx(expected)
+        assert _calculate_indices(spectral_ds)["baei"].item() == pytest.approx(expected)
 
     def test_bui_is_ndbi_minus_ndvi(self, spectral_ds):
         ndbi = (_SWIR1 - _NIR) / (_SWIR1 + _NIR)
         ndvi = (_NIR - _RED) / (_NIR + _RED)
-        assert calculate_indices(spectral_ds)["bui"].item() == pytest.approx(ndbi - ndvi)
+        assert _calculate_indices(spectral_ds)["bui"].item() == pytest.approx(ndbi - ndvi)
 
     def test_ndbi_is_intermediate_only_not_stored(self, spectral_ds):
-        assert "ndbi" not in calculate_indices(spectral_ds)
+        assert "ndbi" not in _calculate_indices(spectral_ds)
 
     def test_adds_indices_and_keeps_original_bands(self, spectral_ds):
         indices = {"ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"}
         bands = {"nir08", "red", "green", "blue", "swir16", "swir22"}
-        assert indices | bands <= set(calculate_indices(spectral_ds).data_vars)
+        assert indices | bands <= set(_calculate_indices(spectral_ds).data_vars)
 
     @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"])
     def test_all_zero_inputs_yield_nan(self, index):
         ds = _spectral_dataset(nir=0.0, red=0.0, green=0.0, blue=0.0, swir16=0.0, swir22=0.0)
-        assert np.isnan(calculate_indices(ds)[index].item())
+        assert np.isnan(_calculate_indices(ds)[index].item())
 
     def test_baei_zero_denominator_is_nan_not_inf(self):
         ds = _spectral_dataset(green=0.0, swir16=0.0)
-        assert np.isnan(calculate_indices(ds)["baei"].item())
+        assert np.isnan(_calculate_indices(ds)["baei"].item())
 
     def test_mutates_and_returns_same_dataset_object(self, spectral_ds):
-        assert calculate_indices(spectral_ds) is spectral_ds
+        assert _calculate_indices(spectral_ds) is spectral_ds
 
     @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi", "ndti", "bsi"])
     def test_normalised_differences_in_range(self, spectral_ds, index):
-        assert -1.0 <= calculate_indices(spectral_ds)[index].item() <= 1.0
+        assert -1.0 <= _calculate_indices(spectral_ds)[index].item() <= 1.0
 
     @pytest.mark.parametrize("index", ["ndvi", "ndwi", "bsi", "mbi", "bui"])
     def test_nan_nir_propagates(self, index):
         ds = _spectral_dataset(nir=np.nan)
-        assert np.isnan(calculate_indices(ds)[index].item())
+        assert np.isnan(_calculate_indices(ds)[index].item())
 
 
 # Terrain derivation
@@ -448,7 +448,7 @@ def test_load_across_antimeridian_has_no_gap_where_both_halves_have_a_180_column
     np.testing.assert_array_equal(result["data"].values, 100.0)
 
 
-# load_dem_terrain guards
+# _load_dem_terrain guards
 #
 
 _MOD = "ldn.raster"
@@ -470,13 +470,13 @@ class TestLoadDemTerrainGuards:
     def test_raises_when_zero_items_found(self, mock_stac_client):
         with patch(f"{_MOD}.search_across_180", return_value=[]):
             with pytest.raises(LdnError, match="No DEM items found"):
-                load_dem_terrain(MagicMock())
+                _load_dem_terrain(MagicMock())
 
     @pytest.mark.parametrize("n", [10, 11, 100])
     def test_raises_when_ten_or_more_items_found(self, mock_stac_client, n):
         with patch(f"{_MOD}.search_across_180", return_value=_stac_items(n)):
             with pytest.raises(LdnError, match="Too many DEM items"):
-                load_dem_terrain(MagicMock())
+                _load_dem_terrain(MagicMock())
 
 
 def _non_am_geobox() -> GeoBox:
@@ -492,18 +492,18 @@ def _wgs84_dem(bbox: tuple[float, float, float, float], elevation: float) -> xr.
 
 
 class TestLoadDemTerrain:
-    """load_dem_terrain on real geoboxes with a constant DEM. Only the STAC search and stac_load (network) are mocked,
+    """_load_dem_terrain on real geoboxes with a constant DEM. Only the STAC search and stac_load (network) are mocked,
     so the native grid load, the antimeridian join, terrain and reprojection run for real."""
 
     @staticmethod
     def _run(geobox: GeoBox, items: list, dems: list[xr.Dataset]) -> tuple[xr.Dataset, MagicMock]:
-        """Run load_dem_terrain with stac_load returning dems in turn."""
+        """Run _load_dem_terrain with stac_load returning dems in turn."""
         with (
             patch(f"{_MOD}.PyStacClient.open"),
             patch(f"{_MOD}.search_across_180", return_value=items),
             patch(f"{_MOD}.stac_load", side_effect=dems) as stac_load,
         ):
-            return load_dem_terrain(geobox), stac_load
+            return _load_dem_terrain(geobox), stac_load
 
     @staticmethod
     def _assert_flat_terrain_on(result: xr.Dataset, geobox: GeoBox):
@@ -730,11 +730,11 @@ def test_build_pipeline_components_proceeds_when_exists_and_overwrite(mock_aws):
 def test_add_processing_extension():
     item = Item(id="t", geometry=None, bbox=None, datetime=datetime(2020, 1, 1), properties={})
     providers = stac_providers("lulc", source_coop=False)
-    add_processing_extension(item, ["ldn", "pystac"], providers)
-    add_processing_extension(item, ["ldn", "pystac"], providers)  # Idempotent extension list.
+    _add_processing_extension(item, ["ldn", "pystac"], providers)
+    _add_processing_extension(item, ["ldn", "pystac"], providers)  # Idempotent extension list.
     assert item.stac_extensions.count(PROCESSING_EXTENSION) == 1
     assert set(item.properties["processing:software"]) == {"ldn", "pystac"}
-    assert item.properties["processing:version"] == installed_version("ldn")
+    assert item.properties["processing:version"] == _installed_version("ldn")
     # RFC 3339 in UTC, as the extension requires.
     processed = datetime.fromisoformat(item.properties["processing:datetime"])
     assert item.properties["processing:datetime"].endswith("Z") and processed.utcoffset() == timedelta(0)
@@ -746,10 +746,10 @@ def test_add_processing_extension():
 
 def test_installed_version_appends_pinned_git_commit():
     """Git dependencies report the commit pinned in pyproject.toml, so STAC processing:software records it."""
-    assert installed_version("numpy") == np.__version__
+    assert _installed_version("numpy") == np.__version__
     sources = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())["tool"]["uv"]["sources"]
     for name in ["dep-tools", "datacube-compute"]:
-        assert installed_version(name) == f"{version(name)}+{sources[name]['rev']}"
+        assert _installed_version(name) == f"{version(name)}+{sources[name]['rev']}"
 
 
 # Focal statistics - compared against scipy's generic_filter with NaN-aware numpy functions, a slow but independent
@@ -773,7 +773,7 @@ class TestFocalFeatures:
     def test_mean_std_and_tpi_match_reference_ignoring_nan(self, data, size):
         values = data["ndvi"].values.astype("float64")
         names = [f"ndvi_mean_{size}", f"ndvi_std_{size}", f"ndvi_tpi_{size}"]
-        result = focal_features(data, names)
+        result = _focal_features(data, names)
         mean = _reference(values, np.nanmean, size)
         np.testing.assert_allclose(result[names[0]].values, mean, rtol=1e-5)
         np.testing.assert_allclose(result[names[1]].values, _reference(values, np.nanstd, size), rtol=1e-4, atol=1e-6)
@@ -782,12 +782,12 @@ class TestFocalFeatures:
     def test_window_with_no_valid_pixels_is_nan(self):
         values = np.ones((7, 7), dtype=np.float32)
         values[:4, :4] = np.nan
-        result = focal_features(xr.Dataset({"ndvi": (("y", "x"), values)}), ["ndvi_mean_3"])
+        result = _focal_features(xr.Dataset({"ndvi": (("y", "x"), values)}), ["ndvi_mean_3"])
         assert np.isnan(result["ndvi_mean_3"].values[1, 1])
         assert result["ndvi_mean_3"].values[3, 3] == pytest.approx(1.0)
 
     def test_outputs_are_float32_on_input_grid(self, data):
-        result = focal_features(data, ["ndvi_mean_7"])["ndvi_mean_7"]
+        result = _focal_features(data, ["ndvi_mean_7"])["ndvi_mean_7"]
         assert result.dtype == np.float32
         assert result.dims == data["ndvi"].dims and result.shape == data["ndvi"].shape
 
