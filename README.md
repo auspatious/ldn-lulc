@@ -61,8 +61,9 @@ Items record their provenance, so they describe themselves even without a collec
   `processing:software` (exact package versions, with the commit for git dependencies) and `processing:datetime` (UTC).
 - Providers: Digital Earth Pacific (processor, and host unless on Source Cooperative), Source Cooperative (host),
   Auspatious (processor, with `processing:facility`, level and lineage), USGS and NASA.
-- Links: `derived_from` to the input items (Landsat scenes for GeoMAD, the GeoMAD item for LULC), the LULC model, and
-  the [visualisation](https://auspatious.github.io/ldn-lulc).
+- Links: `derived_from` to the input items used (Landsat scenes for GeoMAD; for LULC, the GeoMAD items of the tile
+  and its neighbours from the year and any years used for gap filling), the LULC model, and the
+  [visualisation](https://auspatious.github.io/ldn-lulc).
 - LULC only: the [classification extension](https://github.com/stac-extensions/classification) describes each class
   (value, name, title, colour, nodata) on the `classification` asset, and each `probability_{class value}` asset is
   titled with its class.

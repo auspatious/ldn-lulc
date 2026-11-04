@@ -78,6 +78,13 @@ def run(
             " e.g for a STAC API like 'https://stac.digitalearthpacific.org/collections'"
         ),
     ] = None,
+    gap_fill_years: Annotated[
+        int,
+        typer.Option(
+            help="Fill nodata pixels from the nearest year with data, up to this many years either side. "
+            "The year before wins a tie with the year after. 0 disables."
+        ),
+    ] = 2,
 ) -> None:
     if int(year) < 2000 or int(year) > 2025:
         raise LdnError("Year must be between 2000 and 2025.")
@@ -107,4 +114,5 @@ def run(
         threads_per_worker=threads_per_worker,
         sensor=sensor,
         collection_url_root=collection_url_root,
+        gap_fill_years=gap_fill_years,
     )

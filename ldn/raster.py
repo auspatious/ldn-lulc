@@ -435,15 +435,15 @@ def focal_features(data: xr.Dataset, names: list[str]) -> dict[str, xr.DataArray
     return features
 
 
-def crop_to_geobox(data: xr.Dataset, geobox: GeoBox) -> xr.Dataset:
+def crop_to_geobox(data: xr.Dataset | xr.DataArray, geobox: GeoBox) -> xr.Dataset | xr.DataArray:
     """Crop data to a geobox on its pixel grid, e.g. from a padded geobox back to the tile.
 
     Args:
-        data: Dataset on a geobox containing geobox.
+        data: Dataset or DataArray on a geobox containing geobox.
         geobox: Geobox to crop to.
 
     Returns:
-        The cropped dataset, a view without copying data.
+        The cropped data, a view without copying data.
 
     Raises:
         ValueError: If geobox isn't on the data's pixel grid.
@@ -721,6 +721,7 @@ class AwsStacTask(AreaTask):
         providers: list[Provider],
         post_processor: Processor | None = None,
         update_item: Callable[[Item], None] | None = None,
+        used_items: Callable[[ItemCollection], list[Item]] | None = None,
         logger: logging.Logger = logger,
         **kwargs,
     ):
@@ -735,13 +736,13 @@ class AwsStacTask(AreaTask):
         self.processing_software = processing_software
         self.providers = providers
         self.update_item = update_item
+        self.used_items = used_items
         self.stac_creator = stac_creator
         self.stac_writer = stac_writer
 
     def run(self):
         items = self.searcher.search(self.area)
         logger.info(f"Found {len(items)} items for this tile/year")
-        input_hrefs = [href for item in items if (href := item.get_self_href())]
         input_data = self.loader.load(items, self.area)
         logger.info(f"Loaded {len(input_data.time.values)} items for this tile/year")
 
@@ -759,7 +760,10 @@ class AwsStacTask(AreaTask):
             stac_item.geometry = _antimeridian_safe_geometry(self.area, stac_item.geometry)
             add_processing_extension(stac_item, self.processing_software, self.providers)
             stac_item.add_link(visualisation_link())
-            # Link to the input items (Landsat scenes for GeoMAD, the GeoMAD item for LULC).
+            # Link to the input items used (Landsat scenes for GeoMAD, GeoMAD items for LULC). Called after processing,
+            # because only the processor knows which items it used.
+            used = items if self.used_items is None else self.used_items(items)
+            input_hrefs = [href for item in used if (href := item.get_self_href())]
             stac_item.add_links(
                 [Link(rel="derived_from", target=href, media_type="application/geo+json") for href in input_hrefs]
             )
