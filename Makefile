@@ -163,6 +163,9 @@ test-data-generate:
 	$(call generate_samples,$(TEST_TILES),test,2020)
 
 
+# TODO: Should there also be test data for other years besides 2020?
+
+
 ###### LULC Classification
 
 print-tasks-lulc-2000-non-pacific:
