@@ -3,6 +3,7 @@ import logging
 
 import geopandas as gpd
 import numpy as np
+import odc.geo.xr  # noqa: F401  Registers the .odc accessor.
 import pandas as pd
 from xarray import DataArray
 
@@ -222,13 +223,8 @@ def random_sampling(
     y = [i[0] for i in list(all_samples.index)]
     x = [i[1] for i in list(all_samples.index)]
 
-    # Get CRS from the DataArray
-    if hasattr(da, "rio") and da.rio.crs is not None:
-        crs = da.rio.crs
-    elif hasattr(da, "spatial_ref"):
-        crs = da.spatial_ref
-    else:
-        crs = da.attrs.get("crs", None)
+    # CRS of the DataArray, None if it has none.
+    crs = da.odc.crs
 
     # Create geopandas dataframe and ensure output is in WGS84.
     gdf = gpd.GeoDataFrame(all_samples, crs=crs, geometry=gpd.points_from_xy(x, y)).reset_index()

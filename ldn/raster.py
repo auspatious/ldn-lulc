@@ -6,8 +6,8 @@ from importlib.metadata import distribution
 from typing import Literal
 
 import numpy as np
-import rioxarray  # noqa: F401  Registers the .rio accessor.
 import xarray as xr
+from affine import Affine
 from antimeridian import fix_shape
 from dep_tools.aws import BaseClient, object_exists
 from dep_tools.loaders import StacLoader
@@ -19,15 +19,16 @@ from dep_tools.task import AreaTask
 from dep_tools.utils import bbox_across_180, join_path_or_url, search_across_180
 from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from geopandas import GeoDataFrame
-from odc.geo.geobox import GeoBox
+from odc.geo.crs import CRS
+from odc.geo.geobox import GeoBox, bounding_box_in_pixel_domain
+from odc.geo.xr import assign_crs, xr_coords
 from odc.stac import load as stac_load
 from planetary_computer import sign_url
 from pystac import Item, ItemCollection, Link, Provider, ProviderRole
+from pystac.extensions.projection import ProjectionExtension
 from pystac.utils import datetime_to_str
 from pystac_client import Client as PyStacClient
-from rasterio.enums import Resampling
-from scipy.ndimage import sobel
-from shapely.geometry import box
+from shapely.geometry import box, shape
 
 from ldn.utils import (
     WGS84,
@@ -145,38 +146,43 @@ def calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     return geomad
 
 
-def _compute_terrain(dem_da: xr.DataArray) -> xr.Dataset:
-    """Compute slope and aspect from an elevation DataArray.
+def _calculate_terrain_features(dem: xr.DataArray) -> xr.Dataset:
+    """Compute slope, northness and eastness from an elevation DataArray on a geographic (degree) grid.
 
-    Uses Sobel filters to estimate terrain gradients. The pixel
-    resolution is assumed to be in meters (projected CRS).
+    Gradients are computed with central differences (Zevenbergen & Thorne 1987) in degrees and converted to ground
+    metres with the radii of curvature of the DEM CRS's ellipsoid at each latitude: a degree of longitude shrinks
+    with cos(latitude) and a degree of latitude lengthens slightly towards the poles. Working on
+    the DEM's native grid avoids the scale distortion of the analysis CRSs and keeps aspect relative to true north.
+
+    Northness and eastness are the cosine and sine of aspect (the downslope bearing) weighted by sin(slope): 1 = steep
+    north/east-facing, -1 = steep south/west-facing, 0 on flat ground. Unlike raw aspect, they don't wrap from 359 to 0
+    degrees, and the weighting stops DEM noise on flat ground giving a full-strength aspect.
 
     Args:
-        dem_da: 2D elevation DataArray with x/y coordinates.
+        dem: 2D elevation DataArray with x (longitude) and y (latitude) coordinates in degrees and a geographic CRS.
 
     Returns:
-        Dataset with elevation, slope (degrees), and aspect (degrees).
+        Dataset with elevation, slope (degrees), northness and eastness on the same grid.
     """
-    dem_vals = dem_da.values.astype("float32")
-    res_m = abs(float(dem_da.x[1] - dem_da.x[0]))
-
-    dz_dx = sobel(dem_vals, axis=1) / (8 * res_m)
-    dz_dy = sobel(dem_vals, axis=0) / (8 * res_m)
-
-    slope = xr.DataArray(
-        np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))),
-        coords=dem_da.coords,
-        dims=dem_da.dims,
-        name="slope",
+    geod = dem.odc.crs.proj.get_geod()
+    lat = np.radians(dem.y)
+    w = 1 - geod.es * np.sin(lat) ** 2
+    # Prime vertical (east-west) and meridian (north-south) radii of curvature.
+    east_radius = geod.a / np.sqrt(w)
+    north_radius = geod.a * (1 - geod.es) / w**1.5
+    dz_dx = dem.differentiate("x") / (np.radians(1) * east_radius * np.cos(lat))
+    dz_dy = dem.differentiate("y") / (np.radians(1) * north_radius)
+    grad = np.hypot(dz_dx, dz_dy)
+    # Equals cos/sin(aspect) * sin(slope), without computing aspect.
+    hypotenuse = np.sqrt(1 + grad**2)
+    return xr.Dataset(
+        {
+            "elevation": dem,
+            "slope": np.degrees(np.arctan(grad)),
+            "northness": -dz_dy / hypotenuse,
+            "eastness": -dz_dx / hypotenuse,
+        }
     )
-    aspect = xr.DataArray(
-        (90 - np.degrees(np.arctan2(-dz_dy, dz_dx))) % 360,
-        coords=dem_da.coords,
-        dims=dem_da.dims,
-        name="aspect",
-    )
-
-    return xr.Dataset({"elevation": dem_da, "slope": slope, "aspect": aspect})
 
 
 # GeoMAD output bands that the LULC classification pipeline needs (excludes "count").
@@ -195,102 +201,135 @@ GEOMAD_BANDS = [
 # Copernicus DEM collection on MS PC.
 DEM_CATALOG = "https://planetarycomputer.microsoft.com/api/stac/v1/"
 DEM_COLLECTION = "cop-dem-glo-30"
+# WGS84 with its prime meridian at 180, so a grid across the antimeridian is continuous.
+PM180_CRS = "+proj=longlat +datum=WGS84 +pm=180"
 
 
-def _load_dem_am(
-    dem_items: ItemCollection,
-    geobox: GeoBox,
-    geobox_wgs84: GeoDataFrame,
-) -> xr.Dataset:
-    """Load DEM for a tile that crosses the antimeridian.
+def load_across_antimeridian(items: ItemCollection, geobox: GeoBox, resampling: str) -> xr.Dataset:
+    """Load STAC items onto a geobox that crosses the antimeridian, e.g. the DEM or LULC reference products.
 
-    This is needed to prevent a memory error due to loading a world-spanning DEM tile when the WGS84
-    footprint overlaps both sides of the AM.
-    Can't load straight to target geobox CRS. Must load to WGS84, shift longitudes,
-    concatenate, then reproject with +over.
+    Tiles that cross the antimeridian are on the Pacific grid (EPSG:3832). Sources in WGS84 (EPSG:4326) must be
+    reprojected to it, which odc-stac can't do across ±180. Measured with the DEM on tile 066_020 (Fiji):
+    - stac_load(geobox=) on the tile leaves ~24% of it empty: one side of the antimeridian is missing.
+    - Loading each side onto its own half of the tile geobox leaves a ~1.3 km empty strip at the antimeridian.
+    - A single WGS84 load spanning both sides covers almost the whole world, which runs out of memory.
 
-    Loads east and west halves separately in WGS84, shifts west
-    longitudes to >180, concatenates, and reprojects to the target
-    geobox using the PROJ "+over" flag.
+    So for geographic sources (EPSG:4326: Copernicus DEM GLO-30, ESA WorldCover and ESA CCI) this loads the east and
+    west halves separately in WGS84 (_load_halves) and joins them into one continuous grid in a WGS84 CRS with its
+    prime meridian at 180 (`+pm=180`, see _merge_geographic_halves), which odc.reproject handles normally. The usual
+    alternative, the PROJ "+over" flag (longitudes beyond ±180), isn't supported by odc.
 
-    The "+over" CRS flag tells PROJ to allow longitudes >180 instead
-    of wrapping them. This is required because:
-    - stac_load(geobox=) cannot reproject WGS84 data across the AM
-      into EPSG:3832 (PROJ maps -180 to the wrong side of the projection).
-    - odc.reproject does not support +over CRS (returns all NaN).
-    - rioxarray's rio.reproject wraps rasterio.warp.reproject, which
-      handles +over correctly.
+    Projected sources (Impact Observatory, in a UTM zone on each side, e.g. EPSG:32760 and EPSG:32601) don't wrap at
+    ±180, so they load onto the geobox directly.
 
-    Related open issues (no upstream fix as of 2025-04):
+    Related upstream issues (no fix as of 2026-11):
     - https://github.com/opendatacube/odc-stac/issues/165
     - https://github.com/opendatacube/odc-stac/issues/172
     - https://github.com/opendatacube/odc-geo/issues/208
 
     Args:
-        dem_items: STAC items from search_across_180.
-        geobox: Target geobox in the analysis CRS (e.g. EPSG:3832).
-        geobox_wgs84: Tile footprint as a WGS84 GeoDataFrame.
+        items: STAC items covering the geobox, e.g. from search_across_180.
+        geobox: Target geobox in the analysis CRS, crossing the antimeridian.
+        resampling: Resampling method, e.g. "bilinear" for continuous data like the DEM or "nearest" for classes like
+            the land cover products.
 
     Returns:
-        Dataset with a single "elevation" variable in the target CRS.
+        Dataset on the geobox.
+
+    Raises:
+        LdnError: If either side of the antimeridian has no items.
     """
-    east_bbox, west_bbox = bbox_across_180(geobox_wgs84)
-    east_gdf = GeoDataFrame(geometry=[box(*east_bbox)], crs=WGS84)
-    west_gdf = GeoDataFrame(geometry=[box(*west_bbox)], crs=WGS84)
+    # The items' native CRS decides the path. Loading items in a projected CRS straight onto the geobox works (their
+    # coordinates don't wrap), and splitting them would fail: Impact Observatory's UTM footprints span -180 to 180, so
+    # every item would intersect both sides.
+    # squeeze drops the time dimension: the items are one product for one year, so it has length 1.
+    if not all(CRS(ProjectionExtension.ext(item).crs_string).geographic for item in items):
+        return stac_load(items, geobox=geobox, chunks={}, resampling=resampling, patch_url=sign_url).squeeze(drop=True)
+    return _merge_geographic_halves(*_load_halves(items, geobox, resampling)).odc.reproject(
+        geobox, resampling=resampling
+    )
 
-    east_items = [i for i in dem_items if i.bbox[0] >= 0]
-    west_items = [i for i in dem_items if i.bbox[0] < 0]
 
-    halves = []
-    for items, gdf in [(east_items, east_gdf), (west_items, west_gdf)]:
-        if not items:
-            continue
-        ds = (
-            stac_load(
-                items,
-                geopolygon=gdf,
-                chunks={},  # Force lazy.
-                resampling="bilinear",
-                patch_url=sign_url,
-                fail_on_error=False,
-            ).squeeze(drop=True)  # Remove time. DEM does not need a time dimension.
-        )
-        halves.append(ds)
+def _load_halves(items: ItemCollection, geobox: GeoBox, resampling: str) -> tuple[xr.Dataset, xr.Dataset]:
+    """Load the east and west sides of a geobox that crosses the antimeridian in WGS84.
 
-    if len(halves) != 2:
+    Args:
+        items: EPSG:4326 STAC items covering the geobox.
+        geobox: Geobox crossing the antimeridian.
+        resampling: Resampling method, passed to stac_load.
+
+    Returns:
+        East and west datasets, without a time dimension.
+
+    Raises:
+        LdnError: If either side of the antimeridian has no items.
+    """
+    sides = [box(*bbox) for bbox in bbox_across_180(geobox)]
+    # Each side loads the items whose footprint intersects it. An EPSG:4326 item's footprint can't cross ±180, so it
+    # can't intersect both sides.
+    east_items, west_items = ([item for item in items if shape(item.geometry).intersects(side)] for side in sides)
+    if not east_items or not west_items:
         raise LdnError(
-            f"Expected to load 2 halves of the DEM but got {len(halves)}. Check if the tile geometry is "
-            f"correct and if the DEM items cover the area."
+            f"Expected to load 2 halves across the antimeridian but got {len(east_items)} east and "
+            f"{len(west_items)} west items. Check the tile geometry and item coverage."
         )
+    east, west = (
+        stac_load(
+            side_items,
+            geopolygon=GeoDataFrame(geometry=[side], crs=WGS84),
+            chunks={},  # Force lazy.
+            resampling=resampling,
+            patch_url=sign_url,
+        ).squeeze(drop=True)  # Remove time (length 1).
+        for side_items, side in zip([east_items, west_items], sides)
+    )
+    return east, west
 
-    # Shift west longitudes (-180..-179) to (180..181) so the
-    # two halves form a continuous longitude range.
-    halves[1] = halves[1].assign_coords(longitude=(halves[1].longitude % 360))
-    ds_combined = xr.concat(halves, dim="longitude").sortby("longitude")
 
-    # rio is required here because odc.reproject does not support +over.
-    ds_combined = ds_combined.rio.set_spatial_dims(x_dim="longitude", y_dim="latitude")
-    ds_combined = ds_combined.rio.write_crs("+proj=longlat +datum=WGS84 +over")
-    return ds_combined.rio.reproject(
-        str(geobox.crs),
-        shape=(geobox.height, geobox.width),
-        transform=geobox.transform,
-        resampling=Resampling.bilinear,
-    ).rename({"data": "elevation"})
+def _merge_geographic_halves(east: xr.Dataset, west: xr.Dataset) -> xr.Dataset:
+    """Join WGS84 halves either side of the antimeridian into one continuous grid.
+
+    Both halves are on the source's global pixel grid, so they're joined by pixel position: the east columns before
+    the west half's first column (at -180), then the west half. Coordinates come from one GeoBox with longitudes
+    relative to 180 (the east half, e.g. 179.9 to 180, becomes -0.1 to 0, and the west half, e.g. -180 to -179.9,
+    becomes 0 to 0.1), in a WGS84 CRS with its prime meridian at 180. Coordinates from the two loads can't be matched
+    by value: odc gives -179.99999999999997 for -180, which would leave a duplicate column.
+
+    Args:
+        east: East half, with latitude/longitude dimensions.
+        west: West half, with latitude/longitude dimensions and the same rows.
+
+    Returns:
+        Merged dataset with x (longitude relative to 180) and y (latitude) dimensions and a +pm=180 CRS.
+
+    Raises:
+        ValueError: If the halves aren't on the same pixel grid or have different rows.
+    """
+    # Shift each half's grid to longitudes relative to 180. Only the affine changes, so no pixels move.
+    east_box, west_box = (
+        GeoBox(half.odc.geobox.shape, Affine.translation(shift, 0) * half.odc.geobox.affine, PM180_CRS)
+        for half, shift in ((east, -180), (west, 180))
+    )
+    # East columns before the west half's first column, in whole pixels (rounded from e.g. 118.00000000006). Raises
+    # ValueError if the halves aren't on the same pixel grid.
+    west_start = bounding_box_in_pixel_domain(west_box, east_box).left
+    merged_box = GeoBox((east_box.height, west_start + west_box.width), east_box.affine, PM180_CRS)
+    # join="override" raises if the halves have different numbers of rows.
+    merged = xr.concat([east.isel(longitude=slice(0, west_start)), west], dim="longitude", join="override")
+    return assign_crs(merged.assign_coords(xr_coords(merged_box)), merged_box.crs).rename(longitude="x", latitude="y")
 
 
 def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
-    """Load Copernicus DEM and compute elevation, slope, and aspect.
+    """Load Copernicus DEM and compute elevation, slope, northness and eastness.
 
-    Loads COP-DEM-GLO-30 tiles from Planetary Computer, reprojects
-    to the target geobox, and derives terrain features using Sobel
-    filters. Handles antimeridian-crossing tiles via _load_dem_am.
+    Loads COP-DEM-GLO-30 from Planetary Computer on its native WGS84 grid (limited to the tile), computes terrain
+    there (see _calculate_terrain_features), then reprojects to the target geobox with nearest resampling.
 
     Args:
         geobox: Target grid (of a tile) in the analysis CRS (EPSG:3832 or EPSG:6933).
 
     Returns:
-        Dataset with elevation, slope, and aspect variables.
+        Dataset with elevation, slope, northness and eastness variables.
     """
     client = PyStacClient.open(DEM_CATALOG)
 
@@ -303,33 +342,40 @@ def load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
     if len(dem_items) >= 10:
         raise LdnError(f"Too many DEM items ({len(dem_items)}). Expected ~4, data may be world-spanning.")
 
-    geobox_wgs84 = GeoDataFrame(geometry=[geobox.extent.geom], crs=geobox.crs).to_crs(WGS84)
-    crosses_am = isinstance(bbox_across_180(geobox_wgs84), tuple)
+    dem = _load_dem_geographic(dem_items, geobox)
+    logger.info(f"DEM elevation shape (native grid): {dem.shape}")
+    return _calculate_terrain_features(dem).odc.reproject(geobox, resampling="nearest")
 
-    if crosses_am:
-        logger.info("Tile crosses the antimeridian, using custom '+over' loading logic")
-        dem = _load_dem_am(dem_items, geobox, geobox_wgs84)
+
+def _load_dem_geographic(dem_items: ItemCollection, geobox: GeoBox) -> xr.DataArray:
+    """Load the DEM on its native WGS84 grid, limited to the geobox plus a margin for the terrain gradients.
+
+    Args:
+        dem_items: DEM STAC items covering the geobox.
+        geobox: Target grid in the analysis CRS.
+
+    Returns:
+        Computed elevation DataArray with x (longitude) and y (latitude) coordinates in degrees. Antimeridian-crossing
+        tiles use longitudes relative to 180 (see _merge_geographic_halves).
+    """
+    # 2 pixels of margin so gradients at the tile edge use real neighbours.
+    area = geobox.pad(2)
+    if isinstance(bbox_across_180(area), tuple):
+        logger.info("Tile crosses the antimeridian, loading each side and joining them")
+        dem = _merge_geographic_halves(*_load_halves(dem_items, area, "nearest"))
     else:
-        logger.info("Tile does not cross the antimeridian, using standard loading logic")
         dem = (
             stac_load(
                 dem_items,
-                geobox=geobox,
-                resampling="bilinear",
+                geopolygon=area.footprint(WGS84),
                 patch_url=sign_url,
-                fail_on_error=False,
                 chunks={},  # Force lazy
             )
             .squeeze(drop=True)  # Remove time. DEM does not need a time dimension.
-            .rename({"data": "elevation"})
+            .rename(longitude="x", latitude="y")
         )
-
-    # Assign CRS so spatial_ref matches GeoMAD during xr.merge.
-    dem = dem.odc.assign_crs(crs=geobox.crs)
-
-    logger.info(f"DEM elevation shape: {dem['elevation'].shape}")
-
-    return _compute_terrain(dem["elevation"])
+    # Compute once: the DEM is lazy, and every use would otherwise download it again.
+    return dem["data"].rename("elevation").compute()
 
 
 def make_features(geomad: xr.Dataset) -> xr.Dataset:
@@ -341,22 +387,15 @@ def make_features(geomad: xr.Dataset) -> xr.Dataset:
         geomad: Raw GeoMAD dataset for one tile and year (a single time step).
 
     Returns:
-        Dataset with scaled GeoMAD bands, spectral indices, elevation, slope and aspect on the GeoMAD grid.
+        Dataset with scaled GeoMAD bands, spectral indices, elevation, slope, northness and eastness on the GeoMAD
+        grid.
     """
     data = calculate_indices(scale_offset_landsat(geomad.squeeze(drop=True)))
 
-    # Load DEM aligned to the GeoMAD grid
+    # The DEM is reprojected by odc onto the same geobox odc-stac loaded the GeoMAD on, so their coordinates and
+    # spatial_ref match exactly. join="exact" raises if they ever don't.
     dem = load_dem_terrain(data.odc.geobox)
-
-    # Drop spatial_ref from DEM to avoid WKT encoding conflicts with
-    # the GeoMAD spatial_ref during merge (odc vs rioxarray encodings).
-    if "spatial_ref" in dem.coords:
-        dem = dem.drop_vars("spatial_ref")
-
-    # Assign GeoMAD coords to DEM before merge
-    dem = dem.assign_coords(x=data.x, y=data.y)
-    # Override join prefers GeoMAD coords and metadata
-    return xr.merge([data, dem], join="override")
+    return xr.merge([data, dem], join="exact")
 
 
 # This is needed to support Source.Coop prefix.
