@@ -11,7 +11,7 @@ from pystac import Asset, Item
 from pystac.extensions.classification import ClassificationExtension
 from sklearn.ensemble import RandomForestClassifier
 
-from ldn.lulc import GeomadSearcher, _add_lulc_stac_metadata, do_prediction, gap_fill
+from ldn.lulc import GeomadSearcher, _add_lulc_stac_metadata, do_prediction, gap_fill, source_years
 from ldn.utils import LdnError
 
 
@@ -149,6 +149,18 @@ class TestGapFill:
         filled, gap_filled = gap_fill(data, 2020, 2)
         assert gap_filled.values.tolist() == [[0, 0, 0, 0]]
         assert filled["red"].values.tolist() == [[1, 1, 1, 1]]
+
+    def test_source_years_are_the_year_and_the_years_filled_from(self):
+        """2019 and 2018 filled pixels, 2021 and 2022 weren't used."""
+        _, gap_filled = gap_fill(self._data(), 2020, 2)
+        assert source_years(gap_filled, 2020) == {2018, 2019, 2020}
+
+    def test_source_years_without_gaps_is_the_year(self):
+        data = self._data()
+        data["red"][2] = 1
+        data["emad"][2] = 1.0
+        _, gap_filled = gap_fill(data, 2020, 2)
+        assert source_years(gap_filled, 2020) == {2020}
 
 
 class TestDoPredictionFeatureCheck:

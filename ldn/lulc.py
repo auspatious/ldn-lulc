@@ -321,6 +321,19 @@ def gap_fill(data: xr.Dataset, year: int, max_years: int) -> tuple[xr.Dataset, x
     return filled, gap_filled.astype("int8")
 
 
+def source_years(gap_filled: xr.DataArray, year: int) -> set[int]:
+    """Years the gap filled data came from: the year itself and the years any pixels were filled from.
+
+    Args:
+        gap_filled: Signed year offsets from gap_fill, GAP_FILLED_NODATA where not filled.
+        year: Year being classified.
+
+    Returns:
+        Set of years.
+    """
+    return {year} | {year + int(offset) for offset in np.unique(gap_filled) if offset != GAP_FILLED_NODATA}
+
+
 class LulcProcessor(Processor):
     """Processor that scales GeoMAD, computes indices, loads terrain, and predicts classes."""
 
@@ -368,6 +381,8 @@ class LulcProcessor(Processor):
         """
         self._logger.info(f"Gap filling from up to {self._gap_fill_years} years away")
         geomad, gap_filled = gap_fill(input_data, int(self._year), self._gap_fill_years)
+        # Before cropping: the padding's pixels are used by the focal statistics too.
+        self._source_years = source_years(gap_filled, int(self._year))
 
         self._logger.info("Building features: scaling GeoMAD, computing indices, loading DEM terrain, focal statistics")
         # Only the focal statistics the model uses are computed. Crop back to the tile once they're complete.
@@ -388,6 +403,17 @@ class LulcProcessor(Processor):
         output["gap_filled"].attrs["_FillValue"] = GAP_FILLED_NODATA
 
         return _set_stac_properties(output, year=self._year)
+
+    def used_items(self, items: ItemCollection) -> list[Item]:
+        """The input items from the years the processed data came from, for the STAC item's derived_from links.
+
+        Args:
+            items: Items searched for the tile, its neighbours and the gap fill years.
+
+        Returns:
+            Items from the year being classified and the years used for gap filling.
+        """
+        return [item for item in items if item.datetime.year in self._source_years]
 
 
 # TODO: Handle different bucket styles in _load_joblib_model
@@ -636,6 +662,7 @@ def run_classify_task(
                     "scikit-learn",
                 ],
                 update_item=partial(_add_lulc_stac_metadata, model_path=model_path, nodata_value=nodata_value),
+                used_items=processor.used_items,
                 logger=logger,
                 writer=writer,
                 stac_creator=stac_creator,
