@@ -94,7 +94,8 @@ PACIFIC_TRAINING_TILES = [
     ("050_015", "pacific", {"New Caledonia": "NCL"}),
     ("101_020", "pacific", {"French Polynesia": "PYF"}),  # Tahiti and Papeete
     ("043_030", "pacific", {"Solomon Islands": "SLB"}),  # Guadalcanal
-    ("026_062", "pacific", {"Northern Mariana Islands": "MNP"}),  # Pagan volcano, Saipan is a test tile
+    # No Northern Mariana Islands tile: Saipan is a test tile, and the tiles not next to it are mostly water.
+    ("025_057", "pacific", {"Guam": "GUM"}),  # All of Guam
 ]
 
 # Same as PACIFIC_TRAINING_TILES, but for non-Pacific region
