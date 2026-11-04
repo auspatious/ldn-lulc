@@ -375,7 +375,8 @@ def _load_dem_geographic(dem_items: ItemCollection, geobox: GeoBox) -> xr.DataAr
                 dem_items,
                 geopolygon=area.footprint(WGS84),
                 patch_url=sign_url,
-                chunks={},  # Force lazy
+                # Force lazy, one chunk per band. 1024 px chunks were 25-40% slower for a padded tile.
+                chunks={},
             )
             .squeeze(drop=True)  # Remove time. DEM does not need a time dimension.
             .rename(longitude="x", latitude="y")
