@@ -92,13 +92,17 @@ PACIFIC_TRAINING_TILES = [
     ("013_050", "pacific", {"Palau": "PLW"}),
     # New Caledonia for maquis shrubland / lagoon
     ("050_015", "pacific", {"New Caledonia": "NCL"}),
+    ("101_020", "pacific", {"French Polynesia": "PYF"}),  # Tahiti and Papeete
+    ("043_030", "pacific", {"Solomon Islands": "SLB"}),  # Guadalcanal
+    ("026_062", "pacific", {"Northern Mariana Islands": "MNP"}),  # Pagan volcano, Saipan is a test tile
 ]
 
 # Same as PACIFIC_TRAINING_TILES, but for non-Pacific region
 NON_PACIFIC_TRAINING_TILES = [
     ("333_091", "non-pacific", {"Timor-Leste": "TLS"}),  # Very remote
     ("312_105", "non-pacific", {"Singapore": "SGP"}),  # very built-up
-    ("281_104", "non-pacific", {"Maldives": "MDV"}),  # barely islands
+    # No Maldives tile: the most land in a tile is 38 km2, and Kiribati already covers atolls.
+    ("254_091", "non-pacific", {"Seychelles": "SYC"}),  # Aldabra, raised coral atoll with mangroves
     ("266_077", "non-pacific", {"Mauritius": "MUS"}),  # Indian Ocean
     ("193_118", "non-pacific", {"Guinea-Bissau": "GNB"}),  # African
     ("251_088", "non-pacific", {"Comoros": "COM"}),  # probably unique in some way?
@@ -110,6 +114,11 @@ NON_PACIFIC_TRAINING_TILES = [
     ("130_127", "non-pacific", {"Jamaica": "JAM"}),  # medium Carribean island
     ("126_133", "non-pacific", {"Cuba": "CUB"}),  # big Caribbean isalnd
     ("119_126", "non-pacific", {"Belize": "BLZ"}),  # non-island in Caribbean
+    ("148_109", "non-pacific", {"Guyana": "GUY"}),  # Bare land within jungle
+    ("143_144", "non-pacific", {"Bermuda": "BMU"}),  # All of Bermuda
+    ("129_135", "non-pacific", {"Bahamas": "BHS"}),  # Andros, low limestone with mangroves
+    ("136_128", "non-pacific", {"Dominican Republic": "DOM"}),  # Dry southwest and Lake Enriquillo
+    ("135_129", "non-pacific", {"Haiti": "HTI"}),  # Artibonite valley cropland
 ]
 TRAINING_TILES = PACIFIC_TRAINING_TILES + NON_PACIFIC_TRAINING_TILES
 
@@ -120,7 +129,6 @@ TRAINING_TILES = PACIFIC_TRAINING_TILES + NON_PACIFIC_TRAINING_TILES
 # Picked with a fixed seed, stratified by country (allocation proportional to the square root of each country's tile
 # count), excluding the training tiles and their 8 neighbours. Roughly 3% of the tiles in each region.
 # Singapore has only 2 tiles, which are neighbours, so it's only in the training tiles.
-# TODO: Check these tiles together contain all classes (especially wetland and cropland), swap tiles if not.
 PACIFIC_TEST_TILES = [
     ("050_041", "pacific", {"Nauru": "NRU"}),
     ("026_059", "pacific", {"Northern Mariana Islands": "MNP"}),
@@ -150,7 +158,6 @@ NON_PACIFIC_TEST_TILES = [
     ("183_123", "non-pacific", {"Cabo Verde": "CPV"}),
     ("193_120", "non-pacific", {"Guinea-Bissau": "GNB"}),
     ("264_097", "non-pacific", {"Seychelles": "SYC"}),
-    ("281_109", "non-pacific", {"Maldives": "MDV"}),
 ]
 TEST_TILES = PACIFIC_TEST_TILES + NON_PACIFIC_TEST_TILES
 
