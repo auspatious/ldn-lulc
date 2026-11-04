@@ -20,15 +20,15 @@ aws-login:
 	aws sso login --profile $(AWS_PROFILE)
 
 
-GEOMAD_VERSION := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)");
-LULC_VERSION := $(shell python3 -c "from ldn.utils import LULC_VERSION; print(LULC_VERSION)");
+GEOMAD_VERSION := $(shell python3 -c "from ldn.utils import GEOMAD_VERSION; print(GEOMAD_VERSION)")
+LULC_VERSION := $(shell python3 -c "from ldn.utils import LULC_VERSION; print(LULC_VERSION)")
 
 # Training and test tiles for both regions
-TRAINING_TILES := $(shell python3 -c "from ldn.training_data import TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TRAINING_TILES]))");
+TRAINING_TILES := $(shell python3 -c "from ldn.training_data import TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TRAINING_TILES]))")
 
-TEST_TILES := $(shell python3 -c "from ldn.training_data import TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TEST_TILES]))");
+TEST_TILES := $(shell python3 -c "from ldn.training_data import TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TEST_TILES]))")
 
-DECIMATED ?= --no-decimated;
+DECIMATED ?= --no-decimated
 
 # Get grid tiles - all
 grid-get-tiles-all:
