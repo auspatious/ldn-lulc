@@ -140,6 +140,7 @@ PACIFIC_TEST_TILES = [
 ]
 NON_PACIFIC_TEST_TILES = [
     ("335_092", "non-pacific", {"Timor-Leste": "TLS"}),
+    ("141_128", "non-pacific", {"Puerto Rico": "PRI"}),  # San Juan, an urban test tile in place of Singapore.
     ("128_132", "non-pacific", {"Cuba": "CUB"}),
     ("131_135", "non-pacific", {"Bahamas": "BHS"}),
     ("133_128", "non-pacific", {"Haiti": "HTI"}),
