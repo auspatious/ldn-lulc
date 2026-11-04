@@ -6,8 +6,8 @@ from shapely.geometry import Point
 
 from ldn.random_sampling import random_sampling
 from ldn.training_data import (
-    PACIFIC_TRAINING_TILES,
     TEST_TILES,
+    TRAINING_TILES,
     _cci_quality_filter,
     _wc_quality_filter,
     extract_geomad_dem_indices_values,
@@ -277,11 +277,14 @@ class TestExtractGeomadDemIndicesValues:
 
 
 class TestTestTiles:
-    def test_disjoint_from_training_tiles(self):
-        """Held-out test tiles never overlap the training tiles."""
-        train = {parse_tile_id(t[0]) for t in PACIFIC_TRAINING_TILES}
-        test = {parse_tile_id(t[0]) for t in TEST_TILES}
-        assert not train & test
+    def test_not_next_to_training_tiles(self):
+        """Test tiles are at least 2 tiles from every training tile in the same region, so none are neighbours."""
+        for test_id, test_region, _ in TEST_TILES:
+            test_x, test_y = parse_tile_id(test_id)
+            for train_id, train_region, _ in TRAINING_TILES:
+                train_x, train_y = parse_tile_id(train_id)
+                distance = max(abs(test_x - train_x), abs(test_y - train_y))
+                assert test_region != train_region or distance >= 2, (test_id, train_id)
 
     def test_unique(self):
         """Each test tile appears once."""
