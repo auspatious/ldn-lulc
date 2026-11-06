@@ -141,7 +141,7 @@ PACIFIC_TEST_TILES = [
     ("051_052", "pacific", {"Marshall Islands": "MHL"}),
     ("051_017", "pacific", {"New Caledonia": "NCL"}),
     ("064_032", "pacific", {"Tuvalu": "TUV"}),
-    ("067_016", "pacific", {"Fiji": "FJI"}),
+    ("067_016", "pacific", {"Fiji": "FJI"}),  # TODO: This tile contains no land. Completely useless.
     ("073_019", "pacific", {"Tonga": "TON"}),
     ("089_016", "pacific", {"Cook Islands": "COK"}),
     ("094_035", "pacific", {"Kiribati": "KIR"}),
