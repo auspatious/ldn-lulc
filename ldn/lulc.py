@@ -654,7 +654,7 @@ def run_classify_task(
                     "dep-tools",
                     "odc-stac",
                     "odc-geo",
-                    "rasterio",
+                    "rasterio",  # TODO: Remove this now?
                     "gdal",
                     "numpy",
                     "scipy",

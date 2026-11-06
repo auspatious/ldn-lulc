@@ -286,7 +286,7 @@ def run(
                     "datacube-compute",
                     "odc-stac",
                     "odc-geo",
-                    "rasterio",
+                    "rasterio",  # TODO: Remove this now?
                     "gdal",
                     "numpy",
                     "xarray",
