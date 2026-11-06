@@ -93,10 +93,11 @@ export const DATASETS: Record<DatasetId, Dataset> = {
     ],
   },
   lulc: {
-    label: "Land use / land cover (v0.0.9, DEP Staging)",
+    // WIP: // TODO: Update to v0-2-0 once processed
+    label: "Land use / land cover (v0.2.0, DEP Staging)",
     urls: [
-      "https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/0-0-9/dep_ls_lulc.parquet",
-      "https://dep-public-staging.s3.us-west-2.amazonaws.com/ci_ls_lulc/0-0-9/ci_ls_lulc.parquet",
+      "https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/0-2-0/dep_ls_lulc.parquet",
+      "https://dep-public-staging.s3.us-west-2.amazonaws.com/ci_ls_lulc/0-2-0/ci_ls_lulc.parquet",
     ],
     bands: ["classification"],
     composite: { r: "classification" },
