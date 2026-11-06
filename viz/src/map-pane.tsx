@@ -5,10 +5,15 @@ import type { RasterModule } from "@developmentseed/deck.gl-raster";
 import type { Device } from "@luma.gl/core";
 import type { Ref } from "react";
 import { useMemo, useState } from "react";
-import type { MapRef, ViewState } from "react-map-gl/maplibre";
-import { Map as MaplibreMap } from "react-map-gl/maplibre";
+import type { LngLat, MapRef, ViewState } from "react-map-gl/maplibre";
+import { Layer, Map as MaplibreMap, Popup, Source } from "react-map-gl/maplibre";
+import { Text } from "@chakra-ui/react";
 import type { DatasetId } from "./datasets.js";
-import { createLulcPaletteTexture, DATASETS } from "./datasets.js";
+import {
+  createLulcPaletteTexture,
+  DATASETS,
+  GRID_TILES,
+} from "./datasets.js";
 import { epsgResolver } from "./proj.js";
 import { DeckGlOverlay, loadingWidgetProps } from "./shared/index.js";
 import type { DatasetStates, SideConfig } from "./side.js";
@@ -40,6 +45,13 @@ function getCogSources(item: StacItem, bands: string[]) {
   }
   return sources;
 }
+
+const REGION_COLOR = [
+  "match",
+  ["get", "region"],
+  ...GRID_TILES.regions.flatMap((r) => [r.value, r.color]),
+  "#888888",
+] as unknown as string;
 
 const CLIP = {
   left: [new SplitClipExtension({ side: "left" })],
@@ -123,6 +135,7 @@ export function MapPane({
   onMoveEnd,
 }: MapPaneProps) {
   const [device, setDevice] = useState<Device | null>(null);
+  const [hoveredTile, setHoveredTile] = useState<{lngLat: LngLat, label: string} | null>(null);
 
   const pipelines = useMemo(() => {
     if (!device) {
@@ -161,6 +174,20 @@ export function MapPane({
         initialViewState={initialViewState}
         onMoveEnd={onMoveEnd}
         mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+        interactiveLayerIds={["grid-tiles-fill"]}
+        onMouseMove={(event) => {
+          const features = event.features?.filter(
+            (f) => f.layer.id === "grid-tiles-fill"
+          );
+          if (features && features.length > 0) {
+            const hoveredTile = {lngLat: event.lngLat, label: `${features[0].properties?.label} - ${features[0].properties?.region}`};
+            setHoveredTile(hoveredTile)
+          }
+          else {
+            setHoveredTile(null);
+          }
+        }}
+        onMouseLeave={() => setHoveredTile(null)}
       >
         <DeckGlOverlay
           layers={layers}
@@ -170,6 +197,19 @@ export function MapPane({
           interleaved
           onDeviceInitialized={setDevice}
         />
+        <Source id="grid-tiles" type="geojson" data={GRID_TILES.url}>
+          <Layer
+            id="grid-tiles-fill"
+            type="fill"
+            paint={{ "fill-color": REGION_COLOR, "fill-opacity": 0.15 }}
+          />
+          <Layer
+            id="grid-tiles-line"
+            type="line"
+            paint={{ "line-color": REGION_COLOR, "line-width": 1 }}
+          />
+        </Source>
+        {hoveredTile && <Popup longitude={hoveredTile.lngLat.lng} latitude={hoveredTile.lngLat.lat} closeButton={false} closeOnClick={false}><Text>{hoveredTile.label}</Text></Popup>}
       </MaplibreMap>
     </div>
   );
