@@ -17,6 +17,14 @@ export const LULC_CLASSES = [
   { value: 7, label: "Other", color: [180, 180, 180] },
 ] as const;
 
+export const GRID_TILES = {
+  url: "https://raw.githubusercontent.com/auspatious/ldn-lulc/refs/heads/main/ldn/sids_all_tiles.geojson",
+  regions: [
+    { value: "pacific", label: "Pacific", color: "#0072b24D" },
+    { value: "non-pacific", label: "Non-Pacific", color: "#e69f004D" },
+  ],
+} as const;
+
 /** Build a 256x1 RGBA lookup texture indexed by class value. Unlisted values are transparent. */
 export function createLulcPaletteTexture(device: Device): Texture {
   const data = new Uint8Array(256 * 4);
