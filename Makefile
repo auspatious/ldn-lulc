@@ -26,6 +26,7 @@ LULC_VERSION := $(shell python3 -c "from ldn.utils import LULC_VERSION; print(LU
 # Training and test tiles for both regions
 TRAINING_TILES := $(shell python3 -c "from ldn.training_data import TRAINING_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TRAINING_TILES]))")
 
+TRAINING_YEARS := $(shell python3 -c "from ldn.utils import TRAINING_DATA_YEARS; print(' '.join(TRAINING_DATA_YEARS))")
 TEST_TILES := $(shell python3 -c "from ldn.training_data import TEST_TILES; print(' '.join([f\"{t[0]}:{t[1]}:{list(t[2].keys())[0].replace(' ','_')}:{list(t[2].values())[0]}\" for t in TEST_TILES]))")
 
 DECIMATED ?= --no-decimated
@@ -120,7 +121,7 @@ collection-geomad-test-dep-staging:
 # Or read from and write to the same env?
 # Training and test samples for a list of tiles (both regions). Both regions are written under dep_ls_lulc.
 # Pacific GeoMAD is read from dep_ls_geomad. Non-Pacific GeoMAD is read from the many-region index on Source.Coop.
-# Usage: $(call generate_samples,<tiles>,<train|test>)
+# Usage: $(call generate_samples,<tiles>,<train|test>,<year>)
 define generate_samples
 	for site in $(1); do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
@@ -134,6 +135,7 @@ define generate_samples
 		fi; \
 		ldn training generate-training-data \
 			--tile-id $$tile_id \
+			--year $(3) \
 			--region $$region \
 			--country-name "$$country_name" \
 			--country-code "$$country_code" \
@@ -148,13 +150,20 @@ define generate_samples
 endef
 
 training-data-generate:
-	$(call generate_samples,$(TRAINING_TILES),train)
+	$(call generate_samples,$(TRAINING_TILES),train,2020)
+
+# Training samples for every year in TRAINING_DATA_YEARS (2017-2021), where at least 2 LULC products agree.
+training-data-generate-years:
+	$(foreach year,$(TRAINING_YEARS),$(call generate_samples,$(TRAINING_TILES),train,$(year)))
 
 #### Make the model using ldn-lulc/notebooks/1_Train_Model.ipynb
 
 # Frozen held-out test set. Never train on this. Written to dep_ls_lulc/test_data/.
 test-data-generate:
-	$(call generate_samples,$(TEST_TILES),test)
+	$(call generate_samples,$(TEST_TILES),test,2020)
+
+
+# TODO: Should there also be test data for other years besides 2020?
 
 
 ###### LULC Classification
@@ -175,10 +184,8 @@ print-tasks-lulc-2000-non-pacific:
 # Pacific GeoMAD is read from dep_ls_geomad and written to dep_ls_lulc. Non-Pacific GeoMAD is read from the
 # many-region index on Source.Coop and written to ci_ls_lulc.
 # Use local model to avoid 1GB download from S3 per tile
-
-# 	for site in $(TEST_TILES) do \
 lulc-predict-test:
-	for site in 050_041:pacific; do \
+	for site in $(TEST_TILES); do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
 		region=$$(echo $$site | cut -d: -f2); \
 		if [ "$$region" = pacific ]; then \
@@ -186,7 +193,7 @@ lulc-predict-test:
 		else \
 			geomad_args="--geomad-bucket us-west-2.opendata.source.coop --product-owner ci --no-single-region-geomad"; \
 		fi; \
-		for year in 2000 2001 2002 2003 2004 2005 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018 2019 2020 2021 2022 2023 2024 2025; do \
+		for year in 2020; do \
 			ldn lulc run \
 				--tile-id $$tile_id \
 				--year $$year \
@@ -195,7 +202,7 @@ lulc-predict-test:
 				--geomad-version 0-2-1 \
 				$$geomad_args \
 				--output-bucket dep-public-staging \
-				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-2-0/2020/lulc_random_forest_model_2020.joblib" \
+				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-2-0/lulc_random_forest_model.joblib" \
 				--no-overwrite; \
 		done; \
 	done;
