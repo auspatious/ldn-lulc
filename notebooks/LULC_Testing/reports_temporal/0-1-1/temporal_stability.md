@@ -67,18 +67,48 @@ spend more years in other classes, from real change or misclassification.
 
 ![Distinct classes 050_041](distinct_classes_050_041.png)
 
-## LULC by year
-
-Bars under each year show pixel counts per class. Nodata pixels are not counted.
-
-![LULC by year 050_041](lulc_years_050_041.png)
-
 ## Class area time series
 
 Year-to-year jumps that coincide with Landsat sensor changes or low GeoMAD observation counts are artefacts, not
 land change.
 
 ![Class area 050_041](class_area_050_041.png)
+
+## LULC and GeoMAD inputs by year
+
+LULC with the GeoMAD 0-2-1 bands, key indices and MAD bands it was classified from. Each input row uses one
+colour scale for all years.
+
+![LULC and GeoMAD spectral inputs by year 050_041](lulc_spectral_years_050_041.png)
+
+![LULC and GeoMAD mad inputs by year 050_041](lulc_mad_years_050_041.png)
+
+Median of each input per year for the pixels of each 2020 class. Steps that coincide with sensor changes (shaded
+eras) point to input artefacts rather than land change.
+
+![GeoMAD medians 050_041](geomad_medians_050_041.png)
+
+## Inputs that track the LULC changes
+
+Spearman correlation across years between each input's median over land (water excluded) and the share of pixels in
+each class group. Inputs with strong correlations follow the year-to-year LULC changes.
+
+Tile 050_041
+
+| input | built-up + other | tree cover | grassland |
+| - | - | - | - |
+| blue | 0.97 | -0.85 | -0.72 |
+| ndvi | -0.92 | 0.93 | 0.59 |
+| bsi | 0.87 | -0.98 | -0.45 |
+| red | 0.86 | -0.98 | -0.42 |
+| green | 0.82 | -0.98 | -0.38 |
+| mndwi | 0.81 | -0.61 | -0.75 |
+| nir08 | -0.79 | 0.46 | 0.85 |
+| swir22 | 0.76 | -0.99 | -0.27 |
+| swir16 | 0.68 | -0.96 | -0.16 |
+| emad | 0.36 | -0.49 | -0.21 |
+| bcmad | 0.36 | -0.45 | -0.24 |
+| smad | 0.3 | -0.26 | -0.33 |
 
 ## Caveats
 
