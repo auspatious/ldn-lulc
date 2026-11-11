@@ -74,10 +74,6 @@ def version() -> None:
     return
 
 
-if __name__ == "__main__":
-    app()
-
-
 def _find_stac_items_s3(
     bucket: str,
     prefix: str,
@@ -343,3 +339,7 @@ def index_to_stac_geoparquet(
     logger.info(f"Writing combined STAC-Geoparquet ({len(all_docs)} items) to {geomad_stac_geoparquet_url}")
     write_sync(parquet_key, all_docs, store=store)
     logger.info(f"Done. Wrote {len(all_docs)} items to {geomad_stac_geoparquet_url}")
+
+
+if __name__ == "__main__":
+    app()
