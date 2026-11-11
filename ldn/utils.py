@@ -194,12 +194,11 @@ def get_stac_geoparquet_key(
     """Return the S3 key for the STAC-Geoparquet file (no bucket etc.).
 
     Args:
+        bucket: The S3 bucket name.
+        product_owner: The product owner prefix (e.g. 'dep' or 'ci').
+        sensor: Sensor identifier (e.g. 'ls').
         dataset: The dataset type (e.g. 'geomad' or 'lulc').
         version: Version string.
-        source_coop_prefix: Source.Coop prefix if applicable, else None.
-        single_region: Whether to use the single region prefix
-        (e.g. 'dep_ls_geomad') or the generic prefix (e.g. 'ls_geomad').
-        region: The region for which to build the prefix ('pacific' or 'non-pacific').
 
     Returns:
         S3 key string e.g. 'auspatious/geomad-sids/ls_geomad/0-3-0/ls_geomad.parquet'
