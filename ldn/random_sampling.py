@@ -17,10 +17,6 @@ def random_sampling(
     n: int,
     min_sample_n: int | None,
     sampling: str = "stratified_random",
-    manual_class_ratios: dict | None = None,
-    out_fname: str | None = None,
-    class_attr: str = CLASS_ATTR,
-    drop_value: int = 255,
     seed: int | None = None,
 ):
     """
@@ -32,8 +28,7 @@ def random_sampling(
     da: xarray.DataArray
         A classified 2-dimensional xarray.DataArray
     n: int
-        Total number of points to sample. Ignored if providing
-        a dictionary of {class:numofpoints} to 'manual_class_ratios'
+        Total number of points to sample.
     min_sample_n: int, optional
         Minimum number of samples to generate per class. Only used for stratified_random sampling method
     sampling: str
@@ -43,15 +38,6 @@ def random_sampling(
         'equal_stratified_random' = Create points that are randomly
         distributed within each class, where each class has the
         same number of points.
-    out_fname: str
-        If providing a filepath name, e.g 'sample_points.shp', the
-        function will export a shapefile/geojson of the sampling
-        points to file.
-    class_attr: str
-        Column name of output dataframe that contains the integer
-        class values on the classification map.
-    drop_value: integer
-        Pixel value on the classification map to be excluded from sampling.
     seed: int, optional
         Random seed so the sampled locations are reproducible.
 
@@ -61,21 +47,15 @@ def random_sampling(
 
     """
 
-    if sampling not in [
-        "stratified_random",
-        "equal_stratified_random",
-    ]:
-        raise LdnError(
-            "Sampling strategy must be one of 'stratified_random', "
-            + "or 'equal_stratified_random'"
-        )
+    if sampling not in ["stratified_random", "equal_stratified_random"]:
+        raise LdnError("Sampling strategy must be 'stratified_random' or 'equal_stratified_random'")
 
     # Open the dataset as a pandas dataframe
     da = da.squeeze()
-    df = da.to_dataframe(name=class_attr)
+    df = da.to_dataframe(name=CLASS_ATTR)
 
-    # Change made here: drop invalid class value
-    df = df[df[class_attr] != drop_value]
+    # Drop nodata pixels.
+    df = df[df[CLASS_ATTR] != 255]
 
     # List to store points
     samples = []
@@ -83,9 +63,9 @@ def random_sampling(
     # Determine class ratios in image
     class_ratio = pd.DataFrame(
         {
-            "proportion": df[class_attr].value_counts(normalize=True),
-            "n_available": df[class_attr].value_counts(normalize=False),
-            "class": df[class_attr].value_counts(normalize=True).keys(),
+            "proportion": df[CLASS_ATTR].value_counts(normalize=True),
+            "n_available": df[CLASS_ATTR].value_counts(normalize=False),
+            "class": df[CLASS_ATTR].value_counts(normalize=True).keys(),
         }
     )
     logger.info(class_ratio)
@@ -99,39 +79,27 @@ def random_sampling(
             if n_available >= max([min_sample_n, no_of_points]):
                 no_of_points = max([min_sample_n, no_of_points])
                 # Random sample each class
-                logger.info("Class " + str(_class) + ": sampling at " + str(round(no_of_points)) + "locations")
+                logger.info(f"Class {_class}: sampling at {round(no_of_points)} locations")
             else:
                 no_of_points = n_available
-                logger.info(
-                    "Class "
-                    + str(_class)
-                    + ": not enough pixels as requested, sampling at all "
-                    + str(int(no_of_points))
-                    + " locations"
-                )
-            sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)), random_state=seed)
+                logger.info(f"Class {_class}: not enough pixels, sampling all {int(no_of_points)} locations")
+            sample_loc = df[df[CLASS_ATTR] == _class].sample(n=int(round(no_of_points)), random_state=seed)
             samples.append(sample_loc)
 
     if sampling == "equal_stratified_random":
-        classes = np.unique(df[class_attr])
+        classes = np.unique(df[CLASS_ATTR])
 
         for _class in classes:
             # Use relative proportions of classes to sample df
             no_of_points = n / len(classes)
             n_available = class_ratio[class_ratio["class"] == _class]["n_available"].values[0]
             if n_available >= no_of_points:
-                sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)), random_state=seed)
-                logger.info("Class " + str(_class) + ": sampling at " + str(round(no_of_points)) + " locations")
+                sample_loc = df[df[CLASS_ATTR] == _class].sample(n=int(round(no_of_points)), random_state=seed)
+                logger.info(f"Class {_class}: sampling at {round(no_of_points)} locations")
             else:
                 no_of_points = n_available
-                logger.info(
-                    "Class "
-                    + str(_class)
-                    + ": not enough pixels as requested, sampling at all "
-                    + str(int(no_of_points))
-                    + " locations"
-                )
-            sample_loc = df[df[class_attr] == _class].sample(n=int(round(no_of_points)), random_state=seed)
+                logger.info(f"Class {_class}: not enough pixels, sampling all {int(no_of_points)} locations")
+            sample_loc = df[df[CLASS_ATTR] == _class].sample(n=int(round(no_of_points)), random_state=seed)
             samples.append(sample_loc)
 
     # Join back into single dataframe
@@ -151,8 +119,5 @@ def random_sampling(
 
     if crs is not None and gdf.crs is not None and gdf.crs.to_epsg() != 4326:
         gdf = gdf.to_crs(WGS84)
-
-    if out_fname is not None:
-        gdf.to_file(out_fname)
 
     return gdf
