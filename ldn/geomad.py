@@ -279,44 +279,39 @@ class InsufficientScenesError(LdnError):
 
 
 class GeoMADProcessor(Processor):
+    """Processor that masks clouds and computes the geomedian and median absolute deviations of Landsat scenes."""
+
     def __init__(
         self,
         year: str,
-        send_area_to_processor: bool = False,
-        load_data_before_writing: bool = True,
-        min_timesteps: int = 3,
-        geomad_options: dict = {
-            "num_threads": 4,
-            "work_chunks": (1000, 1000),
-            "maxiters": 1000,
-        },
-        drop_vars: list[str] = [],
-        preprocessor: Processor | None = None,
-        mask_clouds_kwargs: dict = {
-            "filters": [("opening", 3), ("dilation", 5), ("erosion", 2)],
-            "mask_shadow": True,
-        },
-        **kwargs,
+        min_timesteps: int,
+        geomad_options: dict,
+        drop_vars: list[str],
+        mask_clouds_kwargs: dict,
     ) -> None:
-        super().__init__(send_area_to_processor, **kwargs)
+        """Create a GeoMAD processor.
+
+        Args:
+            year: Year being processed, for the STAC datetime.
+            min_timesteps: Fewest timesteps to process, else InsufficientScenesError is raised.
+            geomad_options: Keyword arguments for datacube_compute.geomedian_with_mads.
+            drop_vars: Variables to drop after cloud masking, e.g. the QA bands.
+            mask_clouds_kwargs: Keyword arguments for mask_nodata_clouds_saturated.
+        """
+        super().__init__()
         self.year = year
-        self.load_data_before_writing = load_data_before_writing
         self.min_timesteps = min_timesteps
         self.geomad_options = geomad_options
         self.drop_vars = drop_vars
-        self.preprocessor = preprocessor
         self.mask_kwargs = mask_clouds_kwargs
 
     def process(self, ds: Dataset) -> Dataset:
+        """Mask clouds, then compute the GeoMAD and load it before writing."""
         if ds.time.size < self.min_timesteps:
             raise InsufficientScenesError(f"{ds.time.size} is less than {self.min_timesteps} timesteps")
 
         ds = mask_nodata_clouds_saturated(ds, **self.mask_kwargs)
-        data = ds.drop_vars(self.drop_vars) if len(self.drop_vars) > 0 else ds
-
-        geomad = geomedian_with_mads(data, **self.geomad_options)
-
-        if self.load_data_before_writing:
-            geomad = geomad.compute()
+        data = ds.drop_vars(self.drop_vars)
+        geomad = geomedian_with_mads(data, **self.geomad_options).compute()
 
         return _set_stac_properties(data, geomad, self.year)
