@@ -18,8 +18,8 @@ from ldn.aws import get_credential_provider, s3_client
 from ldn.cli_collection import collection_app
 from ldn.cli_geomad import geomad_app
 from ldn.cli_grid import cli_grid_app
-from ldn.cli_lulc import classify_app
 from ldn.grids import get_grid_tiles
+from ldn.lulc import run_classify_task
 from ldn.raster import PrefixedS3ItemPath
 from ldn.training_data import cli_training_app
 from ldn.utils import (
@@ -57,6 +57,8 @@ logging.getLogger("ldn").setLevel(logging.INFO)  # Our logging level.
 
 # Add the subcommands
 app.add_typer(cli_grid_app, name="grid", help="Commands for working with the ODC Geo Grid.")
+classify_app = typer.Typer()
+classify_app.command("run")(run_classify_task)
 app.add_typer(classify_app, name="lulc", help="Commands for LULC classification.")
 app.add_typer(cli_training_app, name="training", help="Commands for generating training data.")
 app.add_typer(geomad_app, name="geomad", help="Commands for working with GeoMAD.")
