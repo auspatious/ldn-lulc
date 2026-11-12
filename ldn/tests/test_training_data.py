@@ -17,7 +17,7 @@ from ldn.training_data import (
     lulc_products_for_year,
     remove_nan_samples,
 )
-from ldn.utils import LdnError, parse_tile_id
+from ldn.utils import LULC_NODATA, LdnError, parse_tile_id
 
 
 class TestWcQualityFilter:
@@ -113,7 +113,7 @@ class TestFindAgreement:
     def test_no_agreement(self):
         """No two products agree, result should be nodata (255)."""
         result = find_agreement([self._lulc(1), self._lulc(2), self._lulc(3)])
-        assert (result.values == 255).all()
+        assert (result.values == LULC_NODATA).all()
 
     def test_two_of_three_agree(self):
         """Two products agree, one disagrees."""
@@ -131,15 +131,15 @@ class TestFindAgreement:
         assert find_agreement([self._lulc(3), self._lulc(3)]).values[2, 2] == 3
 
     def test_two_products_disagree(self):
-        assert (find_agreement([self._lulc(3), self._lulc(5)]).values == 255).all()
+        assert (find_agreement([self._lulc(3), self._lulc(5)]).values == LULC_NODATA).all()
 
     def test_shared_nodata_is_not_agreement(self):
         """Products that are both nodata (255) don't agree, so pixels next to nodata fail the neighbourhood filter."""
         values = np.full((5, 5), 1, dtype="uint8")
-        values[:, :2] = 255  # Nodata in the first 2 columns
+        values[:, :2] = LULC_NODATA  # Nodata in the first 2 columns
         layer = xr.DataArray(values, dims=("y", "x"), coords={"y": np.arange(5), "x": np.arange(5)})
         result = find_agreement([layer, layer])
-        assert result.values[2, 2] == 255  # Next to nodata
+        assert result.values[2, 2] == LULC_NODATA  # Next to nodata
         assert result.values[2, 3] == 1
 
 

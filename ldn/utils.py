@@ -111,6 +111,8 @@ LS7_YEAR_THRESHOLD = 2012
 # plan-label-propagation2.md.
 TRAINING_DATA_YEARS = ["2020", "2021"]
 CLASS_ATTR = "lulc"
+# Nodata for LULC classes, in the reference products and our outputs (no_data in typology_mapping.yaml).
+LULC_NODATA = 255
 WGS84 = "EPSG:4326"
 
 
