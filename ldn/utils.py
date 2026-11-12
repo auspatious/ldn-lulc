@@ -112,6 +112,8 @@ TRAINING_DATA_YEAR = "2020"
 TRAINING_DATA_YEARS = ["2020", "2021"]  # Just these for now
 # TRAINING_DATA_YEARS = ["2017", "2018", "2019", "2020", "2021"] # These years have 2 LULC products. 2020 has 3.
 CLASS_ATTR = "lulc"
+# Nodata for LULC classes, in the reference products and our outputs (no_data in typology_mapping.yaml).
+LULC_NODATA = 255
 WGS84 = "EPSG:4326"
 
 

@@ -40,6 +40,7 @@ from ldn.utils import (
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     LULC_DATASET_ID,
+    LULC_NODATA,
     LULC_VERSION,
     SENSOR,
     SOURCE_COOP_PREFIX_LULC,
@@ -541,7 +542,7 @@ def run_classify_task(
     ] = 30.0,
     nodata_value: Annotated[
         int, typer.Option(help="Value to use for NoData pixels in the output. Must be an integer between 0 and 255.")
-    ] = 255,
+    ] = LULC_NODATA,
     memory_limit: Annotated[str, typer.Option(help="Per-worker Dask memory limit.")] = "10GB",
     n_workers: Annotated[int, typer.Option(help="Number of Dask workers.")] = 2,
     threads_per_worker: Annotated[int, typer.Option(help="Threads per Dask worker.")] = 4,

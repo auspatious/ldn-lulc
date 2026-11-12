@@ -41,6 +41,7 @@ from ldn.utils import (
     CLASS_ATTR,
     GEOMAD_VERSION,
     LULC_DATASET_ID,
+    LULC_NODATA,
     SENSOR,
     TEST_DATA_VERSION,
     TRAINING_DATA_VERSION,
@@ -62,8 +63,6 @@ logger = logging.getLogger(__name__)
 cli_training_app = typer.Typer()
 
 PC_CLIENT = None
-
-product_nodata_value = 255
 
 # TODO: Increase to 20-25 Pacific training tiles
 # These tiles are for training the random forest classifier. They are representative of different environments e.g.
@@ -354,10 +353,10 @@ def load_and_prepare(
     ds = ds.odc.crop(clip_geom, apply_mask=True, all_touched=True)
 
     for var in ds.data_vars:
-        ds[var] = ds[var].fillna(product_nodata_value).astype("uint8")
+        ds[var] = ds[var].fillna(LULC_NODATA).astype("uint8")
 
-    ds[output_band] = ds[output_band].where(ds[output_band] != 0, product_nodata_value)
-    ds[output_band].attrs["nodata"] = product_nodata_value
+    ds[output_band] = ds[output_band].where(ds[output_band] != 0, LULC_NODATA)
+    ds[output_band].attrs["nodata"] = LULC_NODATA
 
     return ds
 
@@ -368,23 +367,23 @@ def find_agreement(products: list[xr.DataArray]) -> xr.DataArray:
     With 3 products at most one class can have 2 votes, so the first agreeing pair gives the class.
 
     Args:
-        products: 2 or 3 standardised class DataArrays on the same grid, with 0 or product_nodata_value for nodata.
+        products: 2 or 3 standardised class DataArrays on the same grid, with 0 or LULC_NODATA for nodata.
 
     Returns:
-        DataArray of agreed class values, product_nodata_value where fewer than 2 products agree or a pixel has a
+        DataArray of agreed class values, LULC_NODATA where fewer than 2 products agree or a pixel has a
         neighbour without agreement.
     """
     # Drop leftover scalar coordinates that cause merge conflicts.
     products = [da.drop_vars([c for c in da.coords if c not in da.dims]) for da in products]
     agreed = xr.zeros_like(products[0])
     for first, second in combinations(products, 2):
-        pair = (first == second) & (first > 0) & (first != product_nodata_value)
+        pair = (first == second) & (first > 0) & (first != LULC_NODATA)
         agreed = agreed.where(agreed > 0, first.where(pair, 0))
 
     # Keep a pixel only if its whole 3x3 neighbourhood agrees, dropping isolated agreeing pixels.
     neighbourhood = minimum_filter((agreed > 0).values.astype("uint8"), size=3, mode="constant", cval=0) == 1
-    agreed = agreed.where(neighbourhood & (agreed > 0), product_nodata_value).rename(CLASS_ATTR).astype("uint8")
-    agreed.attrs["nodata"] = product_nodata_value
+    agreed = agreed.where(neighbourhood & (agreed > 0), LULC_NODATA).rename(CLASS_ATTR).astype("uint8")
+    agreed.attrs["nodata"] = LULC_NODATA
     return agreed
 
 
@@ -410,10 +409,10 @@ def generate_samples(
     # The agreement map is loaded on the features' geobox and cropped to the same country, so they align exactly.
     # join="exact" raises if they ever don't.
     agreed, geomad_valid = xr.align(agreed, geomad_dem_indices["red"].notnull(), join="exact")
-    agree_masked = agreed.where(geomad_valid, other=product_nodata_value).compute()
+    agree_masked = agreed.where(geomad_valid, other=LULC_NODATA).compute()
 
     # Trim to bounding box of valid pixels
-    valid_mask = agree_masked.values != product_nodata_value
+    valid_mask = agree_masked.values != LULC_NODATA
     valid_rows = np.where(valid_mask.any(axis=1))[0]
     valid_cols = np.where(valid_mask.any(axis=0))[0]
     if len(valid_rows) == 0 or len(valid_cols) == 0:
