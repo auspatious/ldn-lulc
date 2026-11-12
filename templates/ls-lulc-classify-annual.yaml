@@ -34,36 +34,30 @@ spec:
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc"
       - name: image-tag
-        value: "0.2.0"
+        value: "0.2.0-cf745a0" # Latest main image. There is no 0.2.0 release image yet.
       - name: lulc-version
         value: "0-2-0"
       - name: geomad-version
         value: "0-2-1"
       - name: geomad-bucket
-        value: "us-west-2.opendata.source.coop"
+        value: "us-west-2.opendata.source.coop" # Source Coop bucket has both regions' geomad
       - name: output-bucket
         value: "dep-public-staging" # DEP Staging
         # value: "dep-public-data" # DEP Prod
       - name: region
         value: "all" # "all", "pacific", or "non-pacific"
       - name: years
-        value: "2000,2025"
-        # Training data is 2020 but predicting on 2025 because there are less gaps than 2020.
+        value: "2000,2005,2010,2015,2020,2025" # Only used by print-tasks, which is off for the test tile run.
       - name: model-path
         value: "https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-2-0/lulc_random_forest_model.joblib"
       - name: collection-url-root
         value: "https://stac.staging.digitalearthpacific.io/collections" # DEP Staging
         # value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
         # value: "" # For Source Coop, leave empty so collection-url-root defaults. "None" would be used as the URL.
-      - name: product-owner # Owner prefix for the LULC output and the GeoMAD item IDs
-        # value: "dep" # Pacific: output to dep_ls_lulc
-        # value: "ci" # Non-Pacific: output to ci_ls_lulc
-        value: "" # None for both regions
       - name: single-region-geomad
-        # value: "--single-region-geomad" # Pacific: GeoMAD from the dep_ls_geomad index (e.g. dep-public-staging)
-        value: "--no-single-region-geomad" # Non-Pacific: GeoMAD from the many-region ls_geomad index on Source.Coop
+        # value: "--single-region-geomad" # DEP: GeoMAD from the dep_ls_geomad index (e.g. dep-public-staging)
+        value: "--no-single-region-geomad" # Source.Coop: GeoMAD from the 2-region ls_geomad index on Source.Coop
       - name: overwrite
-        # value: "--overwrite"
         value: "--no-overwrite"
       - name: decimated
         value: "--no-decimated"
@@ -88,9 +82,8 @@ spec:
                 - name: region
                   value: "{{item.region}}"
             withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
-            # Test a couple of tasks:
-            # withParam: '[{"id": "063_020","year": "2025","region": "pacific"}]'
             # withParam: '[{"id": "085_026","year": "2025","region": "pacific"}]'
+
 
     - name: print-tasks
       activeDeadlineSeconds: 900 # 15 mins
@@ -104,10 +97,10 @@ spec:
           # and has to wait for another node to come up. Not critical, just saves a few minutes
           # of waiting between tasks.
           requests:
-            memory: 9Gi
+            memory: 24Gi
             cpu: 1
           limits:
-            memory: 12Gi
+            memory: 28Gi
             cpu: 2
         command: [sh, -c]
         args:
@@ -133,17 +126,24 @@ spec:
           - name: tile-id
           - name: year
           - name: region
-      activeDeadlineSeconds: 1200 # 20 mins
-      # No retries.
+      activeDeadlineSeconds: 1500 # 25 mins
+      retryStrategy:
+        limit: 2
+        retryPolicy: OnError
+        backoff:
+          duration: "2m"
+          factor: 2
       container:
         image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
         imagePullPolicy: IfNotPresent
         resources:
           requests:
-            memory: 9Gi
+            # v0-2-0 test tiles were measured to run at around 24Gi of memory
+            memory: 24Gi
             cpu: 1
+            ephemeral-storage: 8Gi
           limits:
-            memory: 12Gi
+            memory: 28Gi
             cpu: 2
         command: [ldn]
         args:
@@ -165,8 +165,6 @@ spec:
           - "{{ workflow.parameters.geomad-bucket }}"
           - --output-bucket
           - "{{ workflow.parameters.output-bucket }}"
-          - --product-owner
-          - "{{ workflow.parameters.product-owner }}"
           - "{{ workflow.parameters.single-region-geomad }}"
           - --collection-url-root
           - "{{ workflow.parameters.collection-url-root }}"
