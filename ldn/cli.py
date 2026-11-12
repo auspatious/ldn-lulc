@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import sys
@@ -227,10 +226,7 @@ def print_tasks(
     return
 
 
-async def _load_stac_docs_async(
-    bucket: str,
-    keys: list[str],
-) -> list[dict]:
+def _load_stac_docs(bucket: str, keys: list[str]) -> list[dict]:
     """Load STAC item JSON documents from S3 concurrently.
 
     Args:
@@ -240,21 +236,14 @@ async def _load_stac_docs_async(
     Returns:
         List of parsed STAC item dictionaries, in the same order as keys.
     """
-    semaphore = asyncio.Semaphore(64)
-    loop = asyncio.get_event_loop()
-    executor = ThreadPoolExecutor()
 
-    async def fetch(key: str) -> dict:
-        async with semaphore:
-            response = await loop.run_in_executor(executor, lambda: s3_client.get_object(Bucket=bucket, Key=key))
-            payload = response["Body"].read()
-            return json.loads(payload.decode("utf-8"))
+    def fetch(key: str) -> dict:
+        """Download and parse one STAC item."""
+        return json.loads(s3_client.get_object(Bucket=bucket, Key=key)["Body"].read())
 
-    return await asyncio.gather(*[fetch(key) for key in keys])
-
-
-def _load_stac_docs(bucket: str, keys: list[str]) -> list[dict]:
-    return asyncio.run(_load_stac_docs_async(bucket, keys))
+    # 10 threads to match the shared boto3 client's connection pool (botocore's default max_pool_connections).
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        return list(executor.map(fetch, keys))
 
 
 @app.command()
