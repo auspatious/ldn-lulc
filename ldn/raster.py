@@ -720,26 +720,21 @@ class AwsStacTask(AreaTask):
         processor: Processor,
         processing_software: list[str],
         providers: list[Provider],
-        post_processor: Processor | None = None,
+        writer: AwsDsCogWriter,
+        stac_creator: StacCreator,
         update_item: Callable[[Item], None] | None = None,
         used_items: Callable[[ItemCollection], list[Item]] | None = None,
         logger: logging.Logger = logger,
-        **kwargs,
     ):
-        writer = kwargs.pop("writer", AwsDsCogWriter(itempath))
-        stac_creator = kwargs.pop("stac_creator", StacCreator(itempath))
-        stac_writer = kwargs.pop("stac_writer", AwsStacWriter(itempath))
-
         super().__init__(id, area, loader, processor, writer, logger)
         self.id = id
         self.searcher = searcher
-        self.post_processor = post_processor
         self.processing_software = processing_software
         self.providers = providers
         self.update_item = update_item
         self.used_items = used_items
         self.stac_creator = stac_creator
-        self.stac_writer = stac_writer
+        self.stac_writer = AwsStacWriter(itempath)
 
     def run(self):
         items = self.searcher.search(self.area)
@@ -747,29 +742,23 @@ class AwsStacTask(AreaTask):
         input_data = self.loader.load(items, self.area)
         logger.info(f"Loaded {len(input_data.time.values)} items for this tile/year")
 
-        processor_kwargs = dict(area=self.area) if self.processor.send_area_to_processor else dict()
-        output_data = self.processor.process(input_data, **processor_kwargs)
-
-        if self.post_processor is not None:
-            output_data = self.post_processor.process(output_data)
-
+        output_data = self.processor.process(input_data)
         paths = self.writer.write(output_data, self.id)
 
-        if self.stac_creator is not None and self.stac_writer is not None:
-            stac_item = self.stac_creator.process(output_data, self.id)
-            stac_item.bbox = _antimeridian_safe_bbox(self.area, stac_item.bbox)
-            stac_item.geometry = _antimeridian_safe_geometry(self.area, stac_item.geometry)
-            _add_processing_extension(stac_item, self.processing_software, self.providers)
-            stac_item.add_link(visualisation_link())
-            # Link to the input items used (Landsat scenes for GeoMAD, GeoMAD items for LULC). Called after processing,
-            # because only the processor knows which items it used.
-            used = items if self.used_items is None else self.used_items(items)
-            input_hrefs = [href for item in used if (href := item.get_self_href())]
-            stac_item.add_links(
-                [Link(rel="derived_from", target=href, media_type="application/geo+json") for href in input_hrefs]
-            )
-            if self.update_item is not None:
-                self.update_item(stac_item)
-            self.stac_writer.write(stac_item, self.id)
+        stac_item = self.stac_creator.process(output_data, self.id)
+        stac_item.bbox = _antimeridian_safe_bbox(self.area, stac_item.bbox)
+        stac_item.geometry = _antimeridian_safe_geometry(self.area, stac_item.geometry)
+        _add_processing_extension(stac_item, self.processing_software, self.providers)
+        stac_item.add_link(visualisation_link())
+        # Link to the input items used (Landsat scenes for GeoMAD, GeoMAD items for LULC). Called after processing,
+        # because only the processor knows which items it used.
+        used = items if self.used_items is None else self.used_items(items)
+        input_hrefs = [href for item in used if (href := item.get_self_href())]
+        stac_item.add_links(
+            [Link(rel="derived_from", target=href, media_type="application/geo+json") for href in input_hrefs]
+        )
+        if self.update_item is not None:
+            self.update_item(stac_item)
+        self.stac_writer.write(stac_item, self.id)
 
         return paths
