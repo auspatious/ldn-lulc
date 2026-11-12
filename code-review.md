@@ -15,14 +15,6 @@ Tags:
 9. **`yagni`** `get_gridspec(resolution, crs)` in `ldn/grids.py` is never called with values other than the
    defaults. Its docstring also has a list of claims ("Seamless mosaicking", "Globally comparable results") to remove.
    About -12 lines.
-10. **`delete`** `AwsStacTask` in `ldn/raster.py`:
-    - The `post_processor` parameter is never passed.
-    - `kwargs.pop("writer", AwsDsCogWriter(itempath))` makes the default writers even when callers give their own,
-      and every caller gives its own. Make `writer` and `stac_creator` required parameters.
-    - The `if self.stac_creator is not None` check is then always true.
-    - `processor_kwargs` (send the area to the processor) is never used.
-
-    About -10 lines.
 12. **`shrink`** The block that makes the collection URL is copied in `cli_geomad.run`, `run_classify_task` and
     `create_collection`. Two copies have the comment "TODO: Could this block be a function". Make one
     `public_url(bucket, dataset)` helper. About -8 lines.
