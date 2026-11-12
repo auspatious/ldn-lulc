@@ -1,4 +1,3 @@
-import logging
 from datetime import UTC, datetime
 from typing import Iterable, Tuple
 
@@ -10,8 +9,6 @@ from xarray import DataArray, Dataset
 
 from ldn.raster import LANDSAT_OFFSET, LANDSAT_SCALE, REFLECTANCE_BANDS
 from ldn.utils import LdnError
-
-logger = logging.getLogger(__name__)
 
 USGS_CATALOG = "https://earth-search.aws.element84.com/v1"
 USGS_COLLECTION = "landsat-c2-l2"
@@ -102,10 +99,9 @@ def mask_qa_pixel(
     ds: Dataset,
     filters: Iterable[Tuple[str, int]] | None = None,
     mask_shadow: bool = True,
-    mask_snow: bool = True,
     nodata_value: int = 0,
 ) -> Dataset:
-    """Mask out cloud, cirrus, and optionally shadow/snow pixels using qa_pixel bits.
+    """Mask out cloud, cirrus, snow and optionally shadow pixels using qa_pixel bits.
 
     Only masks spectral bands, preserving qa_pixel and qa_radsat.
 
@@ -124,7 +120,6 @@ def mask_qa_pixel(
         ds: Input xarray Dataset.
         filters: Morphological filter sequence applied to the cloud mask only.
         mask_shadow: Whether to mask cloud shadow (bit 4 or confidence >= 2).
-        mask_snow: Whether to mask snow pixels (bit 5 or confidence >= 2).
         nodata_value: Value to fill masked pixels with.
 
     Returns:
@@ -153,11 +148,7 @@ def mask_qa_pixel(
     is_clear = (qa_pixel & (1 << CLEAR)) != 0
     cloud_cirrus_conf_low = (cloud_confidence <= 1) & (cirrus_confidence <= 1)
     is_water = (qa_pixel & (1 << WATER)) != 0
-    is_snow = (qa_pixel & (1 << SNOW)) != 0
-    if mask_snow:
-        keep = (is_clear | is_water) & cloud_cirrus_conf_low
-    else:
-        keep = (is_clear | is_water | is_snow) & cloud_cirrus_conf_low
+    keep = (is_clear | is_water) & cloud_cirrus_conf_low
 
     # Explicitly mask bad bits regardless of Clear.
     bad_bits = (1 << DILATED_CLOUD) | (1 << CIRRUS) | (1 << CLOUD)
@@ -174,9 +165,8 @@ def mask_qa_pixel(
         shadow_mask = ((qa_pixel & (1 << CLOUD_SHADOW)) != 0) | (shadow_confidence >= 2)
         cloud_mask = cloud_mask | (valid & shadow_mask)
 
-    if mask_snow:
-        snow_mask = ((qa_pixel & (1 << SNOW)) != 0) | (snow_confidence >= 2)
-        cloud_mask = cloud_mask | (valid & snow_mask)
+    snow_mask = ((qa_pixel & (1 << SNOW)) != 0) | (snow_confidence >= 2)
+    cloud_mask = cloud_mask | (valid & snow_mask)
 
     spectral_bands = [b for b in ds.data_vars if b not in qa_bands]
     for band in spectral_bands:
@@ -236,20 +226,10 @@ def mask_blue_white_cloud(
     Returns:
         New dataset. Masked spectral pixels set to nodata_value. QA unchanged.
     """
-    blue_band = "blue"
-    green_band = "green"
-    red_band = "red"
     spectral_bands = [b for b in ds.data_vars if b not in qa_bands]
-
-    required = {blue_band, green_band, red_band}
-    if not required.issubset(ds.data_vars):
-        missing = required - {str(b) for b in ds.data_vars}
-        logger.warning(f"Hard cloud masking skipped - missing bands: {missing}")
-        return ds
-
-    blue = _to_reflectance(ds[blue_band])
-    green = _to_reflectance(ds[green_band])
-    red = _to_reflectance(ds[red_band])
+    blue = _to_reflectance(ds["blue"])
+    green = _to_reflectance(ds["green"])
+    red = _to_reflectance(ds["red"])
 
     mean_vis = (blue + green + red) / 3.0
     whiteness = (abs(blue - mean_vis) + abs(green - mean_vis) + abs(red - mean_vis)) / mean_vis.where(mean_vis != 0)
@@ -299,44 +279,39 @@ class InsufficientScenesError(LdnError):
 
 
 class GeoMADProcessor(Processor):
+    """Processor that masks clouds and computes the geomedian and median absolute deviations of Landsat scenes."""
+
     def __init__(
         self,
         year: str,
-        send_area_to_processor: bool = False,
-        load_data_before_writing: bool = True,
-        min_timesteps: int = 3,
-        geomad_options: dict = {
-            "num_threads": 4,
-            "work_chunks": (1000, 1000),
-            "maxiters": 1000,
-        },
-        drop_vars: list[str] = [],
-        preprocessor: Processor | None = None,
-        mask_clouds_kwargs: dict = {
-            "filters": [("opening", 3), ("dilation", 5), ("erosion", 2)],
-            "mask_shadow": True,
-        },
-        **kwargs,
+        min_timesteps: int,
+        geomad_options: dict,
+        drop_vars: list[str],
+        mask_clouds_kwargs: dict,
     ) -> None:
-        super().__init__(send_area_to_processor, **kwargs)
+        """Create a GeoMAD processor.
+
+        Args:
+            year: Year being processed, for the STAC datetime.
+            min_timesteps: Fewest timesteps to process, else InsufficientScenesError is raised.
+            geomad_options: Keyword arguments for datacube_compute.geomedian_with_mads.
+            drop_vars: Variables to drop after cloud masking, e.g. the QA bands.
+            mask_clouds_kwargs: Keyword arguments for mask_nodata_clouds_saturated.
+        """
+        super().__init__()
         self.year = year
-        self.load_data_before_writing = load_data_before_writing
         self.min_timesteps = min_timesteps
         self.geomad_options = geomad_options
         self.drop_vars = drop_vars
-        self.preprocessor = preprocessor
         self.mask_kwargs = mask_clouds_kwargs
 
     def process(self, ds: Dataset) -> Dataset:
+        """Mask clouds, then compute the GeoMAD and load it before writing."""
         if ds.time.size < self.min_timesteps:
             raise InsufficientScenesError(f"{ds.time.size} is less than {self.min_timesteps} timesteps")
 
         ds = mask_nodata_clouds_saturated(ds, **self.mask_kwargs)
-        data = ds.drop_vars(self.drop_vars) if len(self.drop_vars) > 0 else ds
-
-        geomad = geomedian_with_mads(data, **self.geomad_options)
-
-        if self.load_data_before_writing:
-            geomad = geomad.compute()
+        data = ds.drop_vars(self.drop_vars)
+        geomad = geomedian_with_mads(data, **self.geomad_options).compute()
 
         return _set_stac_properties(data, geomad, self.year)

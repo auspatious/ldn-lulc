@@ -5,10 +5,10 @@ from datetime import datetime as dt
 from functools import partial
 from pathlib import Path
 from typing import Literal
+from urllib.request import urlopen
 
 import numpy as np
 import pandas as pd
-import requests
 import typer
 import xarray as xr
 from dask.distributed import Client as DaskClient
@@ -40,9 +40,12 @@ from ldn.utils import (
     GEOMAD_DATASET_ID,
     GEOMAD_VERSION,
     LULC_DATASET_ID,
+    LULC_NODATA,
     LULC_VERSION,
+    SENSOR,
     SOURCE_COOP_PREFIX_LULC,
     LdnError,
+    get_env_var,
     get_public_url_base,
     get_stac_geoparquet_key,
     get_stac_geoparquet_url,
@@ -150,35 +153,6 @@ class PaddedOdcLoader(OdcLoader):
         return super().load(items, areas.pad(FOCAL_PAD))
 
 
-def reshape_array_to_2d(
-    stacked_array: pd.Series,
-    template_ds: xr.Dataset,
-    original_mask: xr.DataArray,
-    nodata_value: int,
-) -> xr.DataArray:
-    """Reshape a 1D stacked array back to a 2D DataArray.
-
-    scikit-learn predicts on a table with one row per pixel, so its outputs are 1D and are reshaped back to the
-    raster here. The output is uint8 for storage, not for the random forest: class values and probabilities (0-100)
-    fit in 0-255, so it keeps the COGs small, and nodata_value (e.g. 255) marks pixels without a prediction.
-
-    Args:
-        stacked_array: Flattened prediction or probability values.
-        template_ds: Dataset whose y/x coordinates define the output shape.
-        original_mask: Boolean mask (True = nodata) applied to the output.
-        nodata_value: Integer nodata value for output pixels.
-
-    Returns:
-        A 2D uint8 DataArray with the specified nodata_value for nodata pixels.
-    """
-    array = stacked_array.to_numpy().reshape(template_ds.y.size, template_ds.x.size)
-    da = xr.DataArray(array, coords={"y": template_ds.y, "x": template_ds.x}, dims=["y", "x"])
-    # nodata_value as NoData. Ensure any remaining NaNs are also set to nodata_value before casting.
-    da = da.where(~original_mask, nodata_value).fillna(nodata_value)
-    # Round, as casting truncates (e.g. a probability of 99.9 would become 99).
-    return da.round().astype("uint8")
-
-
 def do_prediction(
     ds: xr.Dataset,
     model: RandomForestClassifier,
@@ -187,21 +161,22 @@ def do_prediction(
 ) -> tuple[xr.DataArray, dict[str, xr.DataArray]]:
     """Run random forest prediction and extract per-class probabilities.
 
-    Converts the dataset to a flat observation table, runs the model,
-    and reshapes results back to 2D.
+    scikit-learn predicts on a table with one row per pixel, so the features are flattened to a table and the
+    probabilities reshaped back to the raster. Outputs are uint8 for storage, not for the random forest: class values
+    and probabilities (0-100) fit in 0-255, so it keeps the COGs small, and nodata_value (e.g. 255) marks pixels
+    without a prediction.
 
     Args:
         ds: Feature dataset with y/x spatial dimensions.
-        model: Fitted scikit-learn classifier with predict/predict_proba.
-        probability_threshold: Confidence threshold (0-100) below which
-            classification is set to nodata.
+        model: Fitted scikit-learn classifier with predict_proba.
+        probability_threshold: Confidence threshold (0-100) below which classification is set to nodata.
         nodata_value: Integer nodata value for output bands.
 
     Returns:
-        A (classification, probabilities) tuple where classification is the
-        argmax class where max probability >= threshold (else nodata), and
-        probabilities is a dict mapping "probability_{class value}" (e.g. "probability_1" for Tree cover)
-        to uint8 DataArrays of per-class probability (0-100).
+        A (classification, probabilities) tuple where classification is the highest probability class where that
+        probability >= threshold (else nodata), and probabilities is a dict mapping "probability_{class value}"
+        (e.g. "probability_1" for Tree cover) to uint8 DataArrays of per-class probability (0-100). Pixels with any
+        NaN feature are nodata.
 
     Raises:
         LdnError: If the dataset's variables are not exactly the model's features.
@@ -212,52 +187,25 @@ def do_prediction(
     if missing or extra:
         raise LdnError(f"Dataset features don't match the model. Missing: {sorted(missing)}, extra: {sorted(extra)}")
 
-    stacked = ds.to_array().stack(dims=["y", "x"])
-
-    # Nodata mask: True for pixels where ANY band is NaN.
-    nodata_mask = stacked.isnull().any(dim="variable")
-
-    # Build observation table: fill NaN with nodata_value (masked pixels are excluded below).
-    obs = (
-        stacked.squeeze()
-        .fillna(nodata_value)
-        .transpose()
-        .to_dataset(dim="variable")  # pivot "variable" into named columns
-        .to_dataframe()
-    )
-
-    obs = obs.reindex(columns=model.feature_names_in_)
-
-    # Flatten the spatial nodata mask to match the observation index.
-    valid = ~nodata_mask.values
-
-    n_classes = len(model.classes_)
-    full_predictions = pd.Series(nodata_value, index=obs.index, dtype=np.float32)
-    full_probabilities = np.full((len(obs.index), n_classes), nodata_value, dtype=np.float32)
-
+    table = np.stack([ds[name].values.ravel() for name in model.feature_names_in_], axis=1)
+    valid = ~np.isnan(table).any(axis=1)
+    proba = np.full((len(table), len(model.classes_)), np.nan, dtype=np.float32)
     if valid.any():
-        valid_df = obs.loc[valid]
-        proba = model.predict_proba(valid_df)
-        full_predictions.loc[valid] = model.classes_[proba.argmax(axis=1)].astype(np.float32)
-        full_probabilities[valid] = (proba * 100).astype(np.float32)
+        proba[valid] = model.predict_proba(pd.DataFrame(table[valid], columns=model.feature_names_in_))
+    proba = proba.reshape(ds.y.size, ds.x.size, -1)
+    # Round, as casting truncates (e.g. a probability of 99.9 would become 99). NaN where a pixel is nodata.
+    percent = np.round(proba * 100)
 
-    # Reshape back to 2D; nodata_mask stamps nodata_value over masked pixels.
-    nodata_mask_2d = nodata_mask.unstack("dims")
-    predictions_2d = reshape_array_to_2d(full_predictions, ds, nodata_mask_2d, nodata_value=nodata_value)
+    def to_uint8(values: np.ndarray) -> xr.DataArray:
+        """Wrap values on the dataset's y/x grid as uint8, with NaN as nodata_value."""
+        return xr.DataArray(np.nan_to_num(values, nan=nodata_value).astype("uint8"), coords={"y": ds.y, "x": ds.x})
 
-    # Per-class probability bands, named by class value (predict_proba columns follow model.classes_).
-    probabilities = {}
-    for i, class_value in enumerate(model.classes_):
-        series = pd.Series(full_probabilities[:, i], index=obs.index)
-        probabilities[f"probability_{int(class_value)}"] = reshape_array_to_2d(
-            series, ds, nodata_mask_2d, nodata_value=nodata_value
-        )
-
-    # Classification = argmax class only where max probability >= threshold, else nodata.
-    max_prob = np.stack([da.values for da in probabilities.values()], axis=0).max(axis=0)
-    max_prob_da = xr.DataArray(max_prob, coords={"y": ds.y, "x": ds.x}, dims=["y", "x"])
-    classification = predictions_2d.where(max_prob_da >= probability_threshold, nodata_value).astype("uint8")
-
+    # NaN (nodata) compares False, so nodata pixels are never confident.
+    confident = percent.max(axis=-1) >= probability_threshold
+    best = model.classes_[np.nan_to_num(proba, nan=0).argmax(axis=-1)]
+    classification = to_uint8(np.where(confident, best, nodata_value))
+    # Columns follow model.classes_, so bands are named by class value.
+    probabilities = {f"probability_{int(c)}": to_uint8(percent[..., i]) for i, c in enumerate(model.classes_)}
     return classification, probabilities
 
 
@@ -436,9 +384,9 @@ def _load_joblib_model(model_path: str):
         model_local = models_dir / model_path.split("/")[-1]
         if not model_local.exists():
             logger.info(f"Downloading model from {model_path} to {model_local}")
-            r = requests.get(model_path, timeout=120)
-            r.raise_for_status()
-            model_local.write_bytes(r.content)
+            # Raises HTTPError for an error status.
+            with urlopen(model_path, timeout=120) as response:
+                model_local.write_bytes(response.read())
         model = str(model_local)
 
     elif model_path.endswith(".joblib"):
@@ -491,59 +439,91 @@ def _add_lulc_stac_metadata(item: Item, model_path: str, nodata_value: int) -> N
             asset.title = f"Probability of {classes_flipped[int(name.removeprefix('probability_'))]} (%)"
 
 
+DEFAULT_MODEL_PATH = (
+    "https://dep-public-staging.s3.us-west-2.amazonaws.com/"
+    "dep_ls_lulc/models/0-1-1/2020/lulc_random_forest_model_2020.joblib"
+)
+
+
 def run_classify_task(
-    tile_id: Annotated[str, typer.Option()],
-    year: Annotated[str, typer.Option()],
-    version: Annotated[str, typer.Option()],
-    geomad_version: Annotated[str, typer.Option()],
-    region: Literal["pacific", "non-pacific"],
-    geomad_bucket: str,
-    output_bucket: str,
-    product_owner: str | None,
-    single_region_geomad: bool,
-    model_path: str,
-    xy_chunk_size: int,
-    decimated: bool,
-    integration_test: bool,
-    overwrite: Annotated[bool, typer.Option()],
-    probability_threshold: float,
-    nodata_value: int,
-    memory_limit: str,
-    n_workers: int,
-    threads_per_worker: int,
-    sensor: str,
-    collection_url_root: str | None,
-    gap_fill_years: int,
+    tile_id: Annotated[str, typer.Option(help="Tile ID to classify LULC for, e.g. '136_142'.")],
+    year: Annotated[str, typer.Option(help="Year to classify LULC for.")],
+    region: Annotated[
+        Literal["pacific", "non-pacific"],
+        typer.Option(help="Region tile belongs to. Can be 'pacific' or 'non-pacific'."),
+    ],
+    single_region_geomad: Annotated[
+        bool,
+        typer.Option(
+            help="Whether to read GeoMAD from the owner's single region index (e.g. 'dep_ls_geomad') "
+            "or the many-region index (e.g. 'ls_geomad', as on Source.Coop).",
+        ),
+    ],
+    version: Annotated[
+        str, typer.Option(help=f"Version of training data to output e.g. '{LULC_VERSION}'.")
+    ] = LULC_VERSION,
+    geomad_version: Annotated[
+        str, typer.Option(help=f"Version of the GeoMAD data to use e.g. '{GEOMAD_VERSION}'.")
+    ] = GEOMAD_VERSION,
+    geomad_bucket: Annotated[
+        str | None, typer.Option(help="S3 bucket for GeoMAD data. Defaults to $GEOMAD_BUCKET.")
+    ] = None,
+    output_bucket: Annotated[
+        str | None, typer.Option(help="S3 bucket to write LULC data to. Defaults to $OUTPUT_BUCKET.")
+    ] = None,
+    product_owner: Annotated[str | None, typer.Option(help="Override the region-derived owner prefix.")] = None,
+    model_path: Annotated[str, typer.Option(help="Model to use for LULC classification.")] = DEFAULT_MODEL_PATH,
+    decimated: Annotated[bool, typer.Option(help="Lower resolution data for faster processing/testing.")] = False,
+    integration_test: Annotated[
+        bool, typer.Option(help="Integration test mode: use decimated data for faster processing.")
+    ] = False,
+    overwrite: Annotated[bool, typer.Option(help="Whether to overwrite existing LULC classification.")] = False,
+    probability_threshold: Annotated[
+        float,
+        typer.Option(
+            help="Probability threshold (0-100) for classifying a pixel as the target class. "
+            "Higher values mean only pixels with higher predicted probability will be classified as the target class.",
+        ),
+    ] = 30.0,
+    nodata_value: Annotated[
+        int, typer.Option(help="Value to use for NoData pixels in the output. Must be an integer between 0 and 255.")
+    ] = LULC_NODATA,
+    memory_limit: Annotated[str, typer.Option(help="Per-worker Dask memory limit.")] = "10GB",
+    n_workers: Annotated[int, typer.Option(help="Number of Dask workers.")] = 2,
+    threads_per_worker: Annotated[int, typer.Option(help="Threads per Dask worker.")] = 4,
+    xy_chunk_size: Annotated[
+        int,
+        typer.Option(
+            help="Chunk size in pixels for x and y dimensions. Larger chunk sizes may be faster but use more memory."
+        ),
+    ] = 1024,
+    sensor: Annotated[str, typer.Option(help="Sensor to use for LULC classification. Defaults to 'ls'.")] = SENSOR,
+    collection_url_root: Annotated[
+        str | None,
+        typer.Option(
+            help="Override the default collection URL root"
+            " e.g for a STAC API like 'https://stac.digitalearthpacific.org/collections'"
+        ),
+    ] = None,
+    gap_fill_years: Annotated[
+        int,
+        typer.Option(
+            help="Fill nodata pixels from the nearest year with data, up to this many years either side. "
+            "The year before wins a tie with the year after. 0 disables."
+        ),
+    ] = 2,
 ) -> None:
     """Run LULC prediction for a single tile and year, writing results to S3.
 
     GeoMAD is loaded straight onto the tile geobox, which is the GeoMAD item's native grid, so no reprojection is
     needed and antimeridian-crossing tiles load correctly.
-
-    Args:
-        tile_id: Grid tile identifier (e.g. "136_142").
-        year: Year string (e.g. "2020").
-        version: Output version string (e.g. "0-0-1").
-        geomad_version: Version of the GeoMAD data to use (e.g. "0-0-1").
-        region: Grid region, either "pacific" or "non-pacific".
-        geomad_bucket: S3 bucket for input GeoMAD source data.
-        output_bucket: S3 bucket for output COGs and STAC metadata.
-        product_owner: Override the region-derived owner prefix.
-        single_region_geomad: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
-        model_path: Path or URL to the trained joblib model.
-        xy_chunk_size: Chunk size in pixels for lazy loading.
-        decimated: If True, use 10x lower resolution (for testing).
-        integration_test: If True, use subset of data for faster processing in integration tests.
-        overwrite: If True, overwrite existing output.
-        probability_threshold: Confidence threshold (0-100) for the binary mask.
-        nodata_value: Integer nodata value for output bands.
-        memory_limit: Per-worker Dask memory limit.
-        n_workers: Number of Dask workers.
-        threads_per_worker: Number of threads per Dask worker.
-        sensor: Sensor to use for LULC classification e.g. 'ls'.
-        collection_url_root: Override the default collection URL root for STAC metadata.
-        gap_fill_years: Furthest number of years away to fill nodata pixels from, 0 for no gap filling.
     """
+    if not 2000 <= int(year) <= 2025:
+        raise LdnError("Year must be between 2000 and 2025.")
+
+    geomad_bucket = geomad_bucket or get_env_var("GEOMAD_BUCKET")
+    output_bucket = output_bucket or get_env_var("OUTPUT_BUCKET")
+
     logger.info(f"Starting processing. Tile ID: {tile_id}, Year: {year}, Region: {region}, Version: {version}.")
     logger.info(
         f"Dask config: n_workers={n_workers}, threads_per_worker={threads_per_worker}, "

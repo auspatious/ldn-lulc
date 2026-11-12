@@ -128,12 +128,6 @@ def get_grid_tiles(
     As an optimization, if the GeoJSON files already exist and overwrite=False, it will read from those
     instead of recalculating the tiles.
     """
-    if format not in ["list", "gdf"]:
-        raise LdnError("Invalid format. Must be 'list' or 'gdf'.")
-
-    if grids not in ["all", "pacific", "non-pacific"]:
-        raise LdnError("Invalid grids value. Must be 'all', 'pacific', or 'non-pacific'.")
-
     logger.info(f"Getting all tiles for grids: {grids} with format: {format} and overwrite: {overwrite}")
 
     geojson_path_non_pacific = Path(__file__).parent / "sids_non_pacific_tiles.geojson"
