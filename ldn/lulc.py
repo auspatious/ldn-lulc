@@ -491,59 +491,91 @@ def _add_lulc_stac_metadata(item: Item, model_path: str, nodata_value: int) -> N
             asset.title = f"Probability of {classes_flipped[int(name.removeprefix('probability_'))]} (%)"
 
 
+DEFAULT_MODEL_PATH = (
+    "https://dep-public-staging.s3.us-west-2.amazonaws.com/"
+    "dep_ls_lulc/models/0-1-1/2020/lulc_random_forest_model_2020.joblib"
+)
+
+
 def run_classify_task(
-    tile_id: Annotated[str, typer.Option()],
-    year: Annotated[str, typer.Option()],
-    version: Annotated[str, typer.Option()],
-    geomad_version: Annotated[str, typer.Option()],
-    region: Literal["pacific", "non-pacific"],
-    geomad_bucket: str,
-    output_bucket: str,
-    product_owner: str | None,
-    single_region_geomad: bool,
-    model_path: str,
-    xy_chunk_size: int,
-    decimated: bool,
-    integration_test: bool,
-    overwrite: Annotated[bool, typer.Option()],
-    probability_threshold: float,
-    nodata_value: int,
-    memory_limit: str,
-    n_workers: int,
-    threads_per_worker: int,
-    sensor: str,
-    collection_url_root: str | None,
-    gap_fill_years: int,
+    tile_id: Annotated[str, typer.Option(help="Tile ID to classify LULC for, e.g. '136_142'.")],
+    year: Annotated[str, typer.Option(help="Year to classify LULC for.")],
+    region: Annotated[
+        Literal["pacific", "non-pacific"],
+        typer.Option(help="Region tile belongs to. Can be 'pacific' or 'non-pacific'."),
+    ],
+    single_region_geomad: Annotated[
+        bool,
+        typer.Option(
+            help="Whether to read GeoMAD from the owner's single region index (e.g. 'dep_ls_geomad') "
+            "or the many-region index (e.g. 'ls_geomad', as on Source.Coop).",
+        ),
+    ],
+    version: Annotated[
+        str, typer.Option(help=f"Version of training data to output e.g. '{LULC_VERSION}'.")
+    ] = LULC_VERSION,
+    geomad_version: Annotated[
+        str, typer.Option(help=f"Version of the GeoMAD data to use e.g. '{GEOMAD_VERSION}'.")
+    ] = GEOMAD_VERSION,
+    geomad_bucket: Annotated[
+        str | None, typer.Option(help="S3 bucket for GeoMAD data. Defaults to $GEOMAD_BUCKET.")
+    ] = None,
+    output_bucket: Annotated[
+        str | None, typer.Option(help="S3 bucket to write LULC data to. Defaults to $OUTPUT_BUCKET.")
+    ] = None,
+    product_owner: Annotated[str | None, typer.Option(help="Override the region-derived owner prefix.")] = None,
+    model_path: Annotated[str, typer.Option(help="Model to use for LULC classification.")] = DEFAULT_MODEL_PATH,
+    decimated: Annotated[bool, typer.Option(help="Lower resolution data for faster processing/testing.")] = False,
+    integration_test: Annotated[
+        bool, typer.Option(help="Integration test mode: use decimated data for faster processing.")
+    ] = False,
+    overwrite: Annotated[bool, typer.Option(help="Whether to overwrite existing LULC classification.")] = False,
+    probability_threshold: Annotated[
+        float,
+        typer.Option(
+            help="Probability threshold (0-100) for classifying a pixel as the target class. "
+            "Higher values mean only pixels with higher predicted probability will be classified as the target class.",
+        ),
+    ] = 30.0,
+    nodata_value: Annotated[
+        int, typer.Option(help="Value to use for NoData pixels in the output. Must be an integer between 0 and 255.")
+    ] = 255,
+    memory_limit: Annotated[str, typer.Option(help="Per-worker Dask memory limit.")] = "10GB",
+    n_workers: Annotated[int, typer.Option(help="Number of Dask workers.")] = 2,
+    threads_per_worker: Annotated[int, typer.Option(help="Threads per Dask worker.")] = 4,
+    xy_chunk_size: Annotated[
+        int,
+        typer.Option(
+            help="Chunk size in pixels for x and y dimensions. Larger chunk sizes may be faster but use more memory."
+        ),
+    ] = 1024,
+    sensor: Annotated[str, typer.Option(help="Sensor to use for LULC classification. Defaults to 'ls'.")] = SENSOR,
+    collection_url_root: Annotated[
+        str | None,
+        typer.Option(
+            help="Override the default collection URL root"
+            " e.g for a STAC API like 'https://stac.digitalearthpacific.org/collections'"
+        ),
+    ] = None,
+    gap_fill_years: Annotated[
+        int,
+        typer.Option(
+            help="Fill nodata pixels from the nearest year with data, up to this many years either side. "
+            "The year before wins a tie with the year after. 0 disables."
+        ),
+    ] = 2,
 ) -> None:
     """Run LULC prediction for a single tile and year, writing results to S3.
 
     GeoMAD is loaded straight onto the tile geobox, which is the GeoMAD item's native grid, so no reprojection is
     needed and antimeridian-crossing tiles load correctly.
-
-    Args:
-        tile_id: Grid tile identifier (e.g. "136_142").
-        year: Year string (e.g. "2020").
-        version: Output version string (e.g. "0-0-1").
-        geomad_version: Version of the GeoMAD data to use (e.g. "0-0-1").
-        region: Grid region, either "pacific" or "non-pacific".
-        geomad_bucket: S3 bucket for input GeoMAD source data.
-        output_bucket: S3 bucket for output COGs and STAC metadata.
-        product_owner: Override the region-derived owner prefix.
-        single_region_geomad: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
-        model_path: Path or URL to the trained joblib model.
-        xy_chunk_size: Chunk size in pixels for lazy loading.
-        decimated: If True, use 10x lower resolution (for testing).
-        integration_test: If True, use subset of data for faster processing in integration tests.
-        overwrite: If True, overwrite existing output.
-        probability_threshold: Confidence threshold (0-100) for the binary mask.
-        nodata_value: Integer nodata value for output bands.
-        memory_limit: Per-worker Dask memory limit.
-        n_workers: Number of Dask workers.
-        threads_per_worker: Number of threads per Dask worker.
-        sensor: Sensor to use for LULC classification e.g. 'ls'.
-        collection_url_root: Override the default collection URL root for STAC metadata.
-        gap_fill_years: Furthest number of years away to fill nodata pixels from, 0 for no gap filling.
     """
+    if not 2000 <= int(year) <= 2025:
+        raise LdnError("Year must be between 2000 and 2025.")
+
+    geomad_bucket = geomad_bucket or get_env_var("GEOMAD_BUCKET")
+    output_bucket = output_bucket or get_env_var("OUTPUT_BUCKET")
+
     logger.info(f"Starting processing. Tile ID: {tile_id}, Year: {year}, Region: {region}, Version: {version}.")
     logger.info(
         f"Dask config: n_workers={n_workers}, threads_per_worker={threads_per_worker}, "
