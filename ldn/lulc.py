@@ -5,10 +5,10 @@ from datetime import datetime as dt
 from functools import partial
 from pathlib import Path
 from typing import Literal
+from urllib.request import urlopen
 
 import numpy as np
 import pandas as pd
-import requests
 import typer
 import xarray as xr
 from dask.distributed import Client as DaskClient
@@ -384,9 +384,9 @@ def _load_joblib_model(model_path: str):
         model_local = models_dir / model_path.split("/")[-1]
         if not model_local.exists():
             logger.info(f"Downloading model from {model_path} to {model_local}")
-            r = requests.get(model_path, timeout=120)
-            r.raise_for_status()
-            model_local.write_bytes(r.content)
+            # Raises HTTPError for an error status.
+            with urlopen(model_path, timeout=120) as response:
+                model_local.write_bytes(response.read())
         model = str(model_local)
 
     elif model_path.endswith(".joblib"):
