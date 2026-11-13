@@ -1,18 +1,18 @@
 # Land Degradation Neutrality - Land Use/Land Cover
 
-Creating Land Use/Land Cover (LULC) datasets for the UN Small Island Developing States (SIDS) and Pacific Community (SPC) countries/territories. The installable package lives in the `ldn` folder. There are some helpful notebooks in the `notebooks` folder.
+This repository makes Land Use/Land Cover (LULC) datasets for the UN Small Island Developing States (SIDS) and for the countries and territories of the Pacific Community (SPC). The `ldn` folder contains the installable package. The `notebooks` folder contains notebooks for analysis.
 
-**Tiled Pipeline:**
-1. Produce annual GeoMedian/GeoMAD mosaics (2000–2025) per tile and year
-2. Build training data from existing LULC products (2020) for representative tiles
-3. Train a model using the training data. If future models may be specific to subregions/time periods.
-4. Predict LULC for all countries/territories per tile and year.
+The pipeline processes the data in tiles:
+1. Make annual GeoMedian and GeoMAD mosaics (2000 to 2025) for each tile and year.
+2. Make training data from existing LULC products (2017 to 2021) for representative tiles.
+3. Train a model with the training data. Future models can be specific to a subregion or a time period.
+4. Predict LULC for all countries and territories, for each tile and year.
 
 ## Contents
 
 - [Products](#products)
-  - [1. Geomedian and median absolute deviations](#1-geomad)
-  - [2. Land Use/Land Cover Classification](#2-land-useland-cover-classification)
+  - [Product 1. Geomedian with GeoMAD](#product-1-geomedian-with-geomad)
+  - [Product 2. Land Use/Land Cover Classification](#product-2-land-useland-cover-classification)
 - [Coverage: Regions & Grids](#coverage-regions--grids)
   - [Area of Interest](#area-of-interest)
   - [Country/Territory Listing](#countryterritory-listing)
@@ -27,7 +27,7 @@ Creating Land Use/Land Cover (LULC) datasets for the UN Small Island Developing 
   - [Docker](#docker)
   - [Running on an EC2 VM](#running-on-an-ec2-vm)
   - [Running in Argo](#running-in-argo)
-- [Visualisation](#visualisation)
+- [Visualisation](#visualisation-wip)
 - [CI/CD](#cicd)
   - [Releasing](#releasing)
 
@@ -35,49 +35,51 @@ Creating Land Use/Land Cover (LULC) datasets for the UN Small Island Developing 
 
 ## Products
 
-This repository creates **two** data products, which share a common footprint and processing grid:
+This repository makes two data products. They use the same footprint and the same processing grid.
 
 | Property | Value |
 | - | - |
 | Spatial resolution  | 30 m |
-| Temporal coverage   | 2000–2025 |
+| Temporal coverage   | 2000 to 2025 |
 | Temporal resolution | Annual |
 | Sensors             | Landsat 5, 7, 8, 9 |
-| Format              | Cloud-Optimized GeoTIFF |
+| Format              | Cloud-Optimized GeoTIFF (COG) |
 | Metadata            | Spatio-Temporal Asset Catalog (STAC) |
 | Countries/territories | 60 |
 | Regions (each has its own grid and CRS) | 2 |
 | Grid tiles processed | 817 |
 
-Output files are Cloud-Optimized GeoTIFFs structured by grid index and year (`x/y/year`), and are versioned e.g.: https://source.coop/auspatious/geomad-sids/ci_ls_geomad/0-2-1/118/125/2000/ci_ls_geomad_118_125_2000_bcmad.tif
+The output files are COGs in folders by grid index and year (`x/y/year`). Each output has a version. For example: https://source.coop/auspatious/geomad-sids/ci_ls_geomad/0-2-1/118/125/2000/ci_ls_geomad_118_125_2000_bcmad.tif
 
-All outputs for a tile/year are bundled into a STAC item JSON, e.g.: https://data.source.coop/auspatious/geomad-sids/ci_ls_geomad/0-2-1/118/125/2000/ci_ls_geomad_118_125_2000.stac-item.json
+One STAC item JSON file contains all the outputs for a tile and year. For example: https://data.source.coop/auspatious/geomad-sids/ci_ls_geomad/0-2-1/118/125/2000/ci_ls_geomad_118_125_2000.stac-item.json
 
 #### STAC metadata
 
-Items record their provenance, so they describe themselves even without a collection:
+Each item records its provenance, so it describes itself without a collection:
 
-- [Processing extension](https://github.com/stac-extensions/processing): `processing:version` (ldn version),
-  `processing:software` (exact package versions, with the commit for git dependencies) and `processing:datetime` (UTC).
-- Providers: Digital Earth Pacific (processor, and host unless on Source Cooperative), Source Cooperative (host),
-  Auspatious (processor, with `processing:facility`, level and lineage), USGS and NASA.
-- Links: `derived_from` to the input items used (Landsat scenes for GeoMAD; for LULC, the GeoMAD items of the tile
-  and its neighbours from the year and any years used for gap filling), the LULC model, and the
-  [visualisation](https://auspatious.github.io/ldn-lulc).
-- LULC only: the [classification extension](https://github.com/stac-extensions/classification) describes each class
-  (value, name, title, colour, nodata) on the `classification` asset, and each `probability_{class value}` asset is
-  titled with its class.
+- [Processing extension](https://github.com/stac-extensions/processing): `processing:version` (the ldn version),
+  `processing:software` (the exact package versions, and the commit for git dependencies) and `processing:datetime` (UTC).
+- Providers: Digital Earth Pacific (processor, and host when the data is not on Source Cooperative), Source Cooperative
+  (host), Auspatious (processor, with `processing:facility`, level and lineage), USGS and NASA.
+- Links:
+  - `derived_from` to each input item that was used. For GeoMAD, these are the Landsat scenes. For LULC, these are the
+    GeoMAD items of the tile and its neighbours, for the year and for each year used to fill gaps.
+  - The LULC model.
+  - The [visualisation](https://auspatious.github.io/ldn-lulc).
+- LULC only: the [classification extension](https://github.com/stac-extensions/classification) on the `classification`
+  asset describes each class (value, name, title, colour and nodata). The title of each `probability_{class value}`
+  asset is the name of its class.
 
 ### Product 1. Geomedian with GeoMAD
 
 #### Geometric Median Mosaic
 
-A cloud-free annual surface reflectance composite generated using the geometric median of all valid observations. Unlike independent per-band median compositing, the geometric median preserves spectral relationships between bands, producing more physically realistic reflectance values. [See more technical details here.](https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#geometric-median)
+The geometric median mosaic is a cloud-free annual surface reflectance composite. It is the geometric median of all valid observations in the year. A median of each band by itself changes the relationships between the bands. The geometric median keeps these relationships, so the reflectance values are more physically realistic. [Technical details.](https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#geometric-median)
 
-GeoMAD has been written to:
+GeoMAD is available here:
 - Source.Coop (Pacific and non-Pacific) v0-2-1 https://source.coop/auspatious/geomad-sids
-- DEP Public Staging (just Pacific) v0-2-1 https://dep-public-staging.s3.us-west-2.amazonaws.com/index.html?prefix=dep_ls_geomad/0-2-1/
-- DEP Public Production (just Pacific) v0-3-0 https://data.digitalearthpacific.org/#dep_ls_geomad/0-3-0/
+- DEP Public Staging (Pacific only) v0-2-1 https://dep-public-staging.s3.us-west-2.amazonaws.com/index.html?prefix=dep_ls_geomad/0-2-1/
+- DEP Public Production (Pacific only) v0-3-0 https://data.digitalearthpacific.org/#dep_ls_geomad/0-3-0/
 
 
 | Band   | Description               |
@@ -91,7 +93,7 @@ GeoMAD has been written to:
 
 #### Median Absolute Deviation (MAD)
 
-A robust measure of temporal variability, useful for quantifying uncertainty, identifying unstable surfaces, detecting environmental change, and supporting machine learning workflows. [See more technical details here.](https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#median-absolute-deviation)
+The MAD bands measure how much the surface changes during the year. You can use them to measure uncertainty, to find unstable surfaces, to detect environmental change and as machine learning features. [Technical details.](https://knowledge.dea.ga.gov.au/data/product/dea-geometric-median-and-median-absolute-deviation-landsat/?tab=description#median-absolute-deviation)
 
 | Band   | Description                |
 | ------ | --------------------------- |
@@ -99,40 +101,40 @@ A robust measure of temporal variability, useful for quantifying uncertainty, id
 | smad   | Cosine (spectral) distance  |
 | bcmad  | Bray-Curtis dissimilarity   |
 
-A `count` band is also included, recording the number of valid observations used per pixel.
+The `count` band gives the number of valid observations for each pixel.
 
 #### Input Data
 
-Landsat Collection 2 Tier 1 data is preferred. Where insufficient timesteps are available, Tier 2 data is included; if still insufficient, data from ±1 year is incorporated. A small number of tiles for a small number of years remain incalculable even after these relaxations.
+The pipeline uses Landsat Collection 2 Tier 1 data first. If there are not sufficient time steps, it also uses Tier 2 data. If there are still not sufficient time steps, it also uses data from 1 year before and 1 year after. Some tiles have no result for some years, even with these changes.
 
 #### Cloud Masking
 
-> Cloud masking is aggressive - **missing pixels are preferred over cloudy outputs.**
+> The cloud mask is aggressive. **A missing pixel is better than a cloudy pixel.**
 
-- Masked layers: cloud, dilated cloud, cirrus, cloud shadow, and snow (flagged from `qa_pixel`).
-- Custom whiteness and blueness indices catch residual unmasked cloud (which lacks good qa data).
-- Morphological filters clean up the mask and remove small isolated pixel groups surrounded by cloud.
-- Saturated pixels are masked using `qa_radsat` (saturation masking does not have a very large impact compared to cloud).
-- Snow is masked because of its unlikelihood in this AOI, and its common presence in the input qa data. This would not be a good idea at higher latitudes.
+- The mask includes cloud, dilated cloud, cirrus, cloud shadow and snow, from the `qa_pixel` flags.
+- Custom whiteness and blueness indices find cloud that the QA data does not flag.
+- Morphological filters clean the mask. They remove small groups of pixels that cloud surrounds.
+- The `qa_radsat` band masks saturated pixels. This has a much smaller effect than the cloud mask.
+- Snow is masked because there is almost no snow in the area of interest, and the QA data often flags snow. Do not do this at high latitudes.
 
 #### Quality
 
-Some areas remain partially incomplete. Cloud-persistent regions such as Fiji can lack sufficient cloud-free observations in certain years, even after broadening the input data window.
+Some areas have gaps. Areas with persistent cloud, for example Fiji, do not have sufficient cloud-free observations in some years, even with the wider input data window.
 
 #### Applications
 
-Designed for change detection and land surface analysis. Auspatious uses these mosaics to classify land use/land cover across SIDS and PICTs, with annual outputs feeding Land Degradation Neutrality calculations for [UN SDG Indicator 15.3.1](https://sdgs.unep.org/article/sdg-indicator-1531) (proportion of land that is degraded over total land area).
+The mosaics are for change detection and land surface analysis. Auspatious uses them to classify LULC across SIDS and PICTs. The annual outputs are inputs to the Land Degradation Neutrality calculations for [UN SDG Indicator 15.3.1](https://sdgs.unep.org/article/sdg-indicator-1531) (the proportion of land that is degraded over total land area).
 
 ### Product 2. Land Use/Land Cover Classification
 
-Built from existing LULC products as training data:
+The training data comes from these existing LULC products:
 - ESA WorldCover
 - Impact Observatory Annual Land Use Land Cover
 - ESA Climate Change Initiative Land Cover
 
-Our LULC typology is defined [here](https://github.com/auspatious/ldn-lulc/blob/main/typology/typology.md).
+Our LULC typology is [here](https://github.com/auspatious/ldn-lulc/blob/main/typology/typology.md).
 
-Further design docs (private):
+Other design documents (private):
 - [LULC Datasets](https://docs.google.com/document/d/1VFGNH0yIV0rCFdRfNmv_y78q8dpZwa_twbYsDjHBj2k/edit?tab=t.0#heading=h.szysksgdlwi1)
 - [Global Land Use Land Cover Datasets and Their Relevance for SIDS LDN](https://docs.google.com/document/d/14P9XUaBah_9iYNSw8x43k6w2s490wJ4gGxmnOytTKX8/edit?tab=t.0#heading=h.nia7409tueh1)
 
@@ -140,126 +142,141 @@ Further design docs (private):
 
 | Attribute | ESA WorldCover | Impact Observatory 10m Annual LULC (v2) | ESA CCI Land Cover |
 | - | - | - | - |
-| Provider | ESA / VITO | Impact Observatory (with Esri & Microsoft) | ESA Climate Change Initiative |
+| Provider | ESA / VITO | Impact Observatory (with Esri and Microsoft) | ESA Climate Change Initiative |
 | Spatial resolution | 10 m | 10 m | 300 m |
-| Temporal coverage | 2020, 2021 | 2017–2023 (annual) | 1992–2022 (annual) |
-| Update frequency | One-off (2 epochs only) | Annual (new year added each January) | Annual |
+| Temporal coverage (on Planetary Computer) | 2020, 2021 | 2017 to 2023 (annual) | 1992 to 2020 (annual) |
+| Update frequency | One-off (2 epochs only) | Annual (a new year each January) | Annual |
 | Native classes | 11 | 9 | 37 (UN LCCS nomenclature) |
-| Source sensors | Sentinel-1 (SAR) + Sentinel-2 (optical) | Sentinel-2 (optical) | Multi-sensor time series: MERIS, AVHRR, SPOT-VGT, PROBA-V, Sentinel-3 |
-| Method | CatBoost classifier on multi-feature stack, expert-rule post-processing | Deep learning model trained on human-labelled pixels, per-year composite | GlobCover unsupervised classification chain |
-| Quality/flag bands used in this pipeline | `input_quality.1/2/3` (per-season observation quality) | None available | `processed_flag`, `change_count`, `observation_count` |
+| Source sensors | Sentinel-1 (SAR) and Sentinel-2 (optical) | Sentinel-2 (optical) | Multi-sensor time series: MERIS, AVHRR, SPOT-VGT, PROBA-V, Sentinel-3 |
+| Method | CatBoost classifier on a multi-feature stack, with expert-rule post-processing | Deep learning model trained on human-labelled pixels, with a composite for each year | GlobCover unsupervised classification chain |
+| Quality/flag bands used in this pipeline | `input_quality.1/2/3` (observation quality for each season) | None available | `processed_flag`, `change_count`, `observation_count` |
 
-2020 is used as the first training data year due to the temoral overlap between the three products in that year.
+There is training data for each year from 2017 to 2021 in which at least 2 products have data (`TRAINING_DATA_YEARS`):
+- 2017 to 2019: ESA CCI and IO.
+- 2020: all 3 products.
+- 2021: ESA WorldCover and IO.
 
-All three are reprojected/aligned onto the 30m GeoMAD tile grid before being reduced to our 7-class `level1` typology (see mapping tables above) and combined via 2-of-3 agreement to generate training samples. That means that the two 10m products (ESA WC & IO) are downsampled while ESA CCI LC is upsampled from 300m.
+More years show the model more conditions. For example, 2021 is a dry La Nina year in the central Pacific (see `plan-label-propagation2.md`).
+
+The pipeline reprojects the products onto the 30 m GeoMAD tile grid. Then it changes their classes to our 7-class `level1` typology (see `typology_mapping.yaml`). The training samples come from pixels where at least 2 products agree. Thus the two 10 m products (ESA WorldCover and IO) are downsampled, and ESA CCI is upsampled from 300 m.
 
 ### 3 datasets: training, test, validation
 
-The datasets support this workflow:
-1. Generate training data, representative of all regions (2020 only).
-2. Classify LULC for all years (2000-2025) over a small region.
-3. Validate programmatically against the test data.
-4. Iterate steps 2-4.
-5. If results are good, run representative regions over all years and visualise them.
-6. If the visualisation is good, run everything. Otherwise go back and iterate.
-7. Write a formal validation report using the validation data.
+The datasets are for this workflow:
+1. Make training data that represents all regions (2017 to 2021, `make training-data-generate-years`).
+2. Classify LULC for all years (2000 to 2025) over a small area.
+3. Validate the results against the test data with code.
+4. Do steps 2 and 3 again until the results are good.
+5. Run representative areas over all years, and look at the results on a map.
+6. If the map is good, run all tiles. If not, go back to step 2.
+7. Write a formal validation report with the validation data.
 
 #### 1. Training data
 
-For a given tile and year, training samples are generated by finding where the three source LULC products agree, then sampling from that agreement map.
+For each tile and year, the pipeline finds where the source LULC products with data for that year agree. Then it takes samples from this agreement map.
 
-Data is written here https://dep-public-staging.s3.us-west-2.amazonaws.com/index.html?prefix=dep_ls_lulc/training_data/
+The training data is here: https://dep-public-staging.s3.us-west-2.amazonaws.com/index.html?prefix=dep_ls_lulc/training_data/
 
-1. **Load & quality-filter each product** onto the tile's GeoMAD grid:
+1. The pipeline loads each product onto the GeoMAD grid of the tile, and applies a quality filter:
 
    | Product | Quality filter |
    | - | - |
-   | ESA WorldCover | At least 1 Sentinel-1 and at least 2 Sentinel-2 observations. Negative quality values (-1 nodata, and an undocumented -2 that covers whole files over northern Fiji) are treated as nodata and not masked |
-   | ESA CCI-LC | Processed, stable class (no change), and ≥3 observations - relaxed to ≥1 observation if the strict filter rejects every pixel in the tile |
-   | Impact Observatory (IO) | No quality filter available |
+   | ESA WorldCover | At least 1 Sentinel-1 observation and at least 2 Sentinel-2 observations. Negative quality values are nodata and are not masked. These are -1 (nodata) and an undocumented -2, which covers full files over northern Fiji |
+   | ESA CCI-LC | Processed, a stable class (no change), and at least 3 observations. If this filter removes all pixels in the tile, the minimum is 1 observation |
+   | Impact Observatory (IO) | No quality filter is available |
 
-2. **Find 2-of-3 agreement:** a pixel is kept where at least 2 of the 3 products agree on class, requiring ≥2 products to have valid data at that pixel. A 3×3 neighbourhood minimum filter is then applied so isolated agreeing pixels (with no agreeing neighbours) are dropped.
-3. **Stratified random sampling** from the agreement map, masked to areas with valid GeoMAD data. Default: 2,100 total samples, minimum 300 per class.
-4. **Feature extraction:** the model features (see [Model features](#model-features)) are sampled at each point's location.
-5. **Cleanup:** samples with NaN feature values are dropped. K-Means-based per-class outlier filtering (removing the furthest-from-centroid samples within each class) is implemented but currently disabled pending an ablation study on whether it improves the model.
-6. **Output:** written locally as GeoJSON + CSV and uploaded to S3 as CSV. Outputs are versioned and record their region, tile index, and year. Source.Coop is not currently supported as a training-data destination.
+2. It keeps a pixel where at least 2 products agree on its class (both of 2 products, or 2 of 3). Nodata does not count as agreement. Then a 3x3 minimum filter keeps a pixel only if all of its neighbourhood agrees.
+3. It takes a stratified random sample from the agreement map, only where there is valid GeoMAD data. The default is 2,100 samples, with a minimum of 300 for each class.
+4. It gets the model features (see [Model features](#model-features)) at each sample point.
+5. It removes the samples that have NaN feature values. The code also has a K-Means outlier filter for each class, which removes the samples furthest from the class centroid. This filter is disabled until an ablation study shows if it makes the model better.
+6. It writes GeoJSON and CSV locally, and CSV to S3. The outputs have a version, and record the region, the tile index and the year. Source.Coop is not a supported destination for training data.
 
-Tiles crossing the antimeridian (e.g. parts of Kiribati, Fiji) are handled specially throughout: country geometries are split/fixed at ±180°, and LULC products are loaded and reprojected in east/west halves before merging.
+Some tiles cross the antimeridian (for example, parts of Kiribati and Fiji). For these tiles, the pipeline splits the country geometries at 180 degrees. It loads and reprojects the LULC products in an east half and a west half, and then merges the halves.
 
-**Representative training tiles** (Pacific region) were hand-picked to span major environment types:
+The Pacific training tiles were selected by hand to include the main environment types:
 
 | Country | Environment |
 | - | - |
 | Papua New Guinea | Dense tropical rainforest, highland montane forest, river delta |
-| Kiribati | Low-lying coral atoll / open-ocean & lagoon |
+| Kiribati | Low-lying coral atoll, open ocean and lagoon |
 | Vanuatu | Active volcanic islands, crater lakes, lava fields |
-| Samoa | Elevated volcanic interior, waterfalls, reef/beach coastline |
-| Fiji | Mixed urban + agricultural (sugarcane), mangrove wetlands, Suva urban area |
-| Palau | Raised limestone/rock island jungle |
-| New Caledonia | Maquis shrubland / lagoon |
+| Samoa | Elevated volcanic interior, waterfalls, reef and beach coastline |
+| Fiji | Mixed urban and agricultural (sugarcane), mangrove wetlands, Suva urban area |
+| Palau | Raised limestone island jungle |
+| New Caledonia | Maquis shrubland, lagoon |
 
 #### 2. Test data
 
 https://dep-public-staging.s3.us-west-2.amazonaws.com/index.html?prefix=dep_ls_lulc/test_data/
 
-A frozen set of held-out tiles (`TEST_TILES` in `ldn/training_data.py`) is used only to compare data and model versions. It is never used to train a model, and `--split train` refuses to generate these tiles. It is generated with `make test-data-generate` (`--split test`), uses a fixed random seed, is written to `dep_ls_lulc/test_data/{TEST_DATA_VERSION}/{region}/`, and cannot be overwritten. Change `TEST_DATA_VERSION` to deliberately regenerate it. Human or AI validation of the LULC outputs is a separate, later dataset.
+The test data is a frozen set of held-out tiles (`TEST_TILES` in `ldn/training_data.py`). It is only for comparing data and model versions. Do not train a model with it. `--split train` does not make these tiles.
 
-How many tiles to use (Pacific has about 517 tiles and non-Pacific about 300, all containing SIDS land):
+Make the test data with `make test-data-generate` (`--split test`). It uses a fixed random seed, and is written to `dep_ls_lulc/test_data/{TEST_DATA_VERSION}/{region}/`. It cannot be overwritten. To make it again, change `TEST_DATA_VERSION`. Human or AI validation of the LULC outputs is a different dataset, made later.
+
+The number of tiles to use (the Pacific has about 517 tiles and the non-Pacific region about 300, all with SIDS land):
 
 | Set | Pacific | Non-Pacific | Notes |
 | - | - | - | - |
-| Test | 15 | 10 | About 3% of tiles. Held out tiles (not just points) so neighbouring pixels cannot leak from training. |
-| Training | 15 now, grow to 20-25 | 10-15 (none yet) | Match the test set size or larger. Add tiles for any class that is rare in the training data. |
+| Test | 15 | 11 | About 3% of tiles. Full tiles are held out (not only points), so that neighbouring pixels do not leak from training. |
+| Training | 18 | 18 | The same size as the test set or larger. Add tiles for each class that is rare in the training data. |
 
-- Choose by country, not at random across tiles. Papua New Guinea and French Polynesia hold about 45% of Pacific tiles, so the test tiles are allocated by the square root of each country's tile count to keep small countries represented. Tiles next to training tiles are excluded.
-- Tile count matters less than points per class. Aim for at least 100 test points for the rarest classes (wetland, cropland) after combining all test tiles, and swap tiles if a class is missing.
-- Check the class histogram of the test set before using it. If a class is missing or tiny, change the tiles and bump `TEST_DATA_VERSION`.
-- Points are sampled the same way as training data: stratified by class within each tile from the agreement map, with `min_sample_per_class_n` oversampling rare classes.
-- Accuracy is scored at 2020, the year the source LULC products overlap. The eval cell in `notebooks/1_Train_Model.ipynb` reports per-class precision and recall for a model version.
-- Labels exist only for 2020, so consistency over time is checked separately: classify the test tiles for all years and count pixels that change class or swing implausibly between years (`notebooks/LULC_Temporal_Stability.ipynb`).
+- Select tiles by country, not at random. Papua New Guinea and French Polynesia have about 45% of the Pacific tiles. To keep small countries in the test set, the number of test tiles for each country is proportional to the square root of its tile count. Do not use tiles that are next to training tiles.
+- The number of points in each class is more important than the number of tiles. Aim for at least 100 test points for the rarest classes (wetland and cropland) across all test tiles. If a class is missing, change the tiles.
+- Look at the class histogram of the test set before you use it. If a class is missing or very small, change the tiles and increase `TEST_DATA_VERSION`.
+- The test points are sampled in the same way as the training points: stratified by class in each tile, from the agreement map. `min_sample_per_class_n` adds more samples of rare classes.
+- Accuracy is measured at 2020, the year in which all source LULC products have data. The eval cell in `notebooks/1_Train_Model.ipynb` gives the precision and recall of each class for a model version.
+- The test labels are only for 2020, so temporal consistency is a separate check. Classify the test tiles for all years. Then count the pixels that change class, or that change implausibly between years (`notebooks/LULC_Temporal_Stability.ipynb`).
 
-Temporal stability is assessed using notebooks/LULC_Temporal_Stability.ipynb. Each version of LULC will have a report committed to source control. Then we can ensure temporal stability improves with training data and model iteration.
+`notebooks/LULC_Temporal_Stability.ipynb` measures temporal stability. Each LULC version has a stability report in source control. This shows if the stability improves when the training data and the model change.
 
 
 #### 3. Validation data
 
-[Collect Earth Online](https://www.collect.earth/) is used to create the validation data. The notebook `notebooks/Generate_Plots_For_Countries.ipynb` is used to create the plots/samples for the CEO project. There is one project per country. These plot files are stored [here](https://drive.google.com/drive/folders/16HU7nQj0cu45jTSjFXZIJN52mIhRTq8x). To use the zipped shapefile file in a new CEO project for another country, on the "Project Boundary" tab select "Define AOI from plots file", then on the "Plot Generation" tab upload the zipped shapefile (wait until the `check-plot-file` request succeeds in the network tab before proceeding), and finally on the "Sample Design" tab select "Center". Do not worry if the map shows a different dataset. This is a CEO bug.
+[Collect Earth Online](https://www.collect.earth/) (CEO) is the tool for the validation data. `notebooks/Generate_Plots_For_Countries.ipynb` makes the plots (samples) for the CEO projects. There is one project for each country. The plot files are [here](https://drive.google.com/drive/folders/16HU7nQj0cu45jTSjFXZIJN52mIhRTq8x).
 
-The Fiji project has ~3500 equal stratified random points (aligned to actual 30m pixel centers):  https://app.collect.earth/project-wizard?projectId=64287&institutionId=7195. We will work with local partners to create the validation dataset from these.
+To use a zipped shapefile in a new CEO project for a different country:
+1. On the "Project Boundary" tab, select "Define AOI from plots file".
+2. On the "Plot Generation" tab, upload the zipped shapefile. In the network tab of the browser, wait until the `check-plot-file` request is successful.
+3. On the "Sample Design" tab, select "Center".
 
-The data that is made in CEO is stored in [the same place](https://drive.google.com/drive/folders/16HU7nQj0cu45jTSjFXZIJN52mIhRTq8x). As the data is tagged, we can export it and store it for safekeeping and use in the validation process:
+The map can show a different dataset. This is a CEO bug, and you can ignore it.
+
+The Fiji project has approximately 3,500 equal stratified random points, aligned to the centres of the 30 m pixels: https://app.collect.earth/project-wizard?projectId=64287&institutionId=7195. We will make the validation dataset from these points with local partners.
+
+The data made in CEO is in [the same folder](https://drive.google.com/drive/folders/16HU7nQj0cu45jTSjFXZIJN52mIhRTq8x). When points are labelled, export the data and keep it for the validation:
 - ceo-Fiji-LULC-Validation-plot-data-2026-10-09.csv
 - ceo-Fiji-LULC-Validation-sample-data-2026-10-09.csv
-Human or AI labelled points used for the formal validation report (step 7 of the workflow above). This is separate from the test data and not yet created.
+
+The validation data has human or AI labelled points for the formal validation report (step 7 of the workflow). It is different from the test data, and it does not exist yet.
 
 
 #### Model features
 
-Training data and prediction build the features with the same function (`make_features` in `ldn/raster.py`), so the model always sees them computed the same way. There are 92, all float32 (scikit-learn's random forest converts its inputs to float32 anyway). A pixel with any NaN feature is nodata in prediction and is dropped from training data.
+Training data and prediction use the same function to make the features (`make_features` in `ldn/raster.py`), so the model always gets the same features. There are 92 features, all float32. The scikit-learn random forest changes its inputs to float32. If a pixel has a NaN feature, it is nodata in the prediction, and it is not in the training data.
 
 | Group | Features | Count | Values |
 | - | - | - | - |
 | Reflectance | `red`, `green`, `blue`, `nir08`, `swir16`, `swir22` | 6 | GeoMAD geomedian surface reflectance in [0, 1], scaled from the uint16 Landsat Collection 2 digital numbers |
 | MAD | `emad`, `smad`, `bcmad` | 3 | GeoMAD Euclidean, spectral and Bray-Curtis median absolute deviations, as stored |
-| Spectral indices | `ndvi`, `ndwi`, `mndwi`, `ndti`, `bsi`, `mbi`, `baei`, `bui` | 8 | Normalised differences in [-1, 1], except `mbi` in [-0.5, 1.5], `bui` in [-2, 2] and `baei` (positive, unbounded). NaN where every band in a denominator is 0 |
-| Terrain | `elevation`, `slope`, `northness`, `eastness` | 4 | From Copernicus DEM GLO-30, computed on its native grid: metres, degrees, and northness and eastness in [-1, 1] (aspect weighted by sin(slope)) |
-| Focal statistics | `{band}_{stat}_{size}` | 71 | Statistics over a size x size pixel window around each pixel: the mean and std of each index at 3, 7 and 15 (48), the mean of each reflectance band at 3, 7 and 15 (18), the mean of each MAD band at 7 (3), and the elevation TPI (elevation minus its focal mean) at 15 and 51 (2) |
+| Spectral indices | `ndvi`, `ndwi`, `mndwi`, `ndti`, `bsi`, `mbi`, `baei`, `bui` | 8 | Normalised differences in [-1, 1], but `mbi` is in [-0.5, 1.5], `bui` is in [-2, 2] and `baei` is positive with no upper limit. NaN where all bands in a denominator are 0 |
+| Terrain | `elevation`, `slope`, `northness`, `eastness` | 4 | From Copernicus DEM GLO-30, calculated on its native grid. Units: metres, degrees, and [-1, 1] for northness and eastness (aspect weighted by sin(slope)) |
+| Focal statistics | `{band}_{stat}_{size}` | 71 | Statistics in a size x size pixel window around each pixel: the mean and std of each index at 3, 7 and 15 (48), the mean of each reflectance band at 3, 7 and 15 (18), the mean of each MAD band at 7 (3), and the elevation TPI (elevation minus its focal mean) at 15 and 51 (2) |
 
-The focal statistics are candidates (`FOCAL_FEATURES`): model training keeps the ones that improve accuracy, and prediction computes only the ones the model was trained with. Training data CSVs also have `lulc`, the label (a class value 1-7, see `typology_mapping.yaml`), and `geometry`, the sample point in WGS84.
+The focal statistics are candidates (`FOCAL_FEATURES`). Model training keeps the ones that make the accuracy better. Prediction calculates only the ones that the model uses. The training data CSVs also have `lulc`, the label (a class value from 1 to 7, see `typology_mapping.yaml`), and `geometry`, the sample point in WGS84.
 
 #### Model & Prediction
 
-Classification runs per tile/year using a pre-trained **random forest** model (loaded from a local `.joblib` file or downloaded from a S3 URL):
+Classification runs for each tile and year with a pre-trained random forest model. The model comes from a local `.joblib` file or from an S3 URL.
 
-1. **Search:** the tile's GeoMAD item and its neighbouring tiles' items (for focal statistics at the tile edges) are located via the STAC-GeoParquet index, matched by tile ID and year.
-2. **Load:** GeoMAD bands are loaded directly onto the tile geobox, which is the GeoMAD items' native grid, so there is no reprojection or cropping and antimeridian-crossing tiles load correctly.
-3. **Feature prep:** the model features (see [Model features](#model-features)) are built the same way as for training data. Only the focal statistics the model uses are computed.
-4. **Predict:** the random forest outputs a per-class probability for every pixel. Final classification is the highest-probability class, unless it falls below a configurable `probability_threshold`, in which case the pixel is set to nodata. Per-class probability bands are retained alongside the classification band, named by class value: `probability_1` is Tree cover, `probability_2` Grassland, and so on (see `typology_mapping.yaml`).
-5. **Write:** output COGs and STAC metadata are written to S3.
+1. Search: the STAC GeoParquet index gives the GeoMAD item of the tile and the items of its neighbours, by tile ID and year. The neighbours give the data for the focal statistics at the tile edges.
+2. Load: the GeoMAD bands load directly onto the tile geobox, which is the native grid of the GeoMAD items. There is no reprojection or cropping, and tiles that cross the antimeridian load correctly.
+3. Features: the model features (see [Model features](#model-features)) are made in the same way as for the training data. Only the focal statistics that the model uses are calculated.
+4. Predict: the random forest gives a probability for each class at each pixel. The result is the class with the highest probability. If this probability is less than `probability_threshold`, the pixel is nodata. The output also has a probability band for each class, named by class value: `probability_1` is Tree cover, `probability_2` is Grassland, and so on (see `typology_mapping.yaml`).
+5. Write: the output COGs and the STAC metadata go to S3.
 
-Processing is distributed with Dask (configurable workers/threads/memory), and supports faster low-fidelity modes for testing:
-- `decimated`: runs at 10× lower resolution (so 100x less pixels)
-- `integration_test`: runs on a 5×5 pixel crop with a single worker, for fast CI checks/testing.
+Dask distributes the processing. You can configure the workers, threads and memory. There are two faster, low-fidelity modes for tests:
+- `decimated`: runs at 10 times lower resolution (100 times fewer pixels).
+- `integration_test`: runs on a 5 x 5 pixel crop with a single worker, for fast CI checks and tests.
 
 ---
 
@@ -267,12 +284,12 @@ Processing is distributed with Dask (configurable workers/threads/memory), and s
 
 ### Area of Interest
 
-Coverage is defined by two country lists, merged:
+Two country lists, merged, define the coverage:
 
 1. [Small Island Developing States (UN)](https://www.un.org/ohrlls/content/list-sids)
-2. [Pacific Island Countries and Territories (SPC)](https://www.spc.int/our-members/) - included per an agreement between Auspatious and Pacific Community (SPC) to collaborate, in exchange for use of the Digital Earth Pacific platform
+2. [Pacific Island Countries and Territories (SPC)](https://www.spc.int/our-members/). These are included because of an agreement between Auspatious and the Pacific Community (SPC) to work together, in exchange for use of the Digital Earth Pacific platform.
 
-Countries/territories belonging to **both** lists are placed in the **Pacific** region. Country boundaries are sourced from [UC Davis GADM](https://geodata.ucdavis.edu/gadm/).
+Countries and territories that are in **both** lists are in the **Pacific** region. The country boundaries come from [UC Davis GADM](https://geodata.ucdavis.edu/gadm/).
 
 ### Country/Territory Listing
 
@@ -352,25 +369,24 @@ Countries/territories belonging to **both** lists are placed in the **Pacific** 
 
 </details>
 
-Per-country maps: [browse here](https://github.com/auspatious/ldn-lulc/tree/main/notebooks/maps/countries).
+[Maps for each country](https://github.com/auspatious/ldn-lulc/tree/main/notebooks/maps/countries).
 
 ### Coordinate Reference Systems
 
-The two regions use different CRSs because a single lat/lon grid would cause distortions, and there's no single projected grid that can cleanly span the antimeridian while covering the whole world:
+The two regions use different CRSs. A single latitude/longitude grid causes distortion, and no single projected grid can cross the antimeridian and also cover the whole world.
 
 | Region | Countries/Territories | Grid tiles | CRS | Region map |
 | --- | --- | --- | --- | --- |
 | Pacific | 22 | 517 | EPSG:3832 (WGS 84 / PDC Mercator) | [map](https://github.com/auspatious/ldn-lulc/blob/main/notebooks/maps/regions/Pacific.jpg) |
 | Non-Pacific | 38 | 300 | EPSG:6933 (WGS 84 / NSIDC EASE-Grid 2.0 Global, Cylindrical Equal Area) | [map](https://github.com/auspatious/ldn-lulc/blob/main/notebooks/maps/regions/Non-Pacific.jpg) |
 
-Notes:
-- Two gridspecs are used because the Pacific region crosses the antimeridian, which would break a single EPSG:6933 grid at that boundary.
-- EPSG:6933 is valid globally up to mid-latitudes (covering all SIDS), but only from -180° to 180° longitude - tiles must "wrap" both directions at the antimeridian, causing overlap. Coordinates are technically not continuous across the antimeridian in this CRS, causing issues for Fiji and other antimeridian crossing areas.
-- Tiling uses [ODC Gridspec](https://odc-geo.readthedocs.io/en/latest/_api/odc.geo.gridspec.GridSpec.html) to partition data into spatial chunks for parallel processing.
+- The Pacific region crosses the antimeridian, which breaks a single EPSG:6933 grid. Thus there are two gridspecs.
+- EPSG:6933 is valid for the whole world up to mid-latitudes, which includes all SIDS. But its longitude is only from -180 to 180 degrees. Tiles must wrap in both directions at the antimeridian, and thus they overlap. In this CRS, coordinates are not continuous across the antimeridian. This causes problems for Fiji and other areas that cross the antimeridian.
+- Tiling uses [ODC GridSpec](https://odc-geo.readthedocs.io/en/latest/_api/odc.geo.gridspec.GridSpec.html) to divide the data into spatial chunks for parallel processing.
 
 ### Tile Grids
 
-Each tile is 30 m resolution in the target CRS, 96 km (3,200 pixels) per side; 817 tiles total across both regions.
+Each tile has 30 m pixels in the CRS of its region, and is 96 km (3,200 pixels) on each side. There are 817 tiles in the two regions.
 
 | Grid | Tile count | GeoJSON |
 | - | - | - |
@@ -393,18 +409,18 @@ Data products:
 1. https://source.coop/auspatious/geomad-sids
 2. https://source.coop/auspatious/lulc-sids
 
-Both regions are written to region-specific subfolders but indexed to a common parent directory. See [README_Source.Coop.md](https://github.com/auspatious/ldn-lulc/blob/main/README_Source.Coop.md) for full details.
+Each region has its own subfolder, but one index in the parent folder includes the two regions. See [README_Source.Coop.md](https://github.com/auspatious/ldn-lulc/blob/main/README_Source.Coop.md) for more details.
 
 
 #### STAC GeoParquet Index
 
-A combined index for both regions, queryable directly - no need to download the full catalog:
+There is one index for the two regions. You can query it directly. You do not have to download the full catalog.
 
 ```
 https://data.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet
 ```
 
-#### How to use this product in Python:
+#### How to use this product in Python
 
 **Search the index:**
 
@@ -429,13 +445,13 @@ ds = load(items, chunks={}, bbox=bbox)  # Lazy load with chunks
 print(ds)
 ```
 
-**Visualise on an interactive map:**
+**Show on an interactive map:**
 
 ```python
 ds.odc.explore(vmin=7500, vmax=12000)
 ```
 
-**Visualise with Xarray:**
+**Show with Xarray:**
 
 ```python
 ds[["red", "green", "blue"]].isel(time=0).to_array().squeeze().plot.imshow(vmin=7500, vmax=12000)
@@ -443,14 +459,14 @@ ds[["red", "green", "blue"]].isel(time=0).to_array().squeeze().plot.imshow(vmin=
 
 ### 2. Digital Earth Pacific
 
-Environments: **Staging** and **Production**. Only the Pacific region is written here (plus some preliminary non-Pacific LULC outputs). Because of this the STAC-Geoparquet is located within the single region's folder (unlike Source Coop's per-region folders).
+There are two environments: Staging and Production. Only the Pacific region is written here, with some preliminary non-Pacific LULC outputs. Thus the STAC GeoParquet file is in the folder of the region. On Source.Coop, the index is in the parent folder of the two regions.
 
 **Staging GeoMAD:** https://dep-public-staging.s3.us-west-2.amazonaws.com/index.html?prefix=dep_ls_geomad/
 
-**Staging LULC:** This also holds training data and the random forest model.
+**Staging LULC** (this also contains the training data and the random forest model):
 https://dep-public-staging.s3.us-west-2.amazonaws.com/index.html?prefix=dep_ls_lulc/
 
-**Production:** The bucket `dep-public-data` can be explored in the STAC API: https://stac-browser.digitalearthpacific.org/collections/dep_ls_geomad
+**Production:** you can explore the `dep-public-data` bucket in the STAC browser: https://stac-browser.digitalearthpacific.org/collections/dep_ls_geomad
 
 ---
 
@@ -458,7 +474,7 @@ https://dep-public-staging.s3.us-west-2.amazonaws.com/index.html?prefix=dep_ls_l
 
 ### Quickstart
 
-**1. Install GDAL, Rust (for datacube-compute), and uv**
+**1. Install GDAL, Rust (for datacube-compute) and uv**
 
 ```bash
 brew upgrade gdal
@@ -470,13 +486,13 @@ export PATH="$HOME/.cargo/bin:$PATH"
 brew install uv
 ```
 
-**2. Install dependencies (including dev group)**
+**2. Install the dependencies (including the dev group)**
 
 ```bash
 uv sync
 ```
 
-**3. Set environment variables**
+**3. Set the environment variables**
 
 Copy `.env.example` to `.env`, then:
 
@@ -484,9 +500,9 @@ Copy `.env.example` to `.env`, then:
 source .env
 ```
 
-You need to set `AWS_PROFILE`.
+You must set `AWS_PROFILE`.
 
-**4. AWS access**
+**4. Get AWS access**
 
 See [DEP's AWS SSO docs](https://github.com/digitalearthpacific/internal-documentation/blob/main/technical/1-systems-access.md).
 
@@ -503,7 +519,7 @@ uv run ldn --help
 uv run make grid-list-countries-all
 ```
 
-**Adding a dependency:**
+**Add a dependency:**
 
 ```bash
 uv add --group dev pytest
@@ -515,20 +531,20 @@ uv add "datacube-compute @ git+https://github.com/auspatious/datacube-compute.gi
 
 ### Testing & Pre-commit
 
-**Run tests:**
+**Run the tests:**
 
 ```bash
 uv run pytest                              # all tests
 uv run pytest ldn/tests/test_geomad.py     # single file
 ```
 
-**Pre-commit hooks** (formats Python, YAML, and JSON):
+**Install the pre-commit hooks** (they format Python, YAML and JSON):
 
 ```bash
 uv run pre-commit install
 ```
 
-If hooks in `.pre-commit-config.yaml` change, re-run against all files:
+If the hooks in `.pre-commit-config.yaml` change, run them on all files:
 
 ```bash
 uv run pre-commit run --all-files
@@ -543,7 +559,7 @@ docker buildx build . --tag ldn-lulc:dev
 docker run --rm ldn-lulc:dev ldn --help
 ```
 
-Run any command in the container:
+Run a command in the container:
 
 ```bash
 docker run --rm ldn-lulc:dev ldn grid list-countries
@@ -551,76 +567,76 @@ docker run --rm ldn-lulc:dev ldn grid list-countries
 
 ### Running on an EC2 VM
 
-Much faster than running locally.
+This is much faster than a local run.
 
 1. Set up SSH access.
-2. SSH into the VM, e.g. "Alex Hack Box 2026": `ssh -i ~/.ssh/id_ed25519 ubuntu@44.230.85.235`
-3. Pull the code in the VM.
-4. Install dependencies (same steps as Quickstart).
-5. Run inside `tmux` so the job survives disconnects:
+2. Connect to the VM with SSH. For example, for "Alex Hack Box 2026": `ssh -i ~/.ssh/id_ed25519 ubuntu@44.230.85.235`
+3. Pull the code on the VM.
+4. Install the dependencies (as in the Quickstart).
+5. Run the job in `tmux`, so that the job continues if you disconnect:
 
 ```bash
 tmux new -s geomad
 uv run make geomad-2000-2025
-# Detach: Ctrl+B, D - job keeps running
+# Detach: Ctrl+B, then D. The job continues.
 tmux attach -t geomad       # reattach
 tmux kill-session -t geomad # kill from outside
 ```
 
 ### Running in Argo
 
-Argo Workflow templates are defined [here](https://github.com/auspatious/ldn-lulc/tree/main/templates). Workflows exist for:
+The Argo Workflow templates are [here](https://github.com/auspatious/ldn-lulc/tree/main/templates). There are workflows to:
 
-- Creating geomedian/geomad
-- Creating LULC from geomad
-- Indexing either dataset to STAC-Geoparquet
+- Make the geomedian and GeoMAD
+- Make LULC from GeoMAD
+- Index each dataset to STAC GeoParquet
 
-These workflows use the built image in GHCR, which packages the LDN Python toolkit. Templates pin `image-tag` to a
-release version (e.g. `0.2.0`), not `latest`, so runs are reproducible.
+The workflows use the image in GHCR, which contains the LDN Python toolkit. The templates set `image-tag` to a
+release version (for example `0.2.0`), not `latest`, so that runs are reproducible.
 
 ---
 
 ## Visualisation (WIP)
 
-TODO: This is close to being redeployed as a Vite app which reads COGs straight from S3 and renders them in the client with Deck.gl-raster.
+TODO: The visualisation is almost ready to deploy again as a Vite app. It reads COGs directly from S3 and shows them in the browser with deck.gl-raster.
 
 ---
 
 ## CI/CD
 
-A GitHub Actions workflow (`.github/workflows/ldn-lint-build-test-push.yml`) lints, builds, tests, and pushes the Docker image to GitHub Container Registry (GHCR).
+A GitHub Actions workflow (`.github/workflows/ldn-lint-build-test-push.yml`) lints, builds and tests the Docker image. Then it pushes the image to the GitHub Container Registry (GHCR).
 
-**Triggers** (only scoped to changes to the LDN package which affect the image):
-- Manual dispatch from the GitHub UI
-- Any pull request, to any branch
-- Push to `main`
-- Release publication
+**Triggers** (only for changes to the LDN package that affect the image):
+- A manual run from the GitHub UI
+- A pull request to any branch
+- A push to `main`
+- A published release
 
-Superseded runs for the same workflow + ref are automatically cancelled.
+If there is a newer run for the same workflow and ref, the older run is cancelled.
 
 **Jobs:**
 
-1. **`lint`** - runs [Ruff](https://github.com/astral-sh/ruff-action) over the `ldn` directory.
-2. **`build-test-push`** (depends on `lint` passing):
-   - Logs in to GHCR (only if running on `main` or for a release).
-   - Reads the version from `pyproject.toml`. A release fails unless its tag is `v<version>`.
-   - Builds the `test`-target image and runs the test suite inside it.
-   - Builds the `final`-target (production) image and smoketests it with `ldn --help`, and checks the image reports
-     the `pyproject.toml` version.
-   - **Only pushes to GHCR if on `main` or for a release** - every PR gets built and tested, but nothing is published from a PR.
-     - On `main`: tags and pushes `<version>-<short sha>` (e.g. `0.2.0-abc1234`).
-     - On release: tags and pushes `<version>` (e.g. `0.2.0`) and `latest`. `latest` is always the latest release.
+1. **`lint`**: runs [Ruff](https://github.com/astral-sh/ruff-action) on the `ldn` directory.
+2. **`build-test-push`** (runs after `lint` passes):
+   - Logs in to GHCR (only on `main` or for a release).
+   - Reads the version from `pyproject.toml`. A release fails if its tag is not `v<version>`.
+   - Builds the `test` target image and runs the tests in it.
+   - Builds the `final` target (production) image. It runs `ldn --help` as a smoke test, and checks that the image
+     reports the `pyproject.toml` version.
+   - Pushes to GHCR only on `main` or for a release. Each PR is built and tested, but nothing is published from a PR.
+     - On `main`: pushes the tag `<version>-<short sha>` (for example `0.2.0-abc1234`).
+     - On a release: pushes the tags `<version>` (for example `0.2.0`) and `latest`. `latest` is always the most recent release.
 
-Action versions are pinned to full 40-character commit SHAs (not tags) for supply-chain security.
+The action versions are pinned to full 40-character commit SHAs, not tags, for supply-chain security.
 
-The Docker image installs dependencies with `uv sync --locked`, so the build fails if `uv.lock` is out of date with
-`pyproject.toml`. Run `uv lock` after changing dependencies or the version. The git dependencies (`dep-tools`,
-`datacube-compute`) are pinned to commits in `[tool.uv.sources]`, and STAC items record the installed commit in
-`processing:software`.
+The Docker image installs the dependencies with `uv sync --locked`. Thus the build fails if `uv.lock` does not agree
+with `pyproject.toml`. Run `uv lock` after you change the dependencies or the version. The git dependencies
+(`dep-tools` and `datacube-compute`) are pinned to commits in `[tool.uv.sources]`. STAC items record the installed
+commit in `processing:software`.
 
 ### Releasing
 
-1. Bump the version in `pyproject.toml`, e.g. `uv version --bump minor`, which also updates `uv.lock`.
+1. Increase the version in `pyproject.toml`, for example with `uv version --bump minor`. This also updates `uv.lock`.
 2. Merge to `main`.
-3. Publish a GitHub release with the tag `v<version>`, e.g. `v0.2.0`. CI pushes the image as `0.2.0` and `latest`.
-4. Update `image-tag` in the [Argo templates](templates/) to the new version.
+3. Publish a GitHub release with the tag `v<version>`, for example `v0.2.0`. CI pushes the image as `0.2.0` and `latest`.
+4. Change `image-tag` in the [Argo templates](templates/) to the new version.

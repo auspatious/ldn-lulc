@@ -108,6 +108,9 @@ LULC_DATASET_ID = "lulc"
 
 LS7_YEAR_THRESHOLD = 2012
 TRAINING_DATA_YEAR = "2020"
+# Years with training data: those where at least 2 of the LULC products have data (see plan-label-propagation2.md).
+TRAINING_DATA_YEARS = ["2020", "2021"]  # Just these for now
+# TRAINING_DATA_YEARS = ["2017", "2018", "2019", "2020", "2021"] # These years have 2 LULC products. 2020 has 3.
 CLASS_ATTR = "lulc"
 WGS84 = "EPSG:4326"
 
@@ -192,12 +195,11 @@ def get_stac_geoparquet_key(
     """Return the S3 key for the STAC-Geoparquet file (no bucket etc.).
 
     Args:
+        bucket: The S3 bucket name.
+        product_owner: The product owner prefix (e.g. 'dep' or 'ci').
+        sensor: Sensor identifier (e.g. 'ls').
         dataset: The dataset type (e.g. 'geomad' or 'lulc').
         version: Version string.
-        source_coop_prefix: Source.Coop prefix if applicable, else None.
-        single_region: Whether to use the single region prefix
-        (e.g. 'dep_ls_geomad') or the generic prefix (e.g. 'ls_geomad').
-        region: The region for which to build the prefix ('pacific' or 'non-pacific').
 
     Returns:
         S3 key string e.g. 'auspatious/geomad-sids/ls_geomad/0-3-0/ls_geomad.parquet'
