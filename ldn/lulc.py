@@ -1,9 +1,9 @@
+import io
 import logging
 import re
 from datetime import UTC
 from datetime import datetime as dt
 from functools import partial
-from pathlib import Path
 from typing import Literal
 
 import numpy as np
@@ -423,23 +423,17 @@ def _load_joblib_model(model_path: str):
         model_path: Local path or HTTPS URL to a .joblib model file.
 
     Returns:
-        The loaded local model file.
+        The loaded model.
 
     Raises:
-        ValueError: If model_path is not a .joblib file or HTTPS URL.
-        typer.Exit: If the downloaded or local model cannot be loaded.
+        LdnError: If model_path is not a .joblib file or HTTPS URL, or the model cannot be loaded.
     """
-    models_dir = Path("classification/models")
-
     if model_path.startswith("https://"):
-        models_dir.mkdir(parents=True, exist_ok=True)
-        model_local = models_dir / model_path.split("/")[-1]
-        if not model_local.exists():
-            logger.info(f"Downloading model from {model_path} to {model_local}")
-            r = requests.get(model_path, timeout=120)
-            r.raise_for_status()
-            model_local.write_bytes(r.content)
-        model = str(model_local)
+        # Loaded in memory, not saved to disk: many tasks on one node would otherwise fill its disk with copies.
+        logger.info(f"Downloading model from {model_path}")
+        r = requests.get(model_path, timeout=120)
+        r.raise_for_status()
+        model = io.BytesIO(r.content)
 
     elif model_path.endswith(".joblib"):
         logger.info("Model path is a local joblib file, using directly.")
@@ -451,7 +445,7 @@ def _load_joblib_model(model_path: str):
     try:
         return joblib_load(model)
     except Exception as e:
-        raise LdnError(f"Failed to load model from {model}") from e
+        raise LdnError(f"Failed to load model from {model_path}") from e
 
 
 def _set_stac_properties(ds: xr.Dataset, year: str) -> xr.Dataset:
@@ -578,9 +572,6 @@ def run_classify_task(
 
     configure_s3_access_profile()  # Access must be configured here for Dask.
 
-    logger.info("Loading model")
-    loaded_model = _load_joblib_model(model_path)
-
     # TODO: Could this block be a function because it will be done in cli_collection.py?
     _is_source_coop = is_bucket_source_coop(output_bucket)
     public_url = get_public_url_base(output_bucket)
@@ -606,6 +597,10 @@ def run_classify_task(
     if components is None:
         return  # Skip due to no overwrite.
     itempath, stac_creator, writer = components
+
+    # After the overwrite check, so skipped tasks don't download the model.
+    logger.info("Loading model")
+    loaded_model = _load_joblib_model(model_path)
 
     searcher = GeomadSearcher(
         geomad_bucket,
