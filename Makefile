@@ -155,7 +155,7 @@ training-data-generate:
 training-data-generate-2021:
 	$(call generate_samples,$(TRAINING_TILES),train,2021)
 
-# Training samples for every year in TRAINING_DATA_YEARS (2017-2021), where at least 2 LULC products agree.
+# Training samples for every year in TRAINING_DATA_YEARS, where at least 2 LULC products agree.
 training-data-generate-years:
 	$(foreach year,$(TRAINING_YEARS),$(call generate_samples,$(TRAINING_TILES),train,$(year)))
 

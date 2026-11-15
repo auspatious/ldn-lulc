@@ -44,7 +44,6 @@ from ldn.utils import (
     SENSOR,
     TEST_DATA_VERSION,
     TRAINING_DATA_VERSION,
-    TRAINING_DATA_YEAR,
     WGS84,
     LdnError,
     dataset_prefix,
@@ -757,7 +756,7 @@ def make_training_data(
 @cli_training_app.command()
 def generate_training_data(
     tile_id: str = typer.Option(..., help="Grid tile identifier (e.g. 058_043)"),
-    year: str = typer.Option(TRAINING_DATA_YEAR, help=f"Year (e.g. {TRAINING_DATA_YEAR})"),
+    year: str = typer.Option(..., help="Year (e.g. 2020)"),
     region: Literal["pacific", "non-pacific"] = typer.Option(..., help="Region: pacific or non-pacific"),
     training_data_version: str = typer.Option(
         TRAINING_DATA_VERSION, help=f"Version (default: {TRAINING_DATA_VERSION})"

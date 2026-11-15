@@ -151,7 +151,7 @@ Other design documents (private):
 | Method | CatBoost classifier on a multi-feature stack, with expert-rule post-processing | Deep learning model trained on human-labelled pixels, with a composite for each year | GlobCover unsupervised classification chain |
 | Quality/flag bands used in this pipeline | `input_quality.1/2/3` (observation quality for each season) | None available | `processed_flag`, `change_count`, `observation_count` |
 
-There is training data for each year from 2017 to 2021 in which at least 2 products have data (`TRAINING_DATA_YEARS`):
+There is training data for each year in `TRAINING_DATA_YEARS`, now 2020 and 2021. Each year from 2017 to 2021 has at least 2 products with data:
 - 2017 to 2019: ESA CCI and IO.
 - 2020: all 3 products.
 - 2021: ESA WorldCover and IO.
