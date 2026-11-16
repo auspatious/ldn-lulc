@@ -1,3 +1,4 @@
+import { Text } from "@chakra-ui/react";
 import { LoadingWidget } from "@deck.gl/widgets";
 import type { MultiCOGLayerProps } from "@developmentseed/deck.gl-geotiff";
 import { MosaicLayer, MultiCOGLayer } from "@developmentseed/deck.gl-geotiff";
@@ -6,14 +7,14 @@ import type { Device } from "@luma.gl/core";
 import type { Ref } from "react";
 import { useMemo, useState } from "react";
 import type { LngLat, MapRef, ViewState } from "react-map-gl/maplibre";
-import { Layer, Map as MaplibreMap, Popup, Source } from "react-map-gl/maplibre";
-import { Text } from "@chakra-ui/react";
-import type { DatasetId } from "./datasets.js";
 import {
-  createLulcPaletteTexture,
-  DATASETS,
-  GRID_TILES,
-} from "./datasets.js";
+  Layer,
+  Map as MaplibreMap,
+  Popup,
+  Source,
+} from "react-map-gl/maplibre";
+import type { DatasetId } from "./datasets.js";
+import { createLulcPaletteTexture, DATASETS, GRID_TILES } from "./datasets.js";
 import { epsgResolver } from "./proj.js";
 import { DeckGlOverlay, loadingWidgetProps } from "./shared/index.js";
 import type { DatasetStates, SideConfig } from "./side.js";
@@ -135,7 +136,10 @@ export function MapPane({
   onMoveEnd,
 }: MapPaneProps) {
   const [device, setDevice] = useState<Device | null>(null);
-  const [hoveredTile, setHoveredTile] = useState<{lngLat: LngLat, label: string} | null>(null);
+  const [hoveredTile, setHoveredTile] = useState<{
+    lngLat: LngLat;
+    label: string;
+  } | null>(null);
 
   const pipelines = useMemo(() => {
     if (!device) {
@@ -177,13 +181,15 @@ export function MapPane({
         interactiveLayerIds={["grid-tiles-fill"]}
         onMouseMove={(event) => {
           const features = event.features?.filter(
-            (f) => f.layer.id === "grid-tiles-fill"
+            (f) => f.layer.id === "grid-tiles-fill",
           );
           if (features && features.length > 0) {
-            const hoveredTile = {lngLat: event.lngLat, label: `${features[0].properties?.label} - ${features[0].properties?.region}`};
-            setHoveredTile(hoveredTile)
-          }
-          else {
+            const hoveredTile = {
+              lngLat: event.lngLat,
+              label: `${features[0].properties?.label} - ${features[0].properties?.region}`,
+            };
+            setHoveredTile(hoveredTile);
+          } else {
             setHoveredTile(null);
           }
         }}
@@ -209,7 +215,16 @@ export function MapPane({
             paint={{ "line-color": REGION_COLOR, "line-width": 1 }}
           />
         </Source>
-        {hoveredTile && <Popup longitude={hoveredTile.lngLat.lng} latitude={hoveredTile.lngLat.lat} closeButton={false} closeOnClick={false}><Text>{hoveredTile.label}</Text></Popup>}
+        {hoveredTile && (
+          <Popup
+            longitude={hoveredTile.lngLat.lng}
+            latitude={hoveredTile.lngLat.lat}
+            closeButton={false}
+            closeOnClick={false}
+          >
+            <Text>{hoveredTile.label}</Text>
+          </Popup>
+        )}
       </MaplibreMap>
     </div>
   );
