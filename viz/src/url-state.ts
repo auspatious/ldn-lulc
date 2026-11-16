@@ -1,4 +1,5 @@
 import type { DatasetId } from "./datasets.js";
+import { DATASETS } from "./datasets.js";
 import type { SideConfig } from "./side.js";
 import { DATASET_IDS, DEFAULT_SIDE } from "./side.js";
 
@@ -58,8 +59,9 @@ function parseView(value: string | null): MapView {
 }
 
 /**
- * Parse a side from `id:opacityPercent,...` (enabled datasets only) and an
- * optional year param. Returns null if the side is absent from the URL.
+ * Parse a side from `id:opacityPercent,...` (enabled datasets only), and
+ * optional year and `id:version,...` (non-default versions only) params.
+ * Returns null if the side is absent from the URL.
  */
 function parseSide(params: URLSearchParams, key: string): SideConfig | null {
   const value = params.get(key);
@@ -79,10 +81,18 @@ function parseSide(params: URLSearchParams, key: string): SideConfig | null {
       opacity[id as DatasetId] = clamp(n / 100, 0, 1);
     }
   }
+  const version = { ...DEFAULT_SIDE.version };
+  for (const part of (params.get(`${key}v`) ?? "").split(",")) {
+    const [id, v] = part.split(":");
+    if (DATASETS[id as DatasetId]?.versions.includes(v)) {
+      version[id as DatasetId] = v;
+    }
+  }
   const year = Number(params.get(`${key}y`));
   return {
     enabled,
     opacity,
+    version,
     year: params.has(`${key}y`) && Number.isInteger(year) ? year : null,
   };
 }
@@ -108,6 +118,14 @@ function sideParams(key: string, side: SideConfig): [string, string][] {
     .map((id) => `${id}:${Math.round(side.opacity[id] * 100)}`)
     .join(",");
   const params: [string, string][] = [[key, datasets]];
+  const versions = DATASET_IDS.filter(
+    (id) => side.version[id] !== DEFAULT_SIDE.version[id],
+  )
+    .map((id) => `${id}:${side.version[id]}`)
+    .join(",");
+  if (versions) {
+    params.push([`${key}v`, versions]);
+  }
   if (side.year !== null) {
     params.push([`${key}y`, String(side.year)]);
   }

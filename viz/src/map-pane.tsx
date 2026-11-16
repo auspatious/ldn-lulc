@@ -70,7 +70,7 @@ function sideLayers(
       return [];
     }
     return new MosaicLayer<StacItem, MultiCOGSource>({
-      id: `${name}-${id}-${activeYear}`,
+      id: `${name}-${id}-${side.version[id]}-${activeYear}`,
       data: sources,
       maxCacheSize: MAX_CACHED_ITEMS,
       getSource: (item, options) =>

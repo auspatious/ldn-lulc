@@ -67,8 +67,10 @@ export type DatasetId = "lulc" | "geomad";
 
 type Dataset = {
   label: string;
-  /** stac-geoparquet files to combine into one mosaic. */
-  urls: string[];
+  /** Selectable versions, default first. */
+  versions: string[];
+  /** stac-geoparquet files of a version, combined into one mosaic. */
+  urls: (version: string) => string[];
   /** Asset keys loaded per item, passed to MultiCOGLayer as source names. */
   bands: string[];
   composite: { r: string; g?: string; b?: string };
@@ -79,8 +81,9 @@ type Dataset = {
 export const DATASETS: Record<DatasetId, Dataset> = {
   geomad: {
     label: "GeoMAD true colour (v0.2.1, Source.Coop)",
-    urls: [
-      "https://data.source.coop/auspatious/geomad-sids/ls_geomad/0-2-1/ls_geomad.parquet",
+    versions: ["0-2-1"],
+    urls: (v) => [
+      `https://data.source.coop/auspatious/geomad-sids/ls_geomad/${v}/ls_geomad.parquet`,
     ],
     bands: ["red", "green", "blue"],
     composite: { r: "red", g: "green", b: "blue" },
@@ -93,11 +96,11 @@ export const DATASETS: Record<DatasetId, Dataset> = {
     ],
   },
   lulc: {
-    // WIP: // TODO: Update to v0-2-0 once processed
-    label: "Land use / land cover (v0.2.0, DEP Staging)",
-    urls: [
-      "https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/0-2-0/dep_ls_lulc.parquet",
-      "https://dep-public-staging.s3.us-west-2.amazonaws.com/ci_ls_lulc/0-2-0/ci_ls_lulc.parquet",
+    label: "Land use / land cover (DEP Staging)",
+    versions: ["0-0-9", "0-1-1", "0-2-0"],
+    urls: (v) => [
+      `https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/${v}/dep_ls_lulc.parquet`,
+      `https://dep-public-staging.s3.us-west-2.amazonaws.com/ci_ls_lulc/${v}/ci_ls_lulc.parquet`,
     ],
     bands: ["classification"],
     composite: { r: "classification" },

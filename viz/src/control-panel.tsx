@@ -14,7 +14,7 @@ import type { DatasetId } from "./datasets.js";
 import { DATASETS, LULC_CLASSES } from "./datasets.js";
 import { Field, ControlPanel as SharedControlPanel } from "./shared/index.js";
 import type { DatasetState, DatasetStates, SideConfig } from "./side.js";
-import { DATASET_IDS, sideYears } from "./side.js";
+import { DATASET_IDS, datasetState, sideYears } from "./side.js";
 
 /** Describe a dataset's load state and item count for the selected year. */
 function statusText(state: DatasetState | undefined, year: number | null) {
@@ -86,6 +86,8 @@ function SideControls({ side, onChange, states }: SideControlsProps) {
     onChange({ ...side, enabled: { ...side.enabled, [id]: on } });
   const setOpacity = (id: DatasetId, value: number) =>
     onChange({ ...side, opacity: { ...side.opacity, [id]: value } });
+  const setVersion = (id: DatasetId, value: string) =>
+    onChange({ ...side, version: { ...side.version, [id]: value } });
 
   return (
     <Box>
@@ -105,7 +107,9 @@ function SideControls({ side, onChange, states }: SideControlsProps) {
               <Checkbox.Label>
                 {DATASETS[id].label}{" "}
                 <Text as="span" color="gray.500">
-                  {side.enabled[id] ? statusText(states[id], activeYear) : ""}
+                  {side.enabled[id]
+                    ? statusText(datasetState(side, states, id), activeYear)
+                    : ""}
                 </Text>
               </Checkbox.Label>
             </Checkbox.Root>
@@ -133,6 +137,27 @@ function SideControls({ side, onChange, states }: SideControlsProps) {
                     </Slider.Thumb>
                   </Slider.Control>
                 </Slider.Root>
+              </Flex>
+            ) : null}
+            {side.enabled[id] && DATASETS[id].versions.length > 1 ? (
+              <Flex align="center" gap="3" pl="7" mt="1">
+                <Text fontSize="xs" color="gray.600">
+                  Version
+                </Text>
+                <NativeSelect.Root size="xs">
+                  <NativeSelect.Field
+                    value={side.version[id]}
+                    onChange={(e) => setVersion(id, e.target.value)}
+                    aria-label={`${DATASETS[id].label} version`}
+                  >
+                    {DATASETS[id].versions.map((v) => (
+                      <option key={v} value={v}>
+                        v{v.split("-").join(".")}
+                      </option>
+                    ))}
+                  </NativeSelect.Field>
+                  <NativeSelect.Indicator />
+                </NativeSelect.Root>
               </Flex>
             ) : null}
           </Box>

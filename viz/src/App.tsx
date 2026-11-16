@@ -3,11 +3,10 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MapRef } from "react-map-gl/maplibre";
 import { ControlPanel } from "./control-panel.js";
-import type { DatasetId } from "./datasets.js";
 import { DATASETS } from "./datasets.js";
 import { MapPane } from "./map-pane.js";
 import type { DatasetStates, SideConfig } from "./side.js";
-import { DATASET_IDS } from "./side.js";
+import { DATASET_IDS, stateKey } from "./side.js";
 import { loadStacItems } from "./stac.js";
 import { SwipeHandle } from "./swipe-handle.js";
 import type { MapView } from "./url-state.js";
@@ -38,28 +37,32 @@ export default function App() {
   const [split, setSplit] = useState(initial.split);
   const [grid, setGrid] = useState(initial.grid);
   const [states, setStates] = useState<DatasetStates>({});
-  // Datasets whose items have been requested, so each parquet is read once.
-  const requested = useRef(new Set<DatasetId>());
+  // Dataset versions whose items have been requested, so each parquet is read once.
+  const requested = useRef(new Set<string>());
   const mapRef = useRef<MapRef>(null);
 
-  // Load each dataset's items the first time either side enables it.
+  // Load each dataset version's items the first time either side enables it.
   useEffect(() => {
-    for (const id of DATASET_IDS) {
-      const wanted = left.enabled[id] || (compare && right.enabled[id]);
-      if (!wanted || requested.current.has(id)) {
-        continue;
+    const sides = compare ? [left, right] : [left];
+    for (const side of sides) {
+      for (const id of DATASET_IDS) {
+        const version = side.version[id];
+        const key = stateKey(id, version);
+        if (!side.enabled[id] || requested.current.has(key)) {
+          continue;
+        }
+        requested.current.add(key);
+        setStates((s) => ({ ...s, [key]: { status: "loading" } }));
+        loadStacItems(DATASETS[id].urls(version), DATASETS[id].bands)
+          .then((items) =>
+            setStates((s) => ({ ...s, [key]: { status: "loaded", items } })),
+          )
+          .catch((err) => {
+            console.error(`Error loading ${key} STAC items:`, err);
+            const error = err instanceof Error ? err.message : String(err);
+            setStates((s) => ({ ...s, [key]: { status: "error", error } }));
+          });
       }
-      requested.current.add(id);
-      setStates((s) => ({ ...s, [id]: { status: "loading" } }));
-      loadStacItems(DATASETS[id].urls, DATASETS[id].bands)
-        .then((items) =>
-          setStates((s) => ({ ...s, [id]: { status: "loaded", items } })),
-        )
-        .catch((err) => {
-          console.error(`Error loading ${id} STAC items:`, err);
-          const error = err instanceof Error ? err.message : String(err);
-          setStates((s) => ({ ...s, [id]: { status: "error", error } }));
-        });
     }
   }, [left, right, compare]);
 

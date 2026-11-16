@@ -10,8 +10,20 @@ export type DatasetState =
   | { status: "error"; error: string }
   | { status: "loaded"; items: StacItem[] };
 
-/** Load state per dataset, absent until first enabled. */
-export type DatasetStates = Partial<Record<DatasetId, DatasetState>>;
+/** Load state per dataset version, keyed by `stateKey`, absent until first enabled. */
+export type DatasetStates = Partial<Record<string, DatasetState>>;
+
+/** Key of a dataset version in `DatasetStates`. */
+export const stateKey = (id: DatasetId, version: string) => `${id}@${version}`;
+
+/** Load state of a dataset at this side's selected version. */
+export function datasetState(
+  side: SideConfig,
+  states: DatasetStates,
+  id: DatasetId,
+): DatasetState | undefined {
+  return states[stateKey(id, side.version[id])];
+}
 
 /** Layer settings for one map (or one side of the compare view). */
 export type SideConfig = {
@@ -19,6 +31,8 @@ export type SideConfig = {
   enabled: Record<DatasetId, boolean>;
   /** Layer opacity per dataset, 0 to 1. */
   opacity: Record<DatasetId, number>;
+  /** Selected version per dataset. */
+  version: Record<DatasetId, string>;
   /** Selected year, or null for the latest available. */
   year: number | null;
 };
@@ -26,6 +40,10 @@ export type SideConfig = {
 export const DEFAULT_SIDE: SideConfig = {
   enabled: { geomad: true, lulc: true },
   opacity: { geomad: 1, lulc: 1 },
+  version: {
+    geomad: DATASETS.geomad.versions[0],
+    lulc: DATASETS.lulc.versions[0],
+  },
   year: null,
 };
 
@@ -35,7 +53,7 @@ export function sideItems(
   states: DatasetStates,
   id: DatasetId,
 ): StacItem[] {
-  const state = states[id];
+  const state = datasetState(side, states, id);
   return side.enabled[id] && state?.status === "loaded" ? state.items : [];
 }
 
