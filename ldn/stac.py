@@ -16,9 +16,22 @@ from dep_tools.task import AreaTask
 from dep_tools.utils import bbox_across_180, join_path_or_url
 from dep_tools.writers import AwsDsCogWriter, AwsStacWriter
 from odc.geo.geobox import GeoBox
-from pystac import Item, ItemCollection, Link, Provider, ProviderRole
+from pystac import (
+    Collection,
+    Extent,
+    Item,
+    ItemCollection,
+    Link,
+    Provider,
+    ProviderRole,
+    SpatialExtent,
+    Summaries,
+    TemporalExtent,
+)
 from pystac.utils import datetime_to_str
+from shapely import box, unary_union
 
+from ldn.raster import MAD_BANDS, REFLECTANCE_BANDS
 from ldn.utils import get_public_url_base, source_coop_prefix
 
 logger = logging.getLogger(__name__)
@@ -307,3 +320,101 @@ class AwsStacTask(AreaTask):
         self.stac_writer.write(stac_item, self.id)
 
         return paths
+
+
+# Based on https://github.com/digitalearthpacific/dep-stac/blob/main/dep_collections/dep_ls_geomad.py
+def stac_collection(
+    dataset: Literal["geomad", "lulc"], extent: Extent, single_region: bool, source_coop: bool
+) -> Collection:
+    """Create a STAC Collection for the GeoMAD or LULC dataset.
+
+    Args:
+        extent (Extent): The spatial and temporal extent of the collection.
+        single_region (bool): Whether the collection is for a single region (changes path/id).
+        source_coop (bool): Whether the data is hosted on Source Cooperative, otherwise Digital Earth Pacific hosts it.
+            Digital Earth Pacific is always a processor.
+
+    Returns:
+        Collection: A STAC Collection object.
+    """
+    if dataset == "geomad":
+        mad_names = {"emad": "Euclidean", "smad": "Spectral", "bcmad": "Bray-curtis"}
+
+        collection_id = "dep_ls_geomad" if single_region else "ls_geomad"
+        return Collection(
+            id=collection_id,
+            description="Landsat Geometric Median and Absolute Deviations (GeoMAD) over the Pacific.",
+            title="Landsat GeoMAD",
+            extent=extent,
+            license="CC-BY-4.0",
+            keywords=["Landsat", "GeoMAD", "Pacific"],
+            stac_extensions=[PROCESSING_EXTENSION],
+            # stac_version="1.1.0", # Automatic from pystac.
+            providers=stac_providers(dataset, source_coop),
+            summaries=Summaries(
+                {
+                    "gsd": [30],
+                    "eo:bands": [
+                        dict(
+                            name=band,
+                            common_name=band,
+                            description=f"Median for {band} band",
+                            min=0,
+                            max=36_000,
+                            nodata=0,
+                        )
+                        for band in REFLECTANCE_BANDS
+                    ]
+                    + [
+                        dict(
+                            name=band,
+                            common_name=f"{mad_names[band]} MAD",
+                            description=f"{mad_names[band]} median absolute deviations across all bands",
+                            min=0,
+                            max=36_000,
+                            nodata=0,
+                        )
+                        for band in MAD_BANDS
+                    ]
+                    + [
+                        dict(
+                            name="count",
+                            common_name="Count clear",
+                            description="Count of clear observations",
+                            min=0,
+                            max=9999,
+                            nodata=9999,
+                        )
+                    ],
+                    "platform": ["landsat-5", "landsat-7", "landsat-8", "landsat-9"],
+                },
+            ),
+        )
+    else:
+        # TODO: Make a collection for LULC.
+        # TODO: Add classification and processing STAC extensions for LULC.
+        # TODO: Fields shared by every item (e.g. providers, classification:classes, the model link) could move to the
+        # collection (item_assets for asset fields) instead of being repeated in each item, if items don't need to
+        # describe themselves without a collection.
+        raise NotImplementedError(f"Collection for dataset '{dataset}' is not implemented yet.")
+
+
+def calc_stac_extent(item_collection: ItemCollection) -> Extent:
+    """Calculate spatial and temporal extents for the collection."""
+    all_boxes = [box(*item.bbox) for item in item_collection if item.bbox is not None]
+    total_bounds = unary_union(all_boxes).bounds  # (minx, miny, maxx, maxy)
+    spatial_extent = SpatialExtent(bboxes=[list(total_bounds)])
+
+    datetimes = []
+    for item in item_collection:
+        if item.datetime:
+            datetimes.append(item.datetime)
+        md = item.common_metadata
+        if md.start_datetime:
+            datetimes.append(md.start_datetime)
+        if md.end_datetime:
+            datetimes.append(md.end_datetime)
+
+    temporal_extent = TemporalExtent(intervals=[[min(datetimes), max(datetimes)]])
+
+    return Extent(spatial_extent, temporal_extent)
