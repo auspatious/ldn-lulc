@@ -19,7 +19,7 @@ from ldn.cli_geomad import geomad_app
 from ldn.cli_grid import cli_grid_app
 from ldn.grids import get_grid_tiles
 from ldn.lulc import run_classify_task
-from ldn.raster import PrefixedS3ItemPath
+from ldn.stac import PrefixedS3ItemPath
 from ldn.training_data import cli_training_app
 from ldn.utils import (
     GEOMAD_VERSION,

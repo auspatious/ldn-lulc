@@ -16,7 +16,8 @@ from pystac import (
 from shapely import box, unary_union
 
 from ldn.aws import s3_client
-from ldn.raster import MAD_BANDS, PROCESSING_EXTENSION, REFLECTANCE_BANDS, stac_providers, visualisation_link
+from ldn.raster import MAD_BANDS, REFLECTANCE_BANDS
+from ldn.stac import PROCESSING_EXTENSION, stac_providers, visualisation_link
 from ldn.utils import (
     GEOMAD_VERSION,
     LULC_VERSION,

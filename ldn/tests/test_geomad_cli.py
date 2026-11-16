@@ -6,7 +6,7 @@ from moto import mock_aws
 from typer.testing import CliRunner
 
 from ldn.cli_geomad import geomad_app
-from ldn.raster import PrefixedS3ItemPath
+from ldn.stac import PrefixedS3ItemPath
 from ldn.utils import (
     GEOMAD_DATASET_ID,
     SENSOR,
