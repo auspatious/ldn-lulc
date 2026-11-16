@@ -36,6 +36,7 @@ export default function App() {
   const [right, setRight] = useState<SideConfig>(initial.right);
   const [compare, setCompare] = useState(initial.compare);
   const [split, setSplit] = useState(initial.split);
+  const [grid, setGrid] = useState(initial.grid);
   const [states, setStates] = useState<DatasetStates>({});
   // Datasets whose items have been requested, so each parquet is read once.
   const requested = useRef(new Set<DatasetId>());
@@ -71,8 +72,9 @@ export default function App() {
         right,
         compare,
         split,
+        grid,
       }),
-    [initial.view, left, right, compare, split],
+    [initial.view, left, right, compare, split, grid],
   );
 
   // Rewrite the URL whenever layer or compare settings change.
@@ -92,6 +94,7 @@ export default function App() {
         left={left}
         right={compare ? right : null}
         split={split}
+        grid={grid}
         states={states}
         mapRef={mapRef}
         initialViewState={initial.view}
@@ -106,6 +109,8 @@ export default function App() {
         onRightChange={setRight}
         compare={compare}
         onCompareChange={handleCompareChange}
+        grid={grid}
+        onGridChange={setGrid}
         states={states}
       />
     </div>

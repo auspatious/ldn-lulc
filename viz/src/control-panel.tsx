@@ -169,6 +169,8 @@ export interface ControlPanelProps {
   onRightChange: (side: SideConfig) => void;
   compare: boolean;
   onCompareChange: (compare: boolean) => void;
+  grid: boolean;
+  onGridChange: (grid: boolean) => void;
   states: DatasetStates;
 }
 
@@ -180,6 +182,8 @@ export function ControlPanel({
   onRightChange,
   compare,
   onCompareChange,
+  grid,
+  onGridChange,
   states,
 }: ControlPanelProps) {
   const showLegend = left.enabled.lulc || (compare && right.enabled.lulc);
@@ -206,6 +210,18 @@ export function ControlPanel({
             <SideControls side={left} onChange={onLeftChange} states={states} />
           </Box>
         )}
+
+        <Box>
+          <SectionHeading>Grid</SectionHeading>
+          <Checkbox.Root
+            checked={grid}
+            onCheckedChange={(d) => onGridChange(d.checked === true)}
+          >
+            <Checkbox.HiddenInput />
+            <Checkbox.Control />
+            <Checkbox.Label>Show grid tiles</Checkbox.Label>
+          </Checkbox.Root>
+        </Box>
 
         <Box>
           <SectionHeading>Compare</SectionHeading>

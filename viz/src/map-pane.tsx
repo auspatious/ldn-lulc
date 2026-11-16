@@ -105,6 +105,8 @@ export interface MapPaneProps {
   right: SideConfig | null;
   /** Swipe divider position, 0 to 1. */
   split: number;
+  /** Whether the grid tiles are shown. */
+  grid: boolean;
   states: DatasetStates;
   mapRef: Ref<MapRef>;
   /** View used when the map mounts. */
@@ -120,6 +122,7 @@ export function MapPane({
   left,
   right,
   split,
+  grid,
   states,
   mapRef,
   initialViewState,
@@ -197,11 +200,13 @@ export function MapPane({
           <Layer
             id="grid-tiles-fill"
             type="fill"
+            layout={{ visibility: grid ? "visible" : "none" }}
             paint={{ "fill-color": REGION_COLOR, "fill-opacity": 0.15 }}
           />
           <Layer
             id="grid-tiles-line"
             type="line"
+            layout={{ visibility: grid ? "visible" : "none" }}
             paint={{ "line-color": REGION_COLOR, "line-width": 1 }}
           />
         </Source>

@@ -19,6 +19,8 @@ export type UrlState = {
   compare: boolean;
   /** Swipe divider position, 0 to 1. */
   split: number;
+  /** Whether the grid tiles are shown. */
+  grid: boolean;
 };
 
 const DEFAULT_VIEW: MapView = {
@@ -96,6 +98,7 @@ export function readUrlState(): UrlState {
     right: parseSide(params, "r") ?? left,
     compare: params.get("c") === "1",
     split: params.has("s") && Number.isFinite(split) ? clamp(split, 0, 1) : 0.5,
+    grid: params.get("g") !== "0",
   };
 }
 
@@ -120,7 +123,7 @@ let writeTimer: ReturnType<typeof setTimeout> | undefined;
 export function writeUrlState(state: UrlState) {
   clearTimeout(writeTimer);
   writeTimer = setTimeout(() => {
-    const { view, left, right, compare, split } = state;
+    const { view, left, right, compare, split, grid } = state;
     const v = [
       view.zoom.toFixed(2),
       view.latitude.toFixed(4),
@@ -138,6 +141,9 @@ export function writeUrlState(state: UrlState) {
         "s",
         split.toFixed(3),
       ]);
+    }
+    if (!grid) {
+      params.push(["g", "0"]);
     }
     // Built by hand so `,:/` stay readable instead of being percent-encoded.
     const query = params.map(([k, v]) => `${k}=${v}`).join("&");
