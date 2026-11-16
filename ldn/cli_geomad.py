@@ -93,7 +93,6 @@ def run(
         int,
         typer.Option(help=f"Temporal buffer for LS7 era (<={LS7_YEAR_THRESHOLD}). E.g. 1 searches year-1 to year+1."),
     ] = 1,
-    all_bands: Annotated[bool, typer.Option()] = True,
     memory_limit: Annotated[str, typer.Option()] = "10GB",
     n_workers: Annotated[int, typer.Option()] = 2,
     threads_per_worker: Annotated[int, typer.Option()] = 16,
@@ -122,7 +121,7 @@ def run(
 
     logger.info(
         f"tile={tile_id} year={year} version={version} region={region} bucket={bucket} overwrite={overwrite} "
-        f"decimated={decimated} all_bands={all_bands} mask_shadow={mask_shadow} geomad_threads={geomad_threads}",
+        f"decimated={decimated} mask_shadow={mask_shadow} geomad_threads={geomad_threads}",
     )
     logger.info(
         f"Dask config: n_workers={n_workers}, threads_per_worker={threads_per_worker}, "
@@ -228,15 +227,7 @@ def run(
 
     # Loader loads the data from STAC Items.
     loader = OdcLoader(
-        bands=LANDSAT_BANDS
-        if all_bands
-        else [
-            "red",
-            "green",
-            "blue",
-            "qa_pixel",
-            "qa_radsat",
-        ],  # Exclude NIR and 2 SWIR bands.
+        bands=LANDSAT_BANDS,
         chunks={"x": xy_chunk_size, "y": xy_chunk_size, "time": 1},
         groupby="solar_day",
         fuse_func={
