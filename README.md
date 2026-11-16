@@ -637,10 +637,10 @@ Implemented:
 - Store layer config and map view in URL parameters so the map view can be shared.
 - Render with nearest resampling so pixels show real data values.
 - Render COGs that span or are near the antimeridian (deck.gl-raster 0.9).
+- Add tiles GeoJSON layer (below raster data).
 
 Planned:
 
-- Add tiles GeoJSON layer (above raster data). https://raw.githubusercontent.com/auspatious/ldn-lulc/refs/heads/main/ldn/sids_all_tiles.geojson
 - Add basemap switcher. Default to positron.
 
 
