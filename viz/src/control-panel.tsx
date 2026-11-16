@@ -1,7 +1,11 @@
 import {
   Box,
   Checkbox,
+  chakra,
+  Field,
   Flex,
+  Heading,
+  Link,
   NativeSelect,
   SimpleGrid,
   Slider,
@@ -10,9 +14,9 @@ import {
   Text,
 } from "@chakra-ui/react";
 import type { ReactNode } from "react";
+import { useState } from "react";
 import type { DatasetId } from "./datasets.js";
 import { DATASETS, LULC_CLASSES } from "./datasets.js";
-import { Field, ControlPanel as SharedControlPanel } from "./shared/index.js";
 import type { DatasetState, DatasetStates, SideConfig } from "./side.js";
 import { DATASET_IDS, datasetState, sideYears } from "./side.js";
 
@@ -29,6 +33,105 @@ function statusText(state: DatasetState | undefined, year: number | null) {
   }
   const count = state.items.filter((i) => i.year === year).length;
   return count > 0 ? `${count} items` : `no data for ${year}`;
+}
+
+/** A link that opens in a new tab. */
+function ExternalLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      // Chakra's Link defaults to inline-flex, so a link that wraps becomes a
+      // full-width box and pushes any punctuation after it onto the next line.
+      display="inline"
+      color="blue.600"
+      textDecorationLine="underline"
+      textUnderlineOffset="2px"
+      _hover={{ color: "blue.700" }}
+    >
+      {children}
+    </Link>
+  );
+}
+
+/**
+ * Floating, collapsible card in the top-left corner of the map. The body
+ * collapses; the Auspatious footer stays visible.
+ */
+function Panel({ title, children }: { title: ReactNode; children: ReactNode }) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <Box
+      position="absolute"
+      top="20px"
+      left="20px"
+      width="350px"
+      maxHeight="calc(100% - 40px)"
+      overflowY="auto"
+      bg="white"
+      color="gray.800"
+      borderRadius="lg"
+      boxShadow="0 2px 8px rgba(0, 0, 0, 0.1)"
+      p="4"
+      pointerEvents="auto"
+      zIndex={1000}
+    >
+      <chakra.button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        display="flex"
+        alignItems="center"
+        justifyContent="space-between"
+        width="100%"
+        textAlign="left"
+        cursor="pointer"
+        userSelect="none"
+        bg="transparent"
+        border="none"
+        p="0"
+        m="0"
+      >
+        <Heading as="h2" size="md">
+          {title}
+        </Heading>
+        <chakra.span
+          fontSize="xs"
+          transition="transform 0.2s"
+          transform={open ? "rotate(0deg)" : "rotate(-90deg)"}
+        >
+          ▼
+        </chakra.span>
+      </chakra.button>
+      {open ? (
+        <Box mt="3" fontSize="sm">
+          {children}
+        </Box>
+      ) : null}
+      <Box
+        mt="3"
+        pt="2"
+        borderTopWidth="1px"
+        borderColor="gray.200"
+        fontSize="xs"
+        color="gray.600"
+      >
+        Data and app produced by{" "}
+        <ExternalLink href="https://auspatious.com">Auspatious</ExternalLink>.{" "}
+        See the code here:{" "}
+        <ExternalLink href="https://github.com/auspatious/ldn-lulc">
+          GitHub
+        </ExternalLink>
+      </Box>
+    </Box>
+  );
 }
 
 /** Small uppercase heading for a panel section. */
@@ -164,7 +267,10 @@ function SideControls({ side, onChange, states }: SideControlsProps) {
         ))}
       </Stack>
 
-      <Field label="Year">
+      <Field.Root>
+        <Field.Label fontSize="xs" color="gray.600">
+          Year
+        </Field.Label>
         <NativeSelect.Root>
           <NativeSelect.Field
             value={activeYear ?? ""}
@@ -180,7 +286,7 @@ function SideControls({ side, onChange, states }: SideControlsProps) {
           </NativeSelect.Field>
           <NativeSelect.Indicator />
         </NativeSelect.Root>
-      </Field>
+      </Field.Root>
     </Box>
   );
 }
@@ -213,7 +319,7 @@ export function ControlPanel({
 }: ControlPanelProps) {
   const showLegend = left.enabled.lulc || (compare && right.enabled.lulc);
   return (
-    <SharedControlPanel
+    <Panel
       title={
         <Flex align="center" gap="2">
           <a href="https://auspatious.com" target="_blank" rel="noreferrer">
@@ -297,6 +403,6 @@ export function ControlPanel({
           </Box>
         ) : null}
       </Stack>
-    </SharedControlPanel>
+    </Panel>
   );
 }

@@ -1,7 +1,7 @@
+import { ChakraProvider, defaultSystem } from "@chakra-ui/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.js";
-import { ExampleProvider } from "./shared/index.js";
 
 const root = document.getElementById("root");
 if (!root) {
@@ -10,8 +10,8 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <ExampleProvider>
+    <ChakraProvider value={defaultSystem}>
       <App />
-    </ExampleProvider>
+    </ChakraProvider>
   </StrictMode>,
 );

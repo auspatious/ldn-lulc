@@ -1,4 +1,5 @@
 import { Text } from "@chakra-ui/react";
+import type { DeckWidgetTheme, LoadingWidgetProps } from "@deck.gl/widgets";
 import { LoadingWidget } from "@deck.gl/widgets";
 import {
   MosaicLayer,
@@ -18,8 +19,8 @@ import {
 } from "react-map-gl/maplibre";
 import type { DatasetId } from "./datasets.js";
 import { createLulcPaletteTexture, DATASETS, GRID_TILES } from "./datasets.js";
+import { DeckGlOverlay } from "./deckgl-overlay.js";
 import { epsgResolver } from "./proj.js";
-import { DeckGlOverlay, loadingWidgetProps } from "./shared/index.js";
 import type { DatasetStates, SideConfig } from "./side.js";
 import { DATASET_IDS, sideItems, sideYears } from "./side.js";
 import { SplitClipExtension } from "./split-clip.js";
@@ -31,6 +32,25 @@ import type { StacItem } from "./stac.js";
 const MAX_CACHED_ITEMS = 50;
 /** Texture budget per item, in bytes. */
 const MAX_ITEM_CACHE_BYTES = 16 * 1024 ** 2;
+
+/** deck.gl widget theme matching the control panel's white card. */
+const widgetTheme: DeckWidgetTheme = {
+  "--widget-margin": "20px",
+  "--button-size": "36px",
+  "--button-background": "#fff",
+  "--button-corner-radius": "8px",
+  "--button-shadow": "0 2px 8px rgba(0, 0, 0, 0.1)",
+  "--button-icon-idle": "#52525b",
+};
+
+/** Top-right, since the control panel is top-left. */
+const loadingWidgetProps: LoadingWidgetProps = {
+  placement: "top-right",
+  label: "Loading tiles...",
+  // `WidgetProps.style` is typed as `CSSStyleDeclaration`, which has no `--*`
+  // keys; deck.gl applies those through `style.setProperty`.
+  style: widgetTheme as Partial<CSSStyleDeclaration>,
+};
 
 const REGION_COLOR = [
   "match",
