@@ -156,6 +156,14 @@ There is training data for each year in `TRAINING_DATA_YEARS`, now 2020 and 2021
 - 2020: all 3 products.
 - 2021: ESA WorldCover and IO.
 
+Other sources have more years, but we only use cloud-optimised data (COGs with STAC metadata). We do not use netCDF files.
+- ESA CCI is on the [Copernicus Climate Data Store](https://cds.climate.copernicus.eu/datasets/satellite-land-cover) up
+  to 2022, but only as netCDF, so we do not use it. With it, 2021 would have 3 products, and 2022 would have 2 (ESA CCI
+  and IO).
+- IO is on [AWS](https://registry.opendata.aws/io-lulc/) (`s3://io-10m-annual-lulc/`) as COGs for 2017 to 2024, with
+  STAC metadata from Impact Observatory. In 2024 IO is the only product, so there is no agreement.
+- ESA WorldCover has only 2020 and 2021 from all sources.
+
 More years show the model more conditions. For example, 2021 is a dry La Nina year in the central Pacific (see `plan-label-propagation2.md`).
 
 The pipeline reprojects the products onto the 30 m GeoMAD tile grid. Then it changes their classes to our 7-class `level1` typology (see `typology_mapping.yaml`). The training samples come from pixels where at least 2 products agree. Thus the two 10 m products (ESA WorldCover and IO) are downsampled, and ESA CCI is upsampled from 300 m.
