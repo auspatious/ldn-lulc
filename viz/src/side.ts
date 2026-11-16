@@ -37,13 +37,17 @@ export type SideConfig = {
   year: number | null;
 };
 
+/** A record with one value per dataset. */
+const perDataset = <T>(value: (id: DatasetId) => T) =>
+  Object.fromEntries(DATASET_IDS.map((id) => [id, value(id)])) as Record<
+    DatasetId,
+    T
+  >;
+
 export const DEFAULT_SIDE: SideConfig = {
-  enabled: { geomad: true, lulc: true },
-  opacity: { geomad: 1, lulc: 1 },
-  version: {
-    geomad: DATASETS.geomad.versions[0],
-    lulc: DATASETS.lulc.versions[0],
-  },
+  enabled: perDataset(() => true),
+  opacity: perDataset(() => 1),
+  version: perDataset((id) => DATASETS[id].versions[0]),
   year: null,
 };
 

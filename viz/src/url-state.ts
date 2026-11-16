@@ -68,8 +68,10 @@ function parseSide(params: URLSearchParams, key: string): SideConfig | null {
   if (value === null) {
     return null;
   }
-  const enabled = { geomad: false, lulc: false };
-  const opacity = { geomad: 1, lulc: 1 };
+  const enabled = Object.fromEntries(
+    DATASET_IDS.map((id) => [id, false]),
+  ) as Record<DatasetId, boolean>;
+  const opacity = { ...DEFAULT_SIDE.opacity };
   for (const part of value.split(",")) {
     const [id, percent] = part.split(":");
     if (!DATASET_IDS.includes(id as DatasetId)) {
