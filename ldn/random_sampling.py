@@ -7,7 +7,7 @@ import odc.geo.xr  # noqa: F401  Registers the .odc accessor.
 import pandas as pd
 from xarray import DataArray
 
-from ldn.utils import CLASS_ATTR, WGS84, LdnError
+from ldn.utils import CLASS_ATTR, LULC_NODATA, WGS84, LdnError
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def random_sampling(
     df = da.to_dataframe(name=CLASS_ATTR)
 
     # Drop nodata pixels.
-    df = df[df[CLASS_ATTR] != 255]
+    df = df[df[CLASS_ATTR] != LULC_NODATA]
 
     # List to store points
     samples = []
