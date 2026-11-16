@@ -620,7 +620,7 @@ Also `make viz-build`, `make viz-lint` (formatting, lint and types) and `make vi
 
 ### Deployment
 
-Deployed to GitHub Pages at https://auspatious.github.io/ldn-lulc/ by `.github/workflows/viz-deploy-pages.yml` on push to `main` (and to `add-deck.gl-raster-app` until it is merged). Old titiler version here: https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
+Deployed to GitHub Pages at https://auspatious.github.io/ldn-lulc/ by `.github/workflows/viz-deploy-pages.yml` on push to `main` (and to `add-deck.gl-raster-app` until it is merged).
 
 
 ### Features
