@@ -1,7 +1,10 @@
 import { Text } from "@chakra-ui/react";
 import { LoadingWidget } from "@deck.gl/widgets";
-import type { MultiCOGLayerProps } from "@developmentseed/deck.gl-geotiff";
-import { MosaicLayer, MultiCOGLayer } from "@developmentseed/deck.gl-geotiff";
+import {
+  MosaicLayer,
+  MultiCOGLayer,
+  MultiCOGSource,
+} from "@developmentseed/deck.gl-geotiff";
 import type { RasterModule } from "@developmentseed/deck.gl-raster";
 import type { Device } from "@luma.gl/core";
 import type { Ref } from "react";
@@ -28,24 +31,6 @@ import type { StacItem } from "./stac.js";
 const MAX_CACHED_ITEMS = 50;
 /** Texture budget per item, in bytes. */
 const MAX_ITEM_CACHE_BYTES = 16 * 1024 ** 2;
-
-/**
- * Per-item MultiCOGLayer `sources` objects. MultiCOGLayer re-opens every COG
- * when `sources` changes identity, so it must be stable across renders.
- */
-const cogSourcesCache = new WeakMap<StacItem, MultiCOGLayerProps["sources"]>();
-
-/** Get the cached MultiCOGLayer sources for an item's bands. */
-function getCogSources(item: StacItem, bands: string[]) {
-  let sources = cogSourcesCache.get(item);
-  if (!sources) {
-    sources = Object.fromEntries(
-      bands.map((band) => [band, { url: item.assets[band] }]),
-    );
-    cogSourcesCache.set(item, sources);
-  }
-  return sources;
-}
 
 const REGION_COLOR = [
   "match",
@@ -84,24 +69,29 @@ function sideLayers(
     if (sources.length === 0) {
       return [];
     }
-    return new MosaicLayer<StacItem>({
+    return new MosaicLayer<StacItem, MultiCOGSource>({
       id: `${name}-${id}-${activeYear}`,
-      sources,
+      data: sources,
       maxCacheSize: MAX_CACHED_ITEMS,
-      renderSource: (item, { signal }) =>
-        new MultiCOGLayer({
-          id: `${name}-cog-${item.id}`,
-          sources: getCogSources(item, dataset.bands),
-          composite: dataset.composite,
-          renderPipeline: pipelines[id],
-          // Show source pixels values.
-          resampling: "nearest",
-          epsgResolver,
-          opacity: side.opacity[id],
-          maxCacheByteSize: MAX_ITEM_CACHE_BYTES,
-          signal,
-          ...clip,
-        }),
+      getSource: (item, options) =>
+        MultiCOGSource.open(
+          Object.fromEntries(dataset.bands.map((b) => [b, item.assets[b]])),
+          { ...options, epsgResolver },
+        ),
+      renderSource: (_item, { source, subLayerProps }) =>
+        source
+          ? new MultiCOGLayer({
+              ...subLayerProps,
+              source,
+              composite: dataset.composite,
+              renderPipeline: pipelines[id],
+              // Show source pixels values.
+              resampling: "nearest",
+              opacity: side.opacity[id],
+              maxCacheByteSize: MAX_ITEM_CACHE_BYTES,
+              ...clip,
+            })
+          : null,
       // @ts-expect-error beforeId is injected by @deck.gl/mapbox; LayerProps
       // doesn't know about it.
       beforeId: "boundary_country_outline",
