@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 from odc.geo.geobox import GeoBox
-from pystac import Item
+from pystac import Extent, Item, SpatialExtent, TemporalExtent
 from shapely.geometry import mapping
 
 from ldn.grids import get_gridspec
@@ -19,6 +19,7 @@ from ldn.stac import (
     _antimeridian_safe_geometry,
     _installed_version,
     build_pipeline_components,
+    stac_collection,
     stac_providers,
 )
 
@@ -288,3 +289,20 @@ def test_antimeridian_safe_geometry_keeps_small_area_next_to_antimeridian() -> N
         "coordinates": [[(west, south), (east, south), (east, north), (west, north), (west, south)]],
     }
     assert _antimeridian_safe_geometry(corner, footprint) == footprint
+
+
+# Collections
+
+
+@pytest.mark.parametrize("source_coop,host", [(True, "Source Cooperative"), (False, "Digital Earth Pacific")])
+def test_geomad_collection_host_and_processor(source_coop, host):
+    extent = Extent(SpatialExtent([[0, 0, 1, 1]]), TemporalExtent([[datetime(2020, 1, 1), None]]))
+    providers = stac_collection("geomad", extent, False, source_coop).providers
+    assert [p.name for p in providers if "host" in p.roles] == [host]
+    assert "processor" in next(p for p in providers if p.name == "Digital Earth Pacific").roles
+    if source_coop:
+        assert next(p for p in providers if p.name == "Source Cooperative").url == (
+            "https://source.coop/auspatious/geomad-sids"
+        )
+    processor = next(p for p in providers if p.name == "Auspatious")
+    assert processor.extra_fields["processing:facility"] == "Digital Earth Pacific"
