@@ -64,130 +64,94 @@ cli_training_app = typer.Typer()
 PC_CLIENT = None
 
 PACIFIC_TRAINING_TILES = [
-    ("013_050", "pacific", {"Palau": "PLW"}),  # tree cover, grassland, wetland, water
-    ("023_031", "pacific", {"Papua New Guinea": "PNG"}),  # tree cover, grassland, wetland, water
-    ("024_034", "pacific", {"Papua New Guinea": "PNG"}),  # tree cover, grassland, cropland, built-up, water, other
-    ("024_037", "pacific", {"Papua New Guinea": "PNG"}),  # tree cover, grassland, cropland, wetland, water
-    ("025_057", "pacific", {"Guam": "GUM"}),  # tree cover, grassland, built-up, water
-    (
-        "028_030",
-        "pacific",
-        {"Papua New Guinea": "PNG"},
-    ),  # tree cover, grassland, cropland, wetland, built-up, water, other
-    ("034_036", "pacific", {"Papua New Guinea": "PNG"}),  # tree cover, grassland, wetland, water, other
-    ("039_033", "pacific", {"Solomon Islands": "SLB"}),  # tree cover, wetland, water
-    ("040_031", "pacific", {"Solomon Islands": "SLB"}),  # tree cover, grassland, wetland, water
-    ("043_030", "pacific", {"Solomon Islands": "SLB"}),  # tree cover, grassland, cropland, wetland, water
-    ("049_029", "pacific", {"Solomon Islands": "SLB"}),  # tree cover, wetland, water
-    (
-        "050_015",
-        "pacific",
-        {"New Caledonia": "NCL"},
-    ),  # tree cover, grassland, cropland, wetland, built-up, water, other
-    ("052_022", "pacific", {"Vanuatu": "VUT"}),  # tree cover, grassland, water, other
-    ("053_018", "pacific", {"Vanuatu": "VUT"}),  # tree cover, grassland, water, other
-    ("061_040", "pacific", {"Kiribati": "KIR"}),  # tree cover, grassland, water
-    ("064_020", "pacific", {"Fiji": "FJI"}),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("071_018", "pacific", {"Tonga": "TON"}),  # tree cover, grassland, water
-    ("075_025", "pacific", {"Samoa": "WSM"}),  # tree cover, grassland, built-up, water
-    ("101_020", "pacific", {"French Polynesia": "PYF"}),  # tree cover, grassland, cropland, water
-    ("125_012", "pacific", {"Pitcairn Islands": "PCN"}),  # tree cover, grassland, water
+    ("013_050", "pacific", {"Palau": "PLW"}),  # 1, 2, 4, 5, 6
+    ("023_031", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 4, 5, 6
+    ("024_034", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 3, 5, 6, 7
+    ("024_037", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 3, 4, 6
+    ("025_057", "pacific", {"Guam": "GUM"}),  # 1, 2, 5, 6
+    ("028_030", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("034_036", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 4, 6, 7
+    ("039_033", "pacific", {"Solomon Islands": "SLB"}),  # 1, 2, 4, 6
+    ("040_031", "pacific", {"Solomon Islands": "SLB"}),  # 1, 2, 4, 6
+    ("043_030", "pacific", {"Solomon Islands": "SLB"}),  # 1, 2, 3, 4, 6, 7
+    ("049_029", "pacific", {"Solomon Islands": "SLB"}),  # 1, 4, 6
+    ("050_015", "pacific", {"New Caledonia": "NCL"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("052_022", "pacific", {"Vanuatu": "VUT"}),  # 1, 2, 6, 7
+    ("053_018", "pacific", {"Vanuatu": "VUT"}),  # 1, 2, 6, 7
+    ("061_040", "pacific", {"Kiribati": "KIR"}),  # 1, 2, 6, 7
+    ("064_020", "pacific", {"Fiji": "FJI"}),  # 1, 2, 3, 4, 5, 6
+    ("071_018", "pacific", {"Tonga": "TON"}),  # 1, 2, 6, 7
+    ("075_025", "pacific", {"Samoa": "WSM"}),  # 1, 2, 4, 5, 6
+    ("101_020", "pacific", {"French Polynesia": "PYF"}),  # 1, 2, 3, 5, 6
+    ("125_012", "pacific", {"Pitcairn Islands": "PCN"}),  # 1, 2, 6
 ]
 NON_PACIFIC_TRAINING_TILES = [
-    ("119_126", "non-pacific", {"Belize": "BLZ"}),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("124_133", "non-pacific", {"Cuba": "CUB"}),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("126_129", "non-pacific", {"Cayman Islands": "CYM"}),  # tree cover, grassland, wetland, built-up, water
-    ("126_133", "non-pacific", {"Cuba": "CUB"}),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("129_135", "non-pacific", {"Bahamas": "BHS"}),  # tree cover, grassland, wetland, water, other
-    ("129_138", "non-pacific", {"Bahamas": "BHS"}),  # tree cover, grassland, wetland, built-up, water, other
-    ("130_127", "non-pacific", {"Jamaica": "JAM"}),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("131_131", "non-pacific", {"Cuba": "CUB"}),  # tree cover, grassland, cropland, wetland, built-up, water, other
-    ("135_129", "non-pacific", {"Haiti": "HTI"}),  # tree cover, grassland, cropland, wetland, built-up, water, other
-    (
-        "136_127",
-        "non-pacific",
-        {"Dominican Republic": "DOM"},
-    ),  # tree cover, grassland, cropland, wetland, built-up, water
-    (
-        "146_118",
-        "non-pacific",
-        {"Trinidad and Tobago": "TTO"},
-    ),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("147_123", "non-pacific", {"Martinique": "MTQ"}),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("148_109", "non-pacific", {"Guyana": "GUY"}),  # tree cover, grassland, wetland, water
-    ("149_113", "non-pacific", {"Guyana": "GUY"}),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("153_109", "non-pacific", {"Suriname": "SUR"}),  # tree cover, grassland, wetland, water
-    ("183_126", "non-pacific", {"Cabo Verde": "CPV"}),  # tree cover, grassland, built-up, water, other
-    ("194_120", "non-pacific", {"Guinea-Bissau": "GNB"}),  # tree cover, grassland, cropland, built-up, water
-    ("251_088", "non-pacific", {"Comoros": "COM"}),  # tree cover, grassland, built-up, water, other
-    ("266_077", "non-pacific", {"Mauritius": "MUS"}),  # tree cover, grassland, cropland, built-up, water
-    ("312_105", "non-pacific", {"Singapore": "SGP"}),  # tree cover, grassland, built-up, water, other
+    ("119_126", "non-pacific", {"Belize": "BLZ"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("124_133", "non-pacific", {"Cuba": "CUB"}),  # 1, 2, 3, 4, 5, 6
+    ("126_129", "non-pacific", {"Cayman Islands": "CYM"}),  # 1, 2, 4, 5, 6
+    ("126_133", "non-pacific", {"Cuba": "CUB"}),  # 1, 2, 3, 4, 5, 6
+    ("129_135", "non-pacific", {"Bahamas": "BHS"}),  # 1, 2, 4, 6, 7
+    ("129_138", "non-pacific", {"Bahamas": "BHS"}),  # 1, 2, 4, 5, 6, 7
+    ("130_127", "non-pacific", {"Jamaica": "JAM"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("131_131", "non-pacific", {"Cuba": "CUB"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("135_129", "non-pacific", {"Haiti": "HTI"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("136_127", "non-pacific", {"Dominican Republic": "DOM"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("146_118", "non-pacific", {"Trinidad and Tobago": "TTO"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("147_123", "non-pacific", {"Martinique": "MTQ"}),  # 1, 2, 3, 4, 5, 6
+    ("148_109", "non-pacific", {"Guyana": "GUY"}),  # 1, 2, 4, 6
+    ("149_113", "non-pacific", {"Guyana": "GUY"}),  # 1, 2, 3, 4, 5, 6
+    ("153_109", "non-pacific", {"Suriname": "SUR"}),  # 1, 2, 4, 6, 7
+    ("183_126", "non-pacific", {"Cabo Verde": "CPV"}),  # 1, 2, 5, 6, 7
+    ("194_120", "non-pacific", {"Guinea-Bissau": "GNB"}),  # 1, 2, 3, 5, 6
+    ("251_088", "non-pacific", {"Comoros": "COM"}),  # 1, 2, 5, 6, 7
+    ("266_077", "non-pacific", {"Mauritius": "MUS"}),  # 1, 2, 3, 4, 5, 6
+    ("312_105", "non-pacific", {"Singapore": "SGP"}),  # 1, 2, 3, 4, 5, 6, 7
 ]
 TRAINING_TILES = PACIFIC_TRAINING_TILES + NON_PACIFIC_TRAINING_TILES
 
 PACIFIC_TEST_TILES = [
-    ("017_052", "pacific", {"Micronesia": "FSM"}),  # tree cover, grassland, wetland, built-up, water
-    ("020_034", "pacific", {"Papua New Guinea": "PNG"}),  # tree cover, grassland, wetland, water, other
-    ("026_059", "pacific", {"Northern Mariana Islands": "MNP"}),  # tree cover, grassland, cropland, built-up, water
-    (
-        "027_033",
-        "pacific",
-        {"Papua New Guinea": "PNG"},
-    ),  # tree cover, grassland, cropland, wetland, built-up, water, other
-    ("030_030", "pacific", {"Papua New Guinea": "PNG"}),  # tree cover, grassland, wetland, water
-    ("032_035", "pacific", {"Papua New Guinea": "PNG"}),  # tree cover, grassland, cropland, wetland, water, other
-    ("037_034", "pacific", {"Papua New Guinea": "PNG"}),  # tree cover, grassland, wetland, water, other
-    ("040_049", "pacific", {"Micronesia": "FSM"}),  # tree cover, wetland, water
-    ("042_032", "pacific", {"Solomon Islands": "SLB"}),  # tree cover, wetland, water
-    ("045_029", "pacific", {"Solomon Islands": "SLB"}),  # tree cover, grassland, wetland, water
-    ("048_017", "pacific", {"New Caledonia": "NCL"}),  # tree cover, grassland, cropland, wetland, water, other
-    ("050_023", "pacific", {"Vanuatu": "VUT"}),  # tree cover, grassland, water
-    ("051_025", "pacific", {"Vanuatu": "VUT"}),  # tree cover, grassland, water
-    ("052_020", "pacific", {"Vanuatu": "VUT"}),  # tree cover, grassland, cropland, water
-    ("064_022", "pacific", {"Fiji": "FJI"}),  # tree cover, grassland, cropland, wetland, water
-    ("070_026", "pacific", {"Wallis and Futuna": "WLF"}),  # tree cover, grassland, water
-    ("071_016", "pacific", {"Tonga": "TON"}),  # tree cover, grassland, cropland, wetland, water
-    ("073_019", "pacific", {"Tonga": "TON"}),  # tree cover, grassland, water
-    ("077_019", "pacific", {"Niue": "NIU"}),  # tree cover, grassland, water
-    ("092_043", "pacific", {"Kiribati": "KIR"}),  # grassland, water, other
+    ("017_052", "pacific", {"Micronesia": "FSM"}),  # 1, 2, 4, 5, 6
+    ("020_034", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 4, 6, 7
+    ("026_059", "pacific", {"Northern Mariana Islands": "MNP"}),  # 1, 2, 3, 5, 6
+    ("026_034", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 3, 4, 6, 7
+    ("030_030", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 4, 6
+    ("032_035", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 3, 4, 6, 7
+    ("037_034", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 4, 6, 7
+    ("040_049", "pacific", {"Micronesia": "FSM"}),  # 1, 4, 6
+    ("042_032", "pacific", {"Solomon Islands": "SLB"}),  # 1, 4, 6
+    ("045_029", "pacific", {"Solomon Islands": "SLB"}),  # 1, 2, 4, 6
+    ("048_017", "pacific", {"New Caledonia": "NCL"}),  # 1, 2, 3, 4, 6, 7
+    ("050_023", "pacific", {"Vanuatu": "VUT"}),  # 1, 2, 6
+    ("051_025", "pacific", {"Vanuatu": "VUT"}),  # 1, 2, 6
+    ("052_020", "pacific", {"Vanuatu": "VUT"}),  # 1, 2, 3, 6
+    ("064_022", "pacific", {"Fiji": "FJI"}),  # 1, 2, 3, 4, 6
+    ("070_026", "pacific", {"Wallis and Futuna": "WLF"}),  # 1, 2, 6
+    ("071_016", "pacific", {"Tonga": "TON"}),  # 1, 2, 3, 4, 6
+    ("073_019", "pacific", {"Tonga": "TON"}),  # 1, 2, 6
+    ("077_019", "pacific", {"Niue": "NIU"}),  # 1, 2, 6
+    ("092_043", "pacific", {"Kiribati": "KIR"}),  # 2, 6, 7
 ]
 NON_PACIFIC_TEST_TILES = [
-    ("119_128", "non-pacific", {"Belize": "BLZ"}),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("128_132", "non-pacific", {"Cuba": "CUB"}),  # tree cover, grassland, cropland, wetland, built-up, water, other
-    ("133_128", "non-pacific", {"Haiti": "HTI"}),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("133_130", "non-pacific", {"Cuba": "CUB"}),  # tree cover, grassland, cropland, wetland, built-up, water, other
-    ("136_132", "non-pacific", {"Turks and Caicos Islands": "TCA"}),  # tree cover, grassland, wetland, water
-    ("138_120", "non-pacific", {"Curaçao": "CUW"}),  # tree cover, grassland, built-up, water, other
-    (
-        "138_129",
-        "non-pacific",
-        {"Dominican Republic": "DOM"},
-    ),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("141_128", "non-pacific", {"Puerto Rico": "PRI"}),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("143_128", "non-pacific", {"British Virgin Islands": "VGB"}),  # tree cover, grassland, wetland, built-up, water
-    ("146_121", "non-pacific", {"Saint Vincent and the Grenadines": "VCT"}),  # tree cover, grassland, built-up, water
-    (
-        "146_126",
-        "non-pacific",
-        {"Antigua and Barbuda": "ATG"},
-    ),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("148_121", "non-pacific", {"Barbados": "BRB"}),  # tree cover, grassland, cropland, built-up, water
-    ("150_111", "non-pacific", {"Guyana": "GUY"}),  # tree cover, grassland, cropland, wetland, water, other
-    ("152_111", "non-pacific", {"Suriname": "SUR"}),  # tree cover, grassland, cropland, wetland, built-up, water
-    ("183_123", "non-pacific", {"Cabo Verde": "CPV"}),  # tree cover, grassland, water, other
-    ("185_125", "non-pacific", {"Cabo Verde": "CPV"}),  # grassland, built-up, water, other
-    (
-        "192_120",
-        "non-pacific",
-        {"Guinea-Bissau": "GNB"},
-    ),  # tree cover, grassland, cropland, wetland, built-up, water, other
-    ("214_104", "non-pacific", {"São Tomé and Príncipe": "STP"}),  # tree cover, grassland, water
-    ("254_091", "non-pacific", {"Seychelles": "SYC"}),  # tree cover, grassland, wetland, water
-    (
-        "334_092",
-        "non-pacific",
-        {"Timor-Leste": "TLS"},
-    ),  # tree cover, grassland, cropland, wetland, built-up, water, other
+    ("119_128", "non-pacific", {"Belize": "BLZ"}),  # 1, 2, 3, 4, 5, 6
+    ("128_132", "non-pacific", {"Cuba": "CUB"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("133_128", "non-pacific", {"Haiti": "HTI"}),  # 1, 2, 3, 4, 5, 6
+    ("133_130", "non-pacific", {"Cuba": "CUB"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("136_132", "non-pacific", {"Turks and Caicos Islands": "TCA"}),  # 1, 2, 4, 6
+    ("138_120", "non-pacific", {"Curaçao": "CUW"}),  # 1, 2, 5, 6, 7
+    ("138_129", "non-pacific", {"Dominican Republic": "DOM"}),  # 1, 2, 3, 4, 5, 6
+    ("141_128", "non-pacific", {"Puerto Rico": "PRI"}),  # 1, 2, 3, 4, 5, 6
+    ("143_128", "non-pacific", {"British Virgin Islands": "VGB"}),  # 1, 2, 4, 5, 6
+    ("146_121", "non-pacific", {"Saint Vincent and the Grenadines": "VCT"}),  # 1, 2, 5, 6
+    ("146_126", "non-pacific", {"Antigua and Barbuda": "ATG"}),  # 1, 2, 3, 4, 5, 6
+    ("148_121", "non-pacific", {"Barbados": "BRB"}),  # 1, 2, 3, 5, 6
+    ("150_111", "non-pacific", {"Guyana": "GUY"}),  # 1, 2, 3, 4, 6, 7
+    ("152_111", "non-pacific", {"Suriname": "SUR"}),  # 1, 2, 3, 4, 5, 6
+    ("183_123", "non-pacific", {"Cabo Verde": "CPV"}),  # 1, 2, 6, 7
+    ("185_125", "non-pacific", {"Cabo Verde": "CPV"}),  # 2, 5, 6, 7
+    ("192_120", "non-pacific", {"Guinea-Bissau": "GNB"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("214_104", "non-pacific", {"São Tomé and Príncipe": "STP"}),  # 1, 2, 6
+    ("254_091", "non-pacific", {"Seychelles": "SYC"}),  # 1, 2, 4, 6
+    ("334_092", "non-pacific", {"Timor-Leste": "TLS"}),  # 1, 2, 3, 4, 5, 6, 7
 ]
 TEST_TILES = PACIFIC_TEST_TILES + NON_PACIFIC_TEST_TILES
 
@@ -196,14 +160,18 @@ TEST_DATA_SEED = 0
 
 # (min, max) sample points per class per tile-year. Easy classes (tree cover, water) are capped low so they don't
 # dominate, and the hard and medium classes get more points.
+HARD_MIN = 500
+EASY_MIN = 300
+HARD_MAX = 1000
+EASY_MAX = 500  # TODO: If rarer classes are confused with tree, then lower this.
 CLASS_SAMPLE_N_RANGE = {
-    1: (300, 500),  # Tree cover
-    2: (500, 1000),  # Grassland
-    3: (500, 1000),  # Cropland
-    4: (500, 1000),  # Wetland
-    5: (500, 1000),  # Built-up
-    6: (300, 500),  # Water
-    7: (500, 1000),  # Other
+    1: (EASY_MIN, EASY_MAX),  # Tree cover
+    2: (HARD_MIN, HARD_MAX),  # Grassland
+    3: (HARD_MIN, HARD_MAX),  # Cropland
+    4: (HARD_MIN, HARD_MAX),  # Wetland
+    5: (HARD_MIN, HARD_MAX),  # Built-up
+    6: (EASY_MIN, EASY_MAX),  # Water
+    7: (HARD_MIN, HARD_MAX),  # Other
 }
 
 
