@@ -97,7 +97,7 @@ export const DATASETS: Record<DatasetId, Dataset> = {
   },
   lulc: {
     label: "Land use / land cover (DEP Staging)",
-    versions: ["0-0-9", "0-1-1", "0-2-0"],
+    versions: ["0-2-0", "0-1-1", "0-0-9"],
     urls: (v) => [
       `https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/${v}/dep_ls_lulc.parquet`,
       `https://dep-public-staging.s3.us-west-2.amazonaws.com/ci_ls_lulc/${v}/ci_ls_lulc.parquet`,
