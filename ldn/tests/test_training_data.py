@@ -126,6 +126,12 @@ class TestFindAgreement:
         # The first and third agree on class 1
         assert result.values[2, 2] == 1
 
+    def test_anchor_vote(self):
+        """The 2020 agreement keeps its class where one product confirms it, and loses where both products agree."""
+        wc, io, anchor = self._lulc(4), self._lulc(1), find_agreement([self._lulc(4), self._lulc(4)])
+        assert find_agreement([wc, io, anchor]).values[2, 2] == 4
+        assert find_agreement([self._lulc(2), self._lulc(2), anchor]).values[2, 2] == 2
+
     def test_two_products_agree(self):
         """With 2 products (e.g. CCI and IO for 2017-2019), both must agree."""
         assert find_agreement([self._lulc(3), self._lulc(3)]).values[2, 2] == 3
