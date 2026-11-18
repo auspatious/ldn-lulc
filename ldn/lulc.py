@@ -1,6 +1,7 @@
 import io
 import logging
 import re
+import sys
 from datetime import UTC
 from datetime import datetime as dt
 from functools import partial
@@ -18,8 +19,10 @@ from dep_tools.processors import Processor
 from dep_tools.searchers import Searcher
 from joblib import load as joblib_load
 from odc.geo.geobox import GeoBox
+from planetary_computer.settings import Settings as PcSettings
 from pystac import Item, ItemCollection, Link
 from pystac.extensions.classification import ClassificationExtension
+from requests.exceptions import RetryError
 from rustac import search_sync
 from sklearn.ensemble import RandomForestClassifier
 from typing_extensions import Annotated
@@ -55,6 +58,17 @@ from ldn.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+EXIT_RETRY = 41  # Transient failure, e.g. rate limiting. The Argo template retries this exit code.
+
+
+def _is_pc_token_retry_error(e: Exception) -> bool:
+    """Whether e is the Planetary Computer token service failing after the client's retries.
+
+    Its requests are retried on 429 (rate limiting, e.g. when many pods start at once) and 5xx, so the failure is
+    transient.
+    """
+    return isinstance(e, RetryError) and e.request.url.startswith(PcSettings.get().sas_url)
 
 
 class GeomadSearcher(Searcher):
@@ -646,6 +660,11 @@ def run_classify_task(
                 f"Completed processing. Wrote {len(paths)} files to {itempath.stac_path(tile_id_tuple, absolute=True)}"
             )
 
-    except Exception:
+    except Exception as e:
+        if _is_pc_token_retry_error(e):
+            logger.exception(
+                f"Planetary Computer token requests failed, exiting with {EXIT_RETRY} so Argo retries later"
+            )
+            sys.exit(EXIT_RETRY)
         logger.exception("Failed to process with error")
         raise  # let it exit 1 naturally with full traceback
