@@ -686,7 +686,6 @@ def make_training_data(
     Returns:
         GeoDataFrame of final training samples.
     """
-    # Fail before loading anything if the year doesn't have enough products to agree.
     products = lulc_products_for_year(year)
 
     logger.info("Getting buffered country geometry")
@@ -820,6 +819,9 @@ def generate_training_data(
     if not output_bucket or not geomad_bucket:
         raise LdnError("Output bucket and GeoMAD bucket must be set.")
     country_of_interest = {country_name: country_code}
+    # Other years have at most 1 LULC product, so nothing to agree with. Fail before any S3 checks or loading.
+    if not 2017 <= int(year) <= 2021:
+        raise LdnError(f"Training data can only be made for 2017 to 2021, not {year}.")
 
     logger.info(
         f"Creating training data for tile {tile_id}, year {year}, region {region}, geomad_bucket "
