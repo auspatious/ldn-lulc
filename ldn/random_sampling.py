@@ -7,7 +7,7 @@ import odc.geo.xr  # noqa: F401  Registers the .odc accessor.
 import pandas as pd
 from xarray import DataArray
 
-from ldn.utils import CLASS_ATTR, LULC_NODATA, WGS84
+from ldn.utils import CLASS_ATTR, LULC_NODATA, WGS84, LdnError
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +24,19 @@ def random_sampling(
     number of pixels it has.
 
     Args:
-        da: Classified 2D DataArray with latitude and longitude dims, LULC_NODATA for nodata.
+        da: Classified 2D DataArray with latitude and longitude dims and a CRS, LULC_NODATA for nodata.
         n: Total number of points to share between classes by area.
         class_n_range: (min, max) points for each class value.
         seed: Random seed so the sampled locations are reproducible. None for non-reproducible sampling.
 
     Returns:
-        GeoDataFrame of sample points with class labels, in WGS84 if da has a CRS.
+        GeoDataFrame of sample points with class labels, in WGS84.
+
+    Raises:
+        LdnError: If da has no CRS.
     """
+    if da.odc.crs is None:
+        raise LdnError("The classified array has no CRS, so the sample points can't be located.")
     da = da.squeeze()
     df = da.to_dataframe(name=CLASS_ATTR)
     df = df[df[CLASS_ATTR] != LULC_NODATA]
@@ -53,15 +58,7 @@ def random_sampling(
     y = [i[0] for i in list(all_samples.index)]
     x = [i[1] for i in list(all_samples.index)]
 
-    # CRS of the DataArray, None if it has none.
-    crs = da.odc.crs
+    # Create geopandas dataframe in WGS84.
+    gdf = gpd.GeoDataFrame(all_samples, crs=da.odc.crs, geometry=gpd.points_from_xy(x, y)).reset_index()
 
-    # Create geopandas dataframe and ensure output is in WGS84.
-    gdf = gpd.GeoDataFrame(all_samples, crs=crs, geometry=gpd.points_from_xy(x, y)).reset_index()
-
-    gdf = gdf.drop(["latitude", "longitude"], axis=1)
-
-    if crs is not None and gdf.crs is not None and gdf.crs.to_epsg() != 4326:
-        gdf = gdf.to_crs(WGS84)
-
-    return gdf
+    return gdf.drop(["latitude", "longitude"], axis=1).to_crs(WGS84)
