@@ -34,9 +34,9 @@ spec:
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc"
       - name: image-tag
-        value: "0.2.0-cf745a0" # Latest main image. There is no 0.2.0 release image yet.
+        value: "0.2.0-49271b9" # Latest main image. Its prediction code (from 0-2-0) matches LULC 0-2-1, which only changes the model.
       - name: lulc-version
-        value: "0-2-0"
+        value: "0-2-1" # LULC and geomad versions are not synced, just happen to be the same currently.
       - name: geomad-version
         value: "0-2-1"
       - name: geomad-bucket
@@ -47,9 +47,10 @@ spec:
       - name: region
         value: "all" # "all", "pacific", or "non-pacific"
       - name: years
-        value: "2000,2005,2010,2015,2020,2025" # Only used by print-tasks, which is off for the test tile run.
+        # value: "2000-2025"
+        value: "2000,2010,2020" # Only used by print-tasks, which is off for the test tile run.
       - name: model-path
-        value: "https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-2-0/lulc_random_forest_model.joblib"
+        value: "https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_lulc/models/0-2-1/lulc_random_forest_model.joblib"
       - name: collection-url-root
         value: "https://stac.staging.digitalearthpacific.io/collections" # DEP Staging
         # value: "https://stac.digitalearthpacific.org/collections" # DEP Prod
@@ -81,8 +82,52 @@ spec:
                   value: "{{item.year}}"
                 - name: region
                   value: "{{item.region}}"
-            withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
+            # withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
             # withParam: '[{"id": "085_026","year": "2025","region": "pacific"}]'
+            # All test tiles (TEST_TILES in ldn/training_data.py) for 2000, 2010 and 2020.
+            withParam: |
+              [
+                {"id": "017_052", "year": "2000", "region": "pacific"}, {"id": "017_052", "year": "2010", "region": "pacific"}, {"id": "017_052", "year": "2020", "region": "pacific"},
+                {"id": "020_034", "year": "2000", "region": "pacific"}, {"id": "020_034", "year": "2010", "region": "pacific"}, {"id": "020_034", "year": "2020", "region": "pacific"},
+                {"id": "026_059", "year": "2000", "region": "pacific"}, {"id": "026_059", "year": "2010", "region": "pacific"}, {"id": "026_059", "year": "2020", "region": "pacific"},
+                {"id": "026_034", "year": "2000", "region": "pacific"}, {"id": "026_034", "year": "2010", "region": "pacific"}, {"id": "026_034", "year": "2020", "region": "pacific"},
+                {"id": "030_030", "year": "2000", "region": "pacific"}, {"id": "030_030", "year": "2010", "region": "pacific"}, {"id": "030_030", "year": "2020", "region": "pacific"},
+                {"id": "032_035", "year": "2000", "region": "pacific"}, {"id": "032_035", "year": "2010", "region": "pacific"}, {"id": "032_035", "year": "2020", "region": "pacific"},
+                {"id": "037_034", "year": "2000", "region": "pacific"}, {"id": "037_034", "year": "2010", "region": "pacific"}, {"id": "037_034", "year": "2020", "region": "pacific"},
+                {"id": "040_049", "year": "2000", "region": "pacific"}, {"id": "040_049", "year": "2010", "region": "pacific"}, {"id": "040_049", "year": "2020", "region": "pacific"},
+                {"id": "042_032", "year": "2000", "region": "pacific"}, {"id": "042_032", "year": "2010", "region": "pacific"}, {"id": "042_032", "year": "2020", "region": "pacific"},
+                {"id": "045_029", "year": "2000", "region": "pacific"}, {"id": "045_029", "year": "2010", "region": "pacific"}, {"id": "045_029", "year": "2020", "region": "pacific"},
+                {"id": "048_017", "year": "2000", "region": "pacific"}, {"id": "048_017", "year": "2010", "region": "pacific"}, {"id": "048_017", "year": "2020", "region": "pacific"},
+                {"id": "050_023", "year": "2000", "region": "pacific"}, {"id": "050_023", "year": "2010", "region": "pacific"}, {"id": "050_023", "year": "2020", "region": "pacific"},
+                {"id": "051_025", "year": "2000", "region": "pacific"}, {"id": "051_025", "year": "2010", "region": "pacific"}, {"id": "051_025", "year": "2020", "region": "pacific"},
+                {"id": "052_020", "year": "2000", "region": "pacific"}, {"id": "052_020", "year": "2010", "region": "pacific"}, {"id": "052_020", "year": "2020", "region": "pacific"},
+                {"id": "064_022", "year": "2000", "region": "pacific"}, {"id": "064_022", "year": "2010", "region": "pacific"}, {"id": "064_022", "year": "2020", "region": "pacific"},
+                {"id": "070_026", "year": "2000", "region": "pacific"}, {"id": "070_026", "year": "2010", "region": "pacific"}, {"id": "070_026", "year": "2020", "region": "pacific"},
+                {"id": "071_016", "year": "2000", "region": "pacific"}, {"id": "071_016", "year": "2010", "region": "pacific"}, {"id": "071_016", "year": "2020", "region": "pacific"},
+                {"id": "073_019", "year": "2000", "region": "pacific"}, {"id": "073_019", "year": "2010", "region": "pacific"}, {"id": "073_019", "year": "2020", "region": "pacific"},
+                {"id": "077_019", "year": "2000", "region": "pacific"}, {"id": "077_019", "year": "2010", "region": "pacific"}, {"id": "077_019", "year": "2020", "region": "pacific"},
+                {"id": "092_043", "year": "2000", "region": "pacific"}, {"id": "092_043", "year": "2010", "region": "pacific"}, {"id": "092_043", "year": "2020", "region": "pacific"},
+                {"id": "119_128", "year": "2000", "region": "non-pacific"}, {"id": "119_128", "year": "2010", "region": "non-pacific"}, {"id": "119_128", "year": "2020", "region": "non-pacific"},
+                {"id": "128_132", "year": "2000", "region": "non-pacific"}, {"id": "128_132", "year": "2010", "region": "non-pacific"}, {"id": "128_132", "year": "2020", "region": "non-pacific"},
+                {"id": "133_128", "year": "2000", "region": "non-pacific"}, {"id": "133_128", "year": "2010", "region": "non-pacific"}, {"id": "133_128", "year": "2020", "region": "non-pacific"},
+                {"id": "133_130", "year": "2000", "region": "non-pacific"}, {"id": "133_130", "year": "2010", "region": "non-pacific"}, {"id": "133_130", "year": "2020", "region": "non-pacific"},
+                {"id": "136_132", "year": "2000", "region": "non-pacific"}, {"id": "136_132", "year": "2010", "region": "non-pacific"}, {"id": "136_132", "year": "2020", "region": "non-pacific"},
+                {"id": "138_120", "year": "2000", "region": "non-pacific"}, {"id": "138_120", "year": "2010", "region": "non-pacific"}, {"id": "138_120", "year": "2020", "region": "non-pacific"},
+                {"id": "138_129", "year": "2000", "region": "non-pacific"}, {"id": "138_129", "year": "2010", "region": "non-pacific"}, {"id": "138_129", "year": "2020", "region": "non-pacific"},
+                {"id": "141_128", "year": "2000", "region": "non-pacific"}, {"id": "141_128", "year": "2010", "region": "non-pacific"}, {"id": "141_128", "year": "2020", "region": "non-pacific"},
+                {"id": "143_128", "year": "2000", "region": "non-pacific"}, {"id": "143_128", "year": "2010", "region": "non-pacific"}, {"id": "143_128", "year": "2020", "region": "non-pacific"},
+                {"id": "146_121", "year": "2000", "region": "non-pacific"}, {"id": "146_121", "year": "2010", "region": "non-pacific"}, {"id": "146_121", "year": "2020", "region": "non-pacific"},
+                {"id": "146_126", "year": "2000", "region": "non-pacific"}, {"id": "146_126", "year": "2010", "region": "non-pacific"}, {"id": "146_126", "year": "2020", "region": "non-pacific"},
+                {"id": "148_121", "year": "2000", "region": "non-pacific"}, {"id": "148_121", "year": "2010", "region": "non-pacific"}, {"id": "148_121", "year": "2020", "region": "non-pacific"},
+                {"id": "150_111", "year": "2000", "region": "non-pacific"}, {"id": "150_111", "year": "2010", "region": "non-pacific"}, {"id": "150_111", "year": "2020", "region": "non-pacific"},
+                {"id": "152_111", "year": "2000", "region": "non-pacific"}, {"id": "152_111", "year": "2010", "region": "non-pacific"}, {"id": "152_111", "year": "2020", "region": "non-pacific"},
+                {"id": "183_123", "year": "2000", "region": "non-pacific"}, {"id": "183_123", "year": "2010", "region": "non-pacific"}, {"id": "183_123", "year": "2020", "region": "non-pacific"},
+                {"id": "185_125", "year": "2000", "region": "non-pacific"}, {"id": "185_125", "year": "2010", "region": "non-pacific"}, {"id": "185_125", "year": "2020", "region": "non-pacific"},
+                {"id": "192_120", "year": "2000", "region": "non-pacific"}, {"id": "192_120", "year": "2010", "region": "non-pacific"}, {"id": "192_120", "year": "2020", "region": "non-pacific"},
+                {"id": "214_104", "year": "2000", "region": "non-pacific"}, {"id": "214_104", "year": "2010", "region": "non-pacific"}, {"id": "214_104", "year": "2020", "region": "non-pacific"},
+                {"id": "254_091", "year": "2000", "region": "non-pacific"}, {"id": "254_091", "year": "2010", "region": "non-pacific"}, {"id": "254_091", "year": "2020", "region": "non-pacific"},
+                {"id": "334_092", "year": "2000", "region": "non-pacific"}, {"id": "334_092", "year": "2010", "region": "non-pacific"}, {"id": "334_092", "year": "2020", "region": "non-pacific"}
+              ]
 
 
     - name: print-tasks
