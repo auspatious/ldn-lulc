@@ -309,12 +309,20 @@ class TestTestTiles:
 
 class TestRandomSampling:
     def _da(self, values):
-        """Classified array on a latitude/longitude grid."""
-        return xr.DataArray(
-            values,
-            coords={"latitude": np.arange(values.shape[0]), "longitude": np.arange(values.shape[1])},
-            dims=("latitude", "longitude"),
+        """Classified array on a latitude/longitude grid in WGS84."""
+        return assign_crs(
+            xr.DataArray(
+                values,
+                coords={"latitude": np.arange(values.shape[0]), "longitude": np.arange(values.shape[1])},
+                dims=("latitude", "longitude"),
+            ),
+            "EPSG:4326",
         )
+
+    def test_no_crs_raises(self):
+        """Points without a CRS can't be located, so sampling fails."""
+        with pytest.raises(LdnError, match="no CRS"):
+            random_sampling(xr.DataArray(np.ones((4, 4))), n=4, class_n_range={1: (1, 4)}, seed=0)
 
     def test_same_seed_same_points(self):
         """The same seed gives identical points."""
