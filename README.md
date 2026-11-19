@@ -620,7 +620,43 @@ release version (for example `0.2.0`), not `latest`, so that runs are reproducib
 
 ## Visualisation (WIP)
 
-TODO: The visualisation is almost ready to deploy again as a Vite app. It reads COGs directly from S3 and shows them in the browser with deck.gl-raster.
+A Vite app which renders COGs straight from S3 with deck.gl-raster. Lists from STAC-Geoparquets.
+
+### Quickstart
+
+```
+make viz-install
+make viz-dev
+```
+
+Also `make viz-build`, `make viz-lint` (formatting, lint and types) and `make viz-format`.
+
+
+### Deployment
+
+Deployed to GitHub Pages at https://auspatious.github.io/ldn-lulc/ by `.github/workflows/viz-deploy-pages.yml` on push to `main` (and to `add-deck.gl-raster-app` until it is merged).
+
+
+### Features
+
+This is for agents to read so new features don't cause regressions.
+
+Implemented:
+
+- Display GeoMAD (render bottom) and LULC (render top) COGs directly in the browser. List from STAC-Geoparquet files.
+- Display LULC legend.
+- For each layer have an opacity (slider) and visibility (checkbox) control. Default to both visible, both 100% opaque.
+- Allow user to select year to visualise.
+- Allow user to swipe/compare different datasets, versions of the same dataset, and years. Both sides render on one map, each clipped to its side of the divider.
+- Store layer config and map view in URL parameters so the map view can be shared.
+- Render with nearest resampling so pixels show real data values.
+- Render COGs that span or are near the antimeridian (deck.gl-raster 0.9).
+- Add tiles GeoJSON layer (below raster data).
+
+Planned:
+
+- Add basemap switcher. Default to positron.
+
 
 ---
 

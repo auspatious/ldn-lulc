@@ -8,7 +8,7 @@ Annual cloud-free 30 m Landsat mosaics for Small Island Developing States (SIDS)
 
 **License:** [Creative Commons BY](https://creativecommons.org/licenses/by/4.0/)
 
-**Visualisation app:** https://mmufb4pjqf.execute-api.us-west-2.amazonaws.com/
+**Visualisation app:** https://auspatious.github.io/ldn-lulc
 
 ---
 
