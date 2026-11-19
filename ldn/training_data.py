@@ -163,6 +163,22 @@ TEST_TILES = PACIFIC_TEST_TILES + NON_PACIFIC_TEST_TILES
 # Fixed so the test points are identical every time they are generated.
 TEST_DATA_SEED = 0
 
+# (min, max) sample points per class per tile-year. Easy classes (tree cover, water) are capped low so they don't
+# dominate, and the hard and medium classes get more points.
+HARD_MIN = 500
+EASY_MIN = 300
+HARD_MAX = 1000
+EASY_MAX = 500  # TODO: If rarer classes are confused with tree, then lower this.
+CLASS_SAMPLE_N_RANGE = {
+    1: (EASY_MIN, EASY_MAX),  # Tree cover
+    2: (HARD_MIN, HARD_MAX),  # Grassland
+    3: (HARD_MIN, HARD_MAX),  # Cropland
+    4: (HARD_MIN, HARD_MAX),  # Wetland
+    5: (HARD_MIN, HARD_MAX),  # Built-up
+    6: (EASY_MIN, EASY_MAX),  # Water
+    7: (HARD_MIN, HARD_MAX),  # Other
+}
+
 
 def _get_pc_client():
     """Return a cached Planetary Computer STAC client."""
@@ -390,7 +406,6 @@ def generate_samples(
     agreed: xr.DataArray,
     geomad_dem_indices: xr.Dataset,
     n: int,
-    min_sample_per_class_n: int,
     seed: int | None,
 ) -> gpd.GeoDataFrame:
     """Generate stratified random samples from the agreement map.
@@ -398,8 +413,7 @@ def generate_samples(
     Args:
         agreed: Agreement classification DataArray.
         geomad_dem_indices: GeoMAD dataset (used to mask nodata areas).
-        n: Total number of sample points.
-        min_sample_per_class_n: Minimum samples per class.
+        n: Number of sample points shared between classes by area, before CLASS_SAMPLE_N_RANGE clips each class.
         seed: Random seed for reproducible sampling. None for non-reproducible sampling.
 
     Returns:
@@ -425,12 +439,7 @@ def generate_samples(
 
     agree_for_sampling = agree_trimmed.rename({"y": "latitude", "x": "longitude"})
 
-    samples = random_sampling(
-        da=agree_for_sampling,
-        n=n,
-        min_sample_n=min_sample_per_class_n,
-        seed=seed,
-    )
+    samples = random_sampling(agree_for_sampling, n, CLASS_SAMPLE_N_RANGE, seed)
     logger.info(f"Generated {len(samples)} samples")
     return samples
 
@@ -647,7 +656,6 @@ def make_training_data(
     file_prefix: str,
     output_key: str,
     n: int,
-    min_sample_per_class_n: int,
     sensor: str,
     seed: int | None,
 ):
@@ -668,8 +676,7 @@ def make_training_data(
         output_bucket: S3 bucket name for upload.
         country_of_interest: Dict mapping country name to ISO3 code.
             If None, uses all countries in the tile.
-        n: Total number of sample points.
-        min_sample_per_class_n: Minimum samples per class.
+        n: Number of sample points shared between classes by area, before CLASS_SAMPLE_N_RANGE clips each class.
         product_owner_geomad: Optional owner override for the GeoMAD data (e.g. "dep" or "ci").
         single_region_geomad: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
         file_prefix: Local path prefix for the output files, relative to ldn/.
@@ -728,9 +735,7 @@ def make_training_data(
     )
 
     logger.info("Generating samples")
-    samples = generate_samples(
-        agreed, geomad_dem_indices, n=n, min_sample_per_class_n=min_sample_per_class_n, seed=seed
-    )
+    samples = generate_samples(agreed, geomad_dem_indices, n=n, seed=seed)
 
     logger.info("Extracting GeoMAD values at sample points")
     samples = extract_geomad_dem_indices_values(samples, geomad_dem_indices, analysis_crs)
@@ -773,8 +778,9 @@ def generate_training_data(
     # TODO: Refactor so country data doesn't need to be passed. Not sure how.
     country_name: str = typer.Option(..., help="Country name (e.g. Fiji)"),
     country_code: str = typer.Option(..., help="Country ISO3 code (e.g. FJI)"),
-    n: int = typer.Option(2100, help="Total number of sample points"),
-    min_sample_per_class_n: int = typer.Option(300, help="Minimum samples per class"),
+    n: int = typer.Option(
+        2100, help="Sample points shared between classes by area, before CLASS_SAMPLE_N_RANGE clips each class"
+    ),
     overwrite: bool = typer.Option(False, help="Whether to overwrite existing data in S3"),
     product_owner_geomad: str | None = typer.Option(
         None, help="Override the region's default owner prefix (e.g. 'dep') for the GeoMAD data"
@@ -807,8 +813,7 @@ def generate_training_data(
 
     logger.info(
         f"Creating training data for tile {tile_id}, year {year}, region {region}, geomad_bucket "
-        f"{geomad_bucket}, output_bucket {output_bucket}, country {country_of_interest}, n={n}, "
-        f"min_sample_per_class_n={min_sample_per_class_n}, overwrite={overwrite}, "
+        f"{geomad_bucket}, output_bucket {output_bucket}, country {country_of_interest}, n={n}, overwrite={overwrite}, "
         f"product_owner_geomad={product_owner_geomad}, product_owner_output={product_owner_output}, "
         f"training_data_version={training_data_version}, geomad_version={geomad_version}, sensor={sensor}"
     )
@@ -871,7 +876,6 @@ def generate_training_data(
         file_prefix,
         output_key,
         n,
-        min_sample_per_class_n,
         sensor,
         seed,
     )
