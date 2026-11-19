@@ -34,7 +34,7 @@ spec:
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc"
       - name: image-tag
-        value: "0.2.0-49271b9" # Latest main image. Its prediction code (from 0-2-0) matches LULC 0-2-1, which only changes the model.
+        value: "0.2.0-dec0a54" # Latest main image. Its prediction code (from 0-2-0) matches LULC 0-2-1, which only changes the model.
       - name: lulc-version
         value: "0-2-1" # LULC and geomad versions are not synced, just happen to be the same currently.
       - name: geomad-version
