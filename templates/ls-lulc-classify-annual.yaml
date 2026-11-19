@@ -140,12 +140,11 @@ spec:
           requests:
             # v0-2-0 test tiles were measured to run at around 24Gi of memory
             memory: 24Gi
-            # Dask (2 workers x 2 threads) and the random forest (n_jobs=-1) both use this CPU limit.
-            cpu: 4
+            cpu: 1
             ephemeral-storage: 8Gi
           limits:
             memory: 28Gi
-            cpu: 4
+            cpu: 2
         command: [ldn]
         args:
           - lulc
@@ -174,7 +173,7 @@ spec:
           - --n-workers
           - "2"
           - --threads-per-worker
-          - "2"
+          - "8"
           - --xy-chunk-size
           - "1024"
           - --gap-fill-years
