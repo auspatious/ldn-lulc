@@ -194,7 +194,9 @@ The training data is here: https://dep-public-staging.s3.us-west-2.amazonaws.com
    | Impact Observatory (IO) | No quality filter is available |
 
 2. It keeps a pixel where at least 2 products agree on its class (both of 2 products, or 2 of 3). Nodata does not count as agreement. Then a 3x3 minimum filter keeps a pixel only if all of its neighbourhood agrees.
-3. It takes a stratified random sample from the agreement map, only where there is valid GeoMAD data. The default is 2,100 samples, with a minimum of 300 for each class.
+
+   2020 is the only year with all 3 products. In other years the 2 products often disagree on the hard classes. For example, IO maps mangroves as tree cover, and ESA WorldCover rarely maps Pacific cropland. So in other years the 2020 agreement map is a third vote, for all classes. If the year's 2 products agree, their class is used. If not, the pixel keeps its 2020 class where either product confirms it. The tile's 2020 samples must exist before other years can be made.
+3. It takes a stratified random sample from the agreement map, only where there is valid GeoMAD data. Each class gets a share of 2,100 points by area, clipped to a minimum and maximum for the class (`CLASS_SAMPLE_N_RANGE`): 300 to 500 for tree cover and water, and 500 to 1,000 for the other classes. A class with fewer pixels gives all of them. The easy classes are capped so they don't take most of the points, and the hard classes (cropland, wetland, other) get more.
 4. It gets the model features (see [Model features](#model-features)) at each sample point.
 5. It removes the samples that have NaN feature values. The code also has a K-Means outlier filter for each class, which removes the samples furthest from the class centroid. This filter is disabled until an ablation study shows if it makes the model better.
 6. It writes GeoJSON and CSV locally, and CSV to S3. The outputs have a version, and record the region, the tile index and the year. Source.Coop is not a supported destination for training data.
@@ -231,7 +233,7 @@ The number of tiles to use (the Pacific has about 517 tiles and the non-Pacific 
 - Select tiles by country, not at random. Papua New Guinea and French Polynesia have about 45% of the Pacific tiles. To keep small countries in the test set, the number of test tiles for each country is proportional to the square root of its tile count. Do not use tiles that are next to training tiles.
 - The number of points in each class is more important than the number of tiles. Aim for at least 100 test points for the rarest classes (wetland and cropland) across all test tiles. If a class is missing, change the tiles.
 - Look at the class histogram of the test set before you use it. If a class is missing or very small, change the tiles and increase `TEST_DATA_VERSION`.
-- The test points are sampled in the same way as the training points: stratified by class in each tile, from the agreement map. `min_sample_per_class_n` adds more samples of rare classes.
+- The test points are sampled in the same way as the training points: stratified by class in each tile, from the agreement map, with the same `CLASS_SAMPLE_N_RANGE`.
 - Accuracy is measured at 2020, the year in which all source LULC products have data. The eval cell in `notebooks/1_Train_Model.ipynb` gives the precision and recall of each class for a model version.
 - The test labels are only for 2020, so temporal consistency is a separate check. Classify the test tiles for all years. Then count the pixels that change class, or that change implausibly between years (`notebooks/LULC_Temporal_Stability.ipynb`).
 

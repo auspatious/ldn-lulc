@@ -17,7 +17,7 @@ from ldn.training_data import (
     lulc_products_for_year,
     remove_nan_samples,
 )
-from ldn.utils import LULC_NODATA, LdnError, parse_tile_id
+from ldn.utils import CLASS_ATTR, LULC_NODATA, LdnError, parse_tile_id
 
 
 class TestWcQualityFilter:
@@ -125,6 +125,12 @@ class TestFindAgreement:
         result = find_agreement([self._lulc(1), self._lulc(0), self._lulc(1)])
         # The first and third agree on class 1
         assert result.values[2, 2] == 1
+
+    def test_anchor_vote(self):
+        """The 2020 agreement keeps its class where one product confirms it, and loses where both products agree."""
+        wc, io, anchor = self._lulc(4), self._lulc(1), find_agreement([self._lulc(4), self._lulc(4)])
+        assert find_agreement([wc, io, anchor]).values[2, 2] == 4
+        assert find_agreement([self._lulc(2), self._lulc(2), anchor]).values[2, 2] == 2
 
     def test_two_products_agree(self):
         """With 2 products (e.g. CCI and IO for 2017-2019), both must agree."""
@@ -301,16 +307,45 @@ class TestTestTiles:
         assert len(TEST_TILES) == len({t[0] for t in TEST_TILES})
 
 
-class TestRandomSamplingSeed:
-    def _da(self):
-        """Classified array with two classes."""
-        values = np.tile([1, 2], (50, 25))
-        return xr.DataArray(
-            values, coords={"latitude": np.arange(50), "longitude": np.arange(50)}, dims=("latitude", "longitude")
+class TestRandomSampling:
+    def _da(self, values):
+        """Classified array on a latitude/longitude grid in WGS84."""
+        return assign_crs(
+            xr.DataArray(
+                values,
+                coords={"latitude": np.arange(values.shape[0]), "longitude": np.arange(values.shape[1])},
+                dims=("latitude", "longitude"),
+            ),
+            "EPSG:4326",
         )
+
+    def test_no_crs_raises(self):
+        """Points without a CRS can't be located, so sampling fails."""
+        with pytest.raises(LdnError, match="no CRS"):
+            random_sampling(xr.DataArray(np.ones((4, 4))), n=4, class_n_range={1: (1, 4)}, seed=0)
 
     def test_same_seed_same_points(self):
         """The same seed gives identical points."""
-        a = random_sampling(self._da(), n=40, min_sample_n=10, seed=0)
-        b = random_sampling(self._da(), n=40, min_sample_n=10, seed=0)
+        da = self._da(np.tile([1, 2], (50, 25)))
+        a = random_sampling(da, n=40, class_n_range={1: (10, 30), 2: (10, 30)}, seed=0)
+        b = random_sampling(da, n=40, class_n_range={1: (10, 30), 2: (10, 30)}, seed=0)
         assert a.geometry.equals(b.geometry)
+
+    def test_class_n_clipped_to_range_and_available(self):
+        """Area share is clipped to each class's (min, max), and to the pixels it has."""
+        # 100x100: class 1 has 9,000 pixels, class 3 has 990, class 7 has 10.
+        values = np.ones((100, 100), dtype="uint8")
+        values[90:, :99] = 3
+        values[90:, 99] = 7
+        ranges = {1: (300, 500), 3: (500, 1000), 7: (500, 1000)}
+        counts = random_sampling(self._da(values), n=2100, class_n_range=ranges, seed=0)[CLASS_ATTR].value_counts()
+        # Class 1 by area is 1,890, capped at 500. Class 3 by area is 208, raised to 500. Class 7 has only 10 pixels.
+        assert counts.to_dict() == {1: 500, 3: 500, 7: 10}
+
+    def test_nodata_not_sampled(self):
+        """Nodata pixels are never sampled."""
+        values = np.full((10, 10), LULC_NODATA, dtype="uint8")
+        values[:5] = 2
+        samples = random_sampling(self._da(values), n=100, class_n_range={2: (500, 1000)}, seed=0)
+        assert set(samples[CLASS_ATTR]) == {2}
+        assert len(samples) == 50

@@ -63,105 +63,120 @@ cli_training_app = typer.Typer()
 
 PC_CLIENT = None
 
-# TODO: Increase to 20-25 Pacific training tiles
-# These tiles are for training the random forest classifier. They are representative of different environments e.g.
-# forest, atoll, volcanic, elevated, urban, beach, wetland, grassland, cropland, etc.
 PACIFIC_TRAINING_TILES = [
-    # Papua New Guinea: Dense tropical rainforest & highland montane forest.
-    ("028_030", "pacific", {"Papua New Guinea": "PNG"}),  # Capital city and coast.
-    ("024_034", "pacific", {"Papua New Guinea": "PNG"}),  # Highland.
-    ("023_031", "pacific", {"Papua New Guinea": "PNG"}),  # River delta.
-    # Kiribati: Low-lying coral atoll, almost entirely at sea level, classic open-ocean/lagoon environment.
-    ("058_043", "pacific", {"Kiribati": "KIR"}),
-    ("059_040", "pacific", {"Kiribati": "KIR"}),
-    # Vanuatu: Active volcanic islands with crater lakes, lava fields, and cloud forest.
-    ("051_023", "pacific", {"Vanuatu": "VUT"}),
-    ("053_018", "pacific", {"Vanuatu": "VUT"}),  # Mt Yasur volcano.
-    ("052_022", "pacific", {"Vanuatu": "VUT"}),  # Lava lake.
-    # Samoa: Elevated volcanic interior with waterfalls and lava tubes, fringed by reef/beach coastline.
-    # 2 tiles pretty much covers all of Samoa.
-    ("074_025", "pacific", {"Samoa": "WSM"}),
-    ("075_025", "pacific", {"Samoa": "WSM"}),
-    # Fiji: The most "mixed urban + agricultural" of the group, with sugarcane croplands,
-    # mangrove wetlands, and a developed capital (Suva)
-    ("063_020", "pacific", {"Fiji": "FJI"}),  # Elevation.
-    ("066_022", "pacific", {"Fiji": "FJI"}),  # AM-crossing.
-    ("064_020", "pacific", {"Fiji": "FJI"}),  # Suva urban area.
-    # Palau for raised limestone/rock island jungle
-    ("013_050", "pacific", {"Palau": "PLW"}),
-    # New Caledonia for maquis shrubland / lagoon
-    ("050_015", "pacific", {"New Caledonia": "NCL"}),
-    ("101_020", "pacific", {"French Polynesia": "PYF"}),  # Tahiti and Papeete
-    ("043_030", "pacific", {"Solomon Islands": "SLB"}),  # Guadalcanal
-    # No Northern Mariana Islands tile: Saipan is a test tile, and the tiles not next to it are mostly water.
-    ("025_057", "pacific", {"Guam": "GUM"}),  # All of Guam
+    ("013_050", "pacific", {"Palau": "PLW"}),  # 1, 2, 4, 5, 6
+    ("023_031", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 4, 5, 6
+    ("024_034", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 3, 5, 6, 7
+    ("024_037", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 3, 4, 6
+    ("025_057", "pacific", {"Guam": "GUM"}),  # 1, 2, 5, 6
+    ("028_030", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("034_036", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 4, 6, 7
+    ("039_033", "pacific", {"Solomon Islands": "SLB"}),  # 1, 2, 4, 6
+    ("040_031", "pacific", {"Solomon Islands": "SLB"}),  # 1, 2, 4, 6
+    ("043_030", "pacific", {"Solomon Islands": "SLB"}),  # 1, 2, 3, 4, 6, 7
+    ("049_029", "pacific", {"Solomon Islands": "SLB"}),  # 1, 4, 6
+    ("050_015", "pacific", {"New Caledonia": "NCL"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("052_022", "pacific", {"Vanuatu": "VUT"}),  # 1, 2, 6, 7
+    ("053_018", "pacific", {"Vanuatu": "VUT"}),  # 1, 2, 6, 7
+    ("061_040", "pacific", {"Kiribati": "KIR"}),  # 1, 2, 6, 7
+    ("064_020", "pacific", {"Fiji": "FJI"}),  # 1, 2, 3, 4, 5, 6
+    ("071_018", "pacific", {"Tonga": "TON"}),  # 1, 2, 6, 7
+    ("075_025", "pacific", {"Samoa": "WSM"}),  # 1, 2, 4, 5, 6
+    ("101_020", "pacific", {"French Polynesia": "PYF"}),  # 1, 2, 3, 5, 6
+    ("125_012", "pacific", {"Pitcairn Islands": "PCN"}),  # 1, 2, 6
 ]
-
-# Same as PACIFIC_TRAINING_TILES, but for non-Pacific region
 NON_PACIFIC_TRAINING_TILES = [
-    ("333_091", "non-pacific", {"Timor-Leste": "TLS"}),  # Very remote
-    ("312_105", "non-pacific", {"Singapore": "SGP"}),  # very built-up
-    # No Maldives tile: the most land in a tile is 38 km2, and Kiribati already covers atolls.
-    ("254_091", "non-pacific", {"Seychelles": "SYC"}),  # Aldabra, raised coral atoll with mangroves
-    ("266_077", "non-pacific", {"Mauritius": "MUS"}),  # Indian Ocean
-    ("193_118", "non-pacific", {"Guinea-Bissau": "GNB"}),  # African
-    ("251_088", "non-pacific", {"Comoros": "COM"}),  # probably unique in some way?
-    ("185_125", "non-pacific", {"Cabo Verde": "CPV"}),  # bright and bare
-    # Very different to 185_125: greener and darker. Should improve the worst test tile, 183_123.
-    ("183_126", "non-pacific", {"Cabo Verde": "CPV"}),
-    ("149_113", "non-pacific", {"Guyana": "GUY"}),  # Forest and big river delta
-    ("146_124", "non-pacific", {"Dominica": "DMA"}),  # small Caribbean island
-    ("130_127", "non-pacific", {"Jamaica": "JAM"}),  # medium Carribean island
-    ("126_133", "non-pacific", {"Cuba": "CUB"}),  # big Caribbean isalnd
-    ("119_126", "non-pacific", {"Belize": "BLZ"}),  # non-island in Caribbean
-    ("148_109", "non-pacific", {"Guyana": "GUY"}),  # Bare land within jungle
-    ("143_144", "non-pacific", {"Bermuda": "BMU"}),  # All of Bermuda
-    ("129_135", "non-pacific", {"Bahamas": "BHS"}),  # Andros, low limestone with mangroves
-    ("136_128", "non-pacific", {"Dominican Republic": "DOM"}),  # Dry southwest and Lake Enriquillo
-    ("135_129", "non-pacific", {"Haiti": "HTI"}),  # Artibonite valley cropland
+    ("119_126", "non-pacific", {"Belize": "BLZ"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("124_133", "non-pacific", {"Cuba": "CUB"}),  # 1, 2, 3, 4, 5, 6
+    ("126_129", "non-pacific", {"Cayman Islands": "CYM"}),  # 1, 2, 4, 5, 6
+    ("126_133", "non-pacific", {"Cuba": "CUB"}),  # 1, 2, 3, 4, 5, 6
+    ("129_135", "non-pacific", {"Bahamas": "BHS"}),  # 1, 2, 4, 6, 7
+    ("129_138", "non-pacific", {"Bahamas": "BHS"}),  # 1, 2, 4, 5, 6, 7
+    ("130_127", "non-pacific", {"Jamaica": "JAM"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("131_131", "non-pacific", {"Cuba": "CUB"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("135_129", "non-pacific", {"Haiti": "HTI"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("136_127", "non-pacific", {"Dominican Republic": "DOM"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("146_118", "non-pacific", {"Trinidad and Tobago": "TTO"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("147_123", "non-pacific", {"Martinique": "MTQ"}),  # 1, 2, 3, 4, 5, 6
+    ("148_109", "non-pacific", {"Guyana": "GUY"}),  # 1, 2, 4, 6
+    ("149_113", "non-pacific", {"Guyana": "GUY"}),  # 1, 2, 3, 4, 5, 6
+    ("153_109", "non-pacific", {"Suriname": "SUR"}),  # 1, 2, 4, 6, 7
+    ("183_126", "non-pacific", {"Cabo Verde": "CPV"}),  # 1, 2, 5, 6, 7
+    ("194_120", "non-pacific", {"Guinea-Bissau": "GNB"}),  # 1, 2, 3, 5, 6
+    ("251_088", "non-pacific", {"Comoros": "COM"}),  # 1, 2, 5, 6, 7
+    ("266_077", "non-pacific", {"Mauritius": "MUS"}),  # 1, 2, 3, 4, 5, 6
+    ("312_105", "non-pacific", {"Singapore": "SGP"}),  # 1, 2, 3, 4, 5, 6, 7
 ]
 TRAINING_TILES = PACIFIC_TRAINING_TILES + NON_PACIFIC_TRAINING_TILES
 
-# TODO: Design test (and validation) data to cover all classes and different land cover changes.
-# TODO: Need to know where real change of different types happened. Get this from local experts.
-
-# Held-out tiles used only to compare training data and model versions. Never train on these.
-# Picked with a fixed seed, stratified by country (allocation proportional to the square root of each country's tile
-# count), excluding the training tiles and their 8 neighbours. Roughly 3% of the tiles in each region.
-# Singapore has only 2 tiles, which are neighbours, so it's only in the training tiles.
 PACIFIC_TEST_TILES = [
-    ("050_041", "pacific", {"Nauru": "NRU"}),
-    ("026_059", "pacific", {"Northern Mariana Islands": "MNP"}),
-    ("040_049", "pacific", {"Micronesia": "FSM"}),
-    ("030_030", "pacific", {"Papua New Guinea": "PNG"}),
-    ("033_031", "pacific", {"Papua New Guinea": "PNG"}),
-    ("050_029", "pacific", {"Solomon Islands": "SLB"}),
-    ("051_017", "pacific", {"New Caledonia": "NCL"}),
-    ("070_026", "pacific", {"Wallis and Futuna": "WLF"}),
-    ("064_022", "pacific", {"Fiji": "FJI"}),
-    ("073_019", "pacific", {"Tonga": "TON"}),
-    ("089_016", "pacific", {"Cook Islands": "COK"}),
-    ("092_043", "pacific", {"Kiribati": "KIR"}),
-    ("112_031", "pacific", {"French Polynesia": "PYF"}),
-    ("101_013", "pacific", {"French Polynesia": "PYF"}),
+    ("017_052", "pacific", {"Micronesia": "FSM"}),  # 1, 2, 4, 5, 6
+    ("020_034", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 4, 6, 7
+    ("026_059", "pacific", {"Northern Mariana Islands": "MNP"}),  # 1, 2, 3, 5, 6
+    ("026_034", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 3, 4, 6, 7
+    ("030_030", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 4, 6
+    ("032_035", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 3, 4, 6, 7
+    ("037_034", "pacific", {"Papua New Guinea": "PNG"}),  # 1, 2, 4, 6, 7
+    ("040_049", "pacific", {"Micronesia": "FSM"}),  # 1, 4, 6
+    ("042_032", "pacific", {"Solomon Islands": "SLB"}),  # 1, 4, 6
+    ("045_029", "pacific", {"Solomon Islands": "SLB"}),  # 1, 2, 4, 6
+    ("048_017", "pacific", {"New Caledonia": "NCL"}),  # 1, 2, 3, 4, 6, 7
+    ("050_023", "pacific", {"Vanuatu": "VUT"}),  # 1, 2, 6
+    ("051_025", "pacific", {"Vanuatu": "VUT"}),  # 1, 2, 6
+    ("052_020", "pacific", {"Vanuatu": "VUT"}),  # 1, 2, 3, 6
+    ("064_022", "pacific", {"Fiji": "FJI"}),  # 1, 2, 3, 4, 6
+    ("070_026", "pacific", {"Wallis and Futuna": "WLF"}),  # 1, 2, 6
+    ("071_016", "pacific", {"Tonga": "TON"}),  # 1, 2, 3, 4, 6
+    ("073_019", "pacific", {"Tonga": "TON"}),  # 1, 2, 6
+    ("077_019", "pacific", {"Niue": "NIU"}),  # 1, 2, 6
+    ("092_043", "pacific", {"Kiribati": "KIR"}),  # 2, 6, 7
 ]
 NON_PACIFIC_TEST_TILES = [
-    ("335_092", "non-pacific", {"Timor-Leste": "TLS"}),
-    ("141_128", "non-pacific", {"Puerto Rico": "PRI"}),  # San Juan, an urban test tile in place of Singapore.
-    ("128_132", "non-pacific", {"Cuba": "CUB"}),
-    ("131_135", "non-pacific", {"Bahamas": "BHS"}),
-    ("133_128", "non-pacific", {"Haiti": "HTI"}),
-    ("138_129", "non-pacific", {"Dominican Republic": "DOM"}),
-    ("149_107", "non-pacific", {"Guyana": "GUY"}),
-    ("151_106", "non-pacific", {"Suriname": "SUR"}),
-    ("183_123", "non-pacific", {"Cabo Verde": "CPV"}),
-    ("193_120", "non-pacific", {"Guinea-Bissau": "GNB"}),
-    ("264_097", "non-pacific", {"Seychelles": "SYC"}),
+    ("119_128", "non-pacific", {"Belize": "BLZ"}),  # 1, 2, 3, 4, 5, 6
+    ("128_132", "non-pacific", {"Cuba": "CUB"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("133_128", "non-pacific", {"Haiti": "HTI"}),  # 1, 2, 3, 4, 5, 6
+    ("133_130", "non-pacific", {"Cuba": "CUB"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("136_132", "non-pacific", {"Turks and Caicos Islands": "TCA"}),  # 1, 2, 4, 6
+    ("138_120", "non-pacific", {"Curaçao": "CUW"}),  # 1, 2, 5, 6, 7
+    ("138_129", "non-pacific", {"Dominican Republic": "DOM"}),  # 1, 2, 3, 4, 5, 6
+    ("141_128", "non-pacific", {"Puerto Rico": "PRI"}),  # 1, 2, 3, 4, 5, 6
+    ("143_128", "non-pacific", {"British Virgin Islands": "VGB"}),  # 1, 2, 4, 5, 6
+    ("146_121", "non-pacific", {"Saint Vincent and the Grenadines": "VCT"}),  # 1, 2, 5, 6
+    ("146_126", "non-pacific", {"Antigua and Barbuda": "ATG"}),  # 1, 2, 3, 4, 5, 6
+    ("148_121", "non-pacific", {"Barbados": "BRB"}),  # 1, 2, 3, 5, 6
+    ("150_111", "non-pacific", {"Guyana": "GUY"}),  # 1, 2, 3, 4, 6, 7
+    ("152_111", "non-pacific", {"Suriname": "SUR"}),  # 1, 2, 3, 4, 5, 6
+    ("183_123", "non-pacific", {"Cabo Verde": "CPV"}),  # 1, 2, 6, 7
+    ("185_125", "non-pacific", {"Cabo Verde": "CPV"}),  # 2, 5, 6, 7
+    ("192_120", "non-pacific", {"Guinea-Bissau": "GNB"}),  # 1, 2, 3, 4, 5, 6, 7
+    ("214_104", "non-pacific", {"São Tomé and Príncipe": "STP"}),  # 1, 2, 6
+    ("254_091", "non-pacific", {"Seychelles": "SYC"}),  # 1, 2, 4, 6
+    ("334_092", "non-pacific", {"Timor-Leste": "TLS"}),  # 1, 2, 3, 4, 5, 6, 7
 ]
 TEST_TILES = PACIFIC_TEST_TILES + NON_PACIFIC_TEST_TILES
 
 # Fixed so the test points are identical every time they are generated.
 TEST_DATA_SEED = 0
+
+# (min, max) sample points per class per tile-year. Easy classes (tree cover, water) are capped low so they don't
+# dominate, and the hard and medium classes get more points.
+HARD_MIN = 500
+EASY_MIN = 300
+HARD_MAX = 1000
+EASY_MAX = 500  # TODO: If rarer classes are confused with tree, then lower this.
+CLASS_SAMPLE_N_RANGE = {
+    1: (EASY_MIN, EASY_MAX),  # Tree cover
+    2: (HARD_MIN, HARD_MAX),  # Grassland
+    3: (HARD_MIN, HARD_MAX),  # Cropland
+    4: (HARD_MIN, HARD_MAX),  # Wetland
+    5: (HARD_MIN, HARD_MAX),  # Built-up
+    6: (EASY_MIN, EASY_MAX),  # Water
+    7: (HARD_MIN, HARD_MAX),  # Other
+}
+
+# The only year with all 3 LULC products. Its agreement is a third vote in other years, where the 2 products disagree
+# on the hard classes (e.g. IO maps mangroves as trees, and WorldCover rarely maps Pacific cropland).
+ANCHOR_YEAR = "2020"
 
 
 def _get_pc_client():
@@ -366,7 +381,8 @@ def find_agreement(products: list[xr.DataArray]) -> xr.DataArray:
     With 3 products at most one class can have 2 votes, so the first agreeing pair gives the class.
 
     Args:
-        products: 2 or 3 standardised class DataArrays on the same grid, with 0 or LULC_NODATA for nodata.
+        products: 2 or 3 standardised class DataArrays on the same grid, with 0 or LULC_NODATA for nodata. One can
+            be an earlier find_agreement result, used as a vote.
 
     Returns:
         DataArray of agreed class values, LULC_NODATA where fewer than 2 products agree or a pixel has a
@@ -390,7 +406,6 @@ def generate_samples(
     agreed: xr.DataArray,
     geomad_dem_indices: xr.Dataset,
     n: int,
-    min_sample_per_class_n: int,
     seed: int | None,
 ) -> gpd.GeoDataFrame:
     """Generate stratified random samples from the agreement map.
@@ -398,8 +413,7 @@ def generate_samples(
     Args:
         agreed: Agreement classification DataArray.
         geomad_dem_indices: GeoMAD dataset (used to mask nodata areas).
-        n: Total number of sample points.
-        min_sample_per_class_n: Minimum samples per class.
+        n: Number of sample points shared between classes by area, before CLASS_SAMPLE_N_RANGE clips each class.
         seed: Random seed for reproducible sampling. None for non-reproducible sampling.
 
     Returns:
@@ -425,12 +439,7 @@ def generate_samples(
 
     agree_for_sampling = agree_trimmed.rename({"y": "latitude", "x": "longitude"})
 
-    samples = random_sampling(
-        da=agree_for_sampling,
-        n=n,
-        min_sample_n=min_sample_per_class_n,
-        seed=seed,
-    )
+    samples = random_sampling(agree_for_sampling, n, CLASS_SAMPLE_N_RANGE, seed)
     logger.info(f"Generated {len(samples)} samples")
     return samples
 
@@ -647,15 +656,14 @@ def make_training_data(
     file_prefix: str,
     output_key: str,
     n: int,
-    min_sample_per_class_n: int,
     sensor: str,
     seed: int | None,
 ):
     """Generate training data for a single tile and upload to S3 as CSV.
 
     End-to-end pipeline: loads GeoMAD (from any bucket), loads the 2 or 3 LULC products with data for the year,
-    finds agreement, samples, extracts band values, filters outliers, and
-    writes results locally and to S3 (to any bucket, can be different from the GeoMAD bucket).
+    finds agreement (with the ANCHOR_YEAR agreement as a vote in other years), samples, extracts band values, filters
+    outliers, and writes results locally and to S3 (to any bucket, can be different from the GeoMAD bucket).
     We do not support writing training data to Source.Coop. We can if needed.
 
     Args:
@@ -668,8 +676,7 @@ def make_training_data(
         output_bucket: S3 bucket name for upload.
         country_of_interest: Dict mapping country name to ISO3 code.
             If None, uses all countries in the tile.
-        n: Total number of sample points.
-        min_sample_per_class_n: Minimum samples per class.
+        n: Number of sample points shared between classes by area, before CLASS_SAMPLE_N_RANGE clips each class.
         product_owner_geomad: Optional owner override for the GeoMAD data (e.g. "dep" or "ci").
         single_region_geomad: If True, search the owner's single region GeoMAD index, otherwise the many-region index.
         file_prefix: Local path prefix for the output files, relative to ldn/.
@@ -679,7 +686,6 @@ def make_training_data(
     Returns:
         GeoDataFrame of final training samples.
     """
-    # Fail before loading anything if the year doesn't have enough products to agree.
     products = lulc_products_for_year(year)
 
     logger.info("Getting buffered country geometry")
@@ -723,14 +729,22 @@ def make_training_data(
     geobox = geomad_dem_indices.odc.geobox
 
     logger.info(f"Loading {len(products)} LULC products: {', '.join(p['product'] for p in products)}")
-    agreed = find_agreement(
-        [load_and_prepare(geobox, country_wgs84_buffered, p, year)[p["output_band"]] for p in products]
-    )
+    layers = [load_and_prepare(geobox, country_wgs84_buffered, p, year)[p["output_band"]] for p in products]
+    if year != ANCHOR_YEAR:
+        # A pixel keeps its ANCHOR_YEAR class where either of this year's products confirms it.
+        logger.info(f"Adding the {ANCHOR_YEAR} agreement as a third vote")
+        layers.append(
+            find_agreement(
+                [
+                    load_and_prepare(geobox, country_wgs84_buffered, p, ANCHOR_YEAR)[p["output_band"]]
+                    for p in lulc_products_for_year(ANCHOR_YEAR)
+                ]
+            )
+        )
+    agreed = find_agreement(layers)
 
     logger.info("Generating samples")
-    samples = generate_samples(
-        agreed, geomad_dem_indices, n=n, min_sample_per_class_n=min_sample_per_class_n, seed=seed
-    )
+    samples = generate_samples(agreed, geomad_dem_indices, n=n, seed=seed)
 
     logger.info("Extracting GeoMAD values at sample points")
     samples = extract_geomad_dem_indices_values(samples, geomad_dem_indices, analysis_crs)
@@ -773,8 +787,9 @@ def generate_training_data(
     # TODO: Refactor so country data doesn't need to be passed. Not sure how.
     country_name: str = typer.Option(..., help="Country name (e.g. Fiji)"),
     country_code: str = typer.Option(..., help="Country ISO3 code (e.g. FJI)"),
-    n: int = typer.Option(2100, help="Total number of sample points"),
-    min_sample_per_class_n: int = typer.Option(300, help="Minimum samples per class"),
+    n: int = typer.Option(
+        2100, help="Sample points shared between classes by area, before CLASS_SAMPLE_N_RANGE clips each class"
+    ),
     overwrite: bool = typer.Option(False, help="Whether to overwrite existing data in S3"),
     product_owner_geomad: str | None = typer.Option(
         None, help="Override the region's default owner prefix (e.g. 'dep') for the GeoMAD data"
@@ -804,11 +819,13 @@ def generate_training_data(
     if not output_bucket or not geomad_bucket:
         raise LdnError("Output bucket and GeoMAD bucket must be set.")
     country_of_interest = {country_name: country_code}
+    # Other years have at most 1 LULC product, so nothing to agree with. Fail before any S3 checks or loading.
+    if not 2017 <= int(year) <= 2021:
+        raise LdnError(f"Training data can only be made for 2017 to 2021, not {year}.")
 
     logger.info(
         f"Creating training data for tile {tile_id}, year {year}, region {region}, geomad_bucket "
-        f"{geomad_bucket}, output_bucket {output_bucket}, country {country_of_interest}, n={n}, "
-        f"min_sample_per_class_n={min_sample_per_class_n}, overwrite={overwrite}, "
+        f"{geomad_bucket}, output_bucket {output_bucket}, country {country_of_interest}, n={n}, overwrite={overwrite}, "
         f"product_owner_geomad={product_owner_geomad}, product_owner_output={product_owner_output}, "
         f"training_data_version={training_data_version}, geomad_version={geomad_version}, sensor={sensor}"
     )
@@ -838,14 +855,16 @@ def generate_training_data(
     )
 
     # Zero padded indexes
-    file_prefix = f"{data_dir}/{data_version}/{region}/{tile_id_x:03d}/{tile_id_y:03d}/{year}/samples"
+    tile_prefix = f"{data_dir}/{data_version}/{region}/{tile_id_x:03d}/{tile_id_y:03d}"
+    file_prefix = f"{tile_prefix}/{year}/samples"
     # Training data shouldn't be written to source.coop, but supported just in case.
     _is_bucket_source_coop = is_bucket_source_coop(output_bucket)
     if _is_bucket_source_coop:
         raise NotImplementedError("Writing training data to Source.Coop is not supported.")
         # file_prefix = f"{SOURCE_COOP_PREFIX_LULC}/{file_prefix}"
     output_owner = owner_for_region(region, product_owner_output) if single_region_output else None
-    output_key = f"{dataset_prefix(output_owner, sensor, LULC_DATASET_ID)}/{file_prefix}.csv"
+    output_prefix = dataset_prefix(output_owner, sensor, LULC_DATASET_ID)
+    output_key = f"{output_prefix}/{file_prefix}.csv"
 
     if not overwrite:
         logger.info(f"Overwrite is False, checking if object exists at s3://{output_bucket}/{output_key}")
@@ -857,6 +876,11 @@ def generate_training_data(
             logger.info("Item does not exist, proceeding with processing.")
     else:
         logger.info("Overwrite is True, proceeding with processing.")
+
+    # Other years use the ANCHOR_YEAR agreement as a vote, so only make them for tiles that have ANCHOR_YEAR samples.
+    anchor_key = f"{output_prefix}/{tile_prefix}/{ANCHOR_YEAR}/samples.csv"
+    if year != ANCHOR_YEAR and not object_exists(output_bucket, anchor_key):
+        raise LdnError(f"No {ANCHOR_YEAR} samples at s3://{output_bucket}/{anchor_key}. Generate {ANCHOR_YEAR} first.")
 
     make_training_data(
         tile_id,
@@ -871,7 +895,6 @@ def generate_training_data(
         file_prefix,
         output_key,
         n,
-        min_sample_per_class_n,
         sensor,
         seed,
     )

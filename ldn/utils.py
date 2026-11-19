@@ -95,9 +95,9 @@ GEOMAD_VERSION = "0-3-0"
 # Keep LULC, MODEL, and TRAINING_DATA versions aligned.
 LULC_VERSION = "0-2-0"
 MODEL_VERSION = "0-2-0"
-TRAINING_DATA_VERSION = "0-2-0"
+TRAINING_DATA_VERSION = "0-2-1"
 # TEST_DATA_VERSION is independent of the other versions and changes should be minimised.
-TEST_DATA_VERSION = "0-0-2"
+TEST_DATA_VERSION = "0-0-3"
 
 PACIFIC_OWNER = "dep"
 NON_PACIFIC_OWNER = "ci"
