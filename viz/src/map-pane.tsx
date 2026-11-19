@@ -1,4 +1,3 @@
-import { Text } from "@chakra-ui/react";
 import type { DeckWidgetTheme, LoadingWidgetProps } from "@deck.gl/widgets";
 import { LoadingWidget } from "@deck.gl/widgets";
 import {
@@ -10,11 +9,10 @@ import type { RasterModule } from "@developmentseed/deck.gl-raster";
 import type { Device } from "@luma.gl/core";
 import type { Ref } from "react";
 import { useMemo, useState } from "react";
-import type { LngLat, MapRef, ViewState } from "react-map-gl/maplibre";
+import type { MapRef, ViewState } from "react-map-gl/maplibre";
 import {
   Layer,
   Map as MaplibreMap,
-  Popup,
   Source,
 } from "react-map-gl/maplibre";
 import type { DatasetId } from "./datasets.js";
@@ -149,10 +147,6 @@ export function MapPane({
   onMoveEnd,
 }: MapPaneProps) {
   const [device, setDevice] = useState<Device | null>(null);
-  const [hoveredTile, setHoveredTile] = useState<{
-    lngLat: LngLat;
-    label: string;
-  } | null>(null);
 
   const pipelines = useMemo(() => {
     if (!device) {
@@ -191,22 +185,6 @@ export function MapPane({
         initialViewState={initialViewState}
         onMoveEnd={onMoveEnd}
         mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-        interactiveLayerIds={["grid-tiles-fill"]}
-        onMouseMove={(event) => {
-          const features = event.features?.filter(
-            (f) => f.layer.id === "grid-tiles-fill",
-          );
-          if (features && features.length > 0) {
-            const hoveredTile = {
-              lngLat: event.lngLat,
-              label: `${features[0].properties?.label} - ${features[0].properties?.region}`,
-            };
-            setHoveredTile(hoveredTile);
-          } else {
-            setHoveredTile(null);
-          }
-        }}
-        onMouseLeave={() => setHoveredTile(null)}
       >
         <DeckGlOverlay
           layers={layers}
@@ -230,16 +208,6 @@ export function MapPane({
             paint={{ "line-color": REGION_COLOR, "line-width": 1 }}
           />
         </Source>
-        {hoveredTile && (
-          <Popup
-            longitude={hoveredTile.lngLat.lng}
-            latitude={hoveredTile.lngLat.lat}
-            closeButton={false}
-            closeOnClick={false}
-          >
-            <Text>{hoveredTile.label}</Text>
-          </Popup>
-        )}
       </MaplibreMap>
     </div>
   );
