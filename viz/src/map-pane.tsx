@@ -10,11 +10,7 @@ import type { Device } from "@luma.gl/core";
 import type { Ref } from "react";
 import { useMemo, useState } from "react";
 import type { MapRef, ViewState } from "react-map-gl/maplibre";
-import {
-  Layer,
-  Map as MaplibreMap,
-  Source,
-} from "react-map-gl/maplibre";
+import { Layer, Map as MaplibreMap, Source } from "react-map-gl/maplibre";
 import type { DatasetId } from "./datasets.js";
 import { createLulcPaletteTexture, DATASETS, GRID_TILES } from "./datasets.js";
 import { DeckGlOverlay } from "./deckgl-overlay.js";

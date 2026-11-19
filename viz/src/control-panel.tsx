@@ -110,11 +110,11 @@ function Panel({ title, children }: { title: ReactNode; children: ReactNode }) {
           ▼
         </chakra.span>
       </chakra.button>
-      {open ? (
+      {open && (
         <Box mt="3" fontSize="sm">
           {children}
         </Box>
-      ) : null}
+      )}
       <Box
         mt="3"
         pt="2"
@@ -216,7 +216,7 @@ function SideControls({ side, onChange, states }: SideControlsProps) {
                 </Text>
               </Checkbox.Label>
             </Checkbox.Root>
-            {side.enabled[id] ? (
+            {side.enabled[id] && (
               <Flex align="center" gap="3" pl="7" mt="1">
                 <Text fontSize="xs" color="gray.600" whiteSpace="nowrap">
                   Opacity {Math.round(side.opacity[id] * 100)}%
@@ -241,8 +241,8 @@ function SideControls({ side, onChange, states }: SideControlsProps) {
                   </Slider.Control>
                 </Slider.Root>
               </Flex>
-            ) : null}
-            {side.enabled[id] && DATASETS[id].versions.length > 1 ? (
+            )}
+            {side.enabled[id] && DATASETS[id].versions.length > 1 && (
               <Flex align="center" gap="3" pl="7" mt="1">
                 <Text fontSize="xs" color="gray.600">
                   Version
@@ -262,7 +262,7 @@ function SideControls({ side, onChange, states }: SideControlsProps) {
                   <NativeSelect.Indicator />
                 </NativeSelect.Root>
               </Flex>
-            ) : null}
+            )}
           </Box>
         ))}
       </Stack>
@@ -335,7 +335,7 @@ export function ControlPanel({
       }
     >
       <Stack gap="4" separator={<StackSeparator />}>
-        {compare ? null : (
+        {!compare && (
           <Box>
             <SectionHeading>Layers</SectionHeading>
             <SideControls side={left} onChange={onLeftChange} states={states} />
@@ -364,7 +364,7 @@ export function ControlPanel({
             <Checkbox.Control />
             <Checkbox.Label>Swipe between two maps</Checkbox.Label>
           </Checkbox.Root>
-          {compare ? (
+          {compare && (
             <Stack gap="3" mt="3">
               <SideBlock title="Left">
                 <SideControls
@@ -381,10 +381,10 @@ export function ControlPanel({
                 />
               </SideBlock>
             </Stack>
-          ) : null}
+          )}
         </Box>
 
-        {showLegend ? (
+        {showLegend && (
           <Box>
             <SectionHeading>Land Use/Land Cover</SectionHeading>
             <SimpleGrid columns={2} gapX="3" gapY="1.5">
@@ -401,7 +401,7 @@ export function ControlPanel({
               ))}
             </SimpleGrid>
           </Box>
-        ) : null}
+        )}
       </Stack>
     </Panel>
   );

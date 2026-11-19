@@ -103,7 +103,7 @@ export default function App() {
         initialViewState={initial.view}
         onMoveEnd={saveUrl}
       />
-      {compare ? <SwipeHandle split={split} onChange={setSplit} /> : null}
+      {compare && <SwipeHandle split={split} onChange={setSplit} />}
 
       <ControlPanel
         left={left}
