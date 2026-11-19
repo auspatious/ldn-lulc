@@ -9,9 +9,18 @@ import pytest
 import xarray as xr
 from pystac import Asset, Item
 from pystac.extensions.classification import ClassificationExtension
+from requests import Request
+from requests.exceptions import RetryError
 from sklearn.ensemble import RandomForestClassifier
 
-from ldn.lulc import GeomadSearcher, _add_lulc_stac_metadata, do_prediction, gap_fill, source_years
+from ldn.lulc import (
+    GeomadSearcher,
+    _add_lulc_stac_metadata,
+    _is_pc_token_retry_error,
+    do_prediction,
+    gap_fill,
+    source_years,
+)
 from ldn.utils import LdnError
 
 
@@ -202,3 +211,24 @@ def test_probability_bands_are_named_by_class_value():
     ds = xr.Dataset({"a": (("y", "x"), values), "b": (("y", "x"), values)}, coords={"y": [0], "x": [0, 1]})
     _, probabilities = do_prediction(ds, model, 0, 255)
     assert list(probabilities) == ["probability_1", "probability_3"]
+
+
+class TestIsPcTokenRetryError:
+    @pytest.mark.parametrize(
+        ("error", "expected"),
+        [
+            (
+                RetryError(
+                    request=Request(
+                        "GET", "https://planetarycomputer.microsoft.com/api/sas/v1/token/elevationeuwest/copernicus-dem"
+                    ).prepare()
+                ),
+                True,
+            ),
+            (RetryError(request=Request("GET", "https://example.com/data").prepare()), False),
+            (ValueError("429"), False),
+        ],
+    )
+    def test_only_pc_token_retry_errors_are_transient(self, error, expected):
+        """Only the token service's exhausted retries exit for Argo to retry; other errors fail as normal."""
+        assert _is_pc_token_retry_error(error) is expected

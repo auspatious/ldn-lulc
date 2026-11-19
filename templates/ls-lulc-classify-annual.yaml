@@ -128,8 +128,12 @@ spec:
           - name: region
       activeDeadlineSeconds: 1500 # 25 mins
       retryStrategy:
-        limit: 2
-        retryPolicy: OnError
+        limit: 3
+        # Exit code 41 is a transient failure, such as Planetary Computer rate limiting (EXIT_RETRY in ldn/lulc.py).
+        # Error means Kubernetes stopped the pod (e.g. spot interruption), as retryPolicy OnError did.
+        expression: >-
+          asInt(lastRetry.exitCode) == 41 ||
+          lastRetry.status == "Error"
         backoff:
           duration: "2m"
           factor: 2
