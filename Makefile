@@ -186,7 +186,7 @@ print-tasks-lulc-2000-non-pacific:
 # Classify all test tiles for 2020, the year of the test labels (score with notebooks/LULC_Testing/LULC_Test.ipynb).
 # Pacific GeoMAD is read from dep_ls_geomad and written to dep_ls_lulc. Non-Pacific GeoMAD is read from the
 # many-region index on Source.Coop and written to ci_ls_lulc.
-# Use local model to avoid 1GB download from S3 per tile
+# Use local model to avoid 650 MB download from S3 per tile
 lulc-predict-test:
 	for site in $(TEST_TILES); do \
 		tile_id=$$(echo $$site | cut -d: -f1); \
@@ -201,11 +201,11 @@ lulc-predict-test:
 				--tile-id $$tile_id \
 				--year $$year \
 				--region $$region \
-				--version 0-2-0 \
+				--version 0-2-1 \
 				--geomad-version 0-2-1 \
 				$$geomad_args \
 				--output-bucket dep-public-staging \
-				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-2-0/lulc_random_forest_model.joblib" \
+				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-2-1/lulc_random_forest_model.joblib" \
 				--no-overwrite; \
 		done; \
 	done;
@@ -214,14 +214,14 @@ lulc-predict-test:
 index-lulc-test-dep-staging:
 	ldn index-to-stac-geoparquet \
 	--dataset lulc \
-	--lulc-version 0-2-0 \
+	--lulc-version 0-2-1 \
 	--single-region \
 	--product-owner dep \
 	--bucket dep-public-staging;
 index-lulc-test-dep-staging-ci:
 	ldn index-to-stac-geoparquet \
 	--dataset lulc \
-	--lulc-version 0-2-0 \
+	--lulc-version 0-2-1 \
 	--single-region \
 	--product-owner ci \
 	--bucket dep-public-staging;
