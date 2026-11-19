@@ -2,15 +2,15 @@ import "@deck.gl/widgets/stylesheet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MapRef } from "react-map-gl/maplibre";
-import { ControlPanel } from "./control-panel.js";
-import { DATASETS } from "./datasets.js";
-import { MapPane } from "./map-pane.js";
-import type { DatasetStates, SideConfig } from "./side.js";
-import { DATASET_IDS, stateKey } from "./side.js";
-import { loadStacItems } from "./stac.js";
-import { SwipeHandle } from "./swipe-handle.js";
-import type { MapView } from "./url-state.js";
-import { readUrlState, writeUrlState } from "./url-state.js";
+import { ControlPanel } from "./components/controls/control-panel.js";
+import { SwipeHandle } from "./components/controls/swipe-handle.js";
+import { MapPane } from "./components/map/map-pane.js";
+import { DATASETS } from "./data/datasets.js";
+import type { DatasetStates, SideConfig } from "./data/side.js";
+import { DATASET_IDS, stateKey } from "./data/side.js";
+import { loadStacItems } from "./data/stac.js";
+import type { MapView } from "./data/url-state.js";
+import { readUrlState, writeUrlState } from "./data/url-state.js";
 
 /** A map's current camera, or `fallback` before the map mounts. */
 function mapView(ref: MapRef | null, fallback: MapView): MapView {

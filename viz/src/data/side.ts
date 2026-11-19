@@ -63,19 +63,20 @@ export function sideItems(
 
 /**
  * Years available across a side's enabled datasets, and the year to show:
- * the selected year if available, else the latest.
+ * the selected year if available, else the latest year every enabled dataset
+ * has (e.g. LULC test runs have fewer years than GeoMAD), else the latest.
  */
 export function sideYears(side: SideConfig, states: DatasetStates) {
-  const years = [
-    ...new Set(
-      DATASET_IDS.flatMap((id) =>
-        sideItems(side, states, id).map((i) => i.year),
-      ),
-    ),
-  ].sort((a, b) => a - b);
+  const yearSets = DATASET_IDS.map(
+    (id) => new Set(sideItems(side, states, id).map((i) => i.year)),
+  ).filter((s) => s.size > 0);
+  const years = [...new Set(yearSets.flatMap((s) => [...s]))].sort(
+    (a, b) => a - b,
+  );
+  const shared = years.filter((y) => yearSets.every((s) => s.has(y)));
   const activeYear =
     side.year !== null && years.includes(side.year)
       ? side.year
-      : (years[years.length - 1] ?? null);
+      : (shared[shared.length - 1] ?? years[years.length - 1] ?? null);
   return { years, activeYear };
 }

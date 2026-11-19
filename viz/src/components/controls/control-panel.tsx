@@ -15,10 +15,14 @@ import {
 } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import type { DatasetId } from "./datasets.js";
-import { DATASETS, LULC_CLASSES } from "./datasets.js";
-import type { DatasetState, DatasetStates, SideConfig } from "./side.js";
-import { DATASET_IDS, datasetState, sideYears } from "./side.js";
+import type { DatasetId } from "../../data/datasets.js";
+import { DATASETS, LULC_CLASSES } from "../../data/datasets.js";
+import type {
+  DatasetState,
+  DatasetStates,
+  SideConfig,
+} from "../../data/side.js";
+import { DATASET_IDS, datasetState, sideYears } from "../../data/side.js";
 
 /** Describe a dataset's load state and item count for the selected year. */
 function statusText(state: DatasetState | undefined, year: number | null) {

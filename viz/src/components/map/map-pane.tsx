@@ -11,14 +11,18 @@ import type { Ref } from "react";
 import { useMemo, useState } from "react";
 import type { MapRef, ViewState } from "react-map-gl/maplibre";
 import { Layer, Map as MaplibreMap, Source } from "react-map-gl/maplibre";
-import type { DatasetId } from "./datasets.js";
-import { createLulcPaletteTexture, DATASETS, GRID_TILES } from "./datasets.js";
+import type { DatasetId } from "../../data/datasets.js";
+import {
+  createLulcPaletteTexture,
+  DATASETS,
+  GRID_TILES,
+} from "../../data/datasets.js";
+import type { DatasetStates, SideConfig } from "../../data/side.js";
+import { DATASET_IDS, sideItems, sideYears } from "../../data/side.js";
+import type { StacItem } from "../../data/stac.js";
 import { DeckGlOverlay } from "./deckgl-overlay.js";
 import { epsgResolver } from "./proj.js";
-import type { DatasetStates, SideConfig } from "./side.js";
-import { DATASET_IDS, sideItems, sideYears } from "./side.js";
 import { SplitClipExtension } from "./split-clip.js";
-import type { StacItem } from "./stac.js";
 
 // ponytail: fixed per-item cache budgets, so worst-case GPU memory is about
 // MAX_CACHED_ITEMS * MAX_ITEM_CACHE_BYTES per dataset per side. Tune if memory or reloads are a problem.
