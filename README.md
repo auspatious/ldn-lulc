@@ -274,6 +274,18 @@ Training data and prediction use the same function to make the features (`make_f
 
 The focal statistics are candidates (`FOCAL_FEATURES`). Model training keeps the ones that make the accuracy better. Prediction calculates only the ones that the model uses. The training data CSVs also have `lulc`, the label (a class value from 1 to 7, see `typology_mapping.yaml`), and `geometry`, the sample point in WGS84.
 
+#### Model training
+
+`notebooks/1_Train_Model.ipynb` trains one random forest per model version, on every year in `TRAINING_DATA_YEARS`.
+
+- Hyperparameters come from a grid search (`GridSearchCV`) over `min_samples_leaf`, with 200 trees per fit. Larger leaves stop the trees memorising noisy agreement labels and near-duplicate neighbouring points. `class_weight` is "balanced": "balanced_subsample" made no difference.
+- Each fold holds out whole training tiles, with both years of a tile in the same fold (`StratifiedGroupKFold`, 5 folds, grouped by tile). This is like predicting an unseen tile. The folds are stratified so that each one has the hard classes, which are in few tiles. The test tiles are not used.
+- Out-of-bag (OOB) scores are not used. They score points with trees trained on their spatial neighbours, so they are optimistic (0-2-0: OOB 0.943, test F1 0.761).
+- Two scores: macro F1, and macro F1 over the hard classes (cropland, wetland and other). The chosen setting is the largest `min_samples_leaf` within one fold standard deviation of the best hard-class F1, because the fold spread is large.
+- The final model is refit on all training tiles with 500 trees and the chosen setting. The grid results go into `metrics.json` (`cv`).
+
+Model 0-2-1 uses `min_samples_leaf=10` and `class_weight="balanced"`: cross-validated macro F1 0.781 and hard-class F1 0.732. The model is about 650 MB. The full results are in `notebooks/LULC_Testing/reports_test/0-2-1/hyperparameter_grid.md`.
+
 #### Model & Prediction
 
 Classification runs for each tile and year with a pre-trained random forest model. The model comes from a local `.joblib` file or from an S3 URL.
