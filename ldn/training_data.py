@@ -174,6 +174,10 @@ CLASS_SAMPLE_N_RANGE = {
     7: (HARD_MIN, HARD_MAX),  # Other
 }
 
+# The only year with all 3 LULC products. Its agreement is a third vote in other years, where the 2 products disagree
+# on the hard classes (e.g. IO maps mangroves as trees, and WorldCover rarely maps Pacific cropland).
+ANCHOR_YEAR = "2020"
+
 
 def _get_pc_client():
     """Return a cached Planetary Computer STAC client."""
@@ -377,7 +381,8 @@ def find_agreement(products: list[xr.DataArray]) -> xr.DataArray:
     With 3 products at most one class can have 2 votes, so the first agreeing pair gives the class.
 
     Args:
-        products: 2 or 3 standardised class DataArrays on the same grid, with 0 or LULC_NODATA for nodata.
+        products: 2 or 3 standardised class DataArrays on the same grid, with 0 or LULC_NODATA for nodata. One can
+            be an earlier find_agreement result, used as a vote.
 
     Returns:
         DataArray of agreed class values, LULC_NODATA where fewer than 2 products agree or a pixel has a
@@ -657,8 +662,8 @@ def make_training_data(
     """Generate training data for a single tile and upload to S3 as CSV.
 
     End-to-end pipeline: loads GeoMAD (from any bucket), loads the 2 or 3 LULC products with data for the year,
-    finds agreement, samples, extracts band values, filters outliers, and
-    writes results locally and to S3 (to any bucket, can be different from the GeoMAD bucket).
+    finds agreement (with the ANCHOR_YEAR agreement as a vote in other years), samples, extracts band values, filters
+    outliers, and writes results locally and to S3 (to any bucket, can be different from the GeoMAD bucket).
     We do not support writing training data to Source.Coop. We can if needed.
 
     Args:
@@ -681,7 +686,6 @@ def make_training_data(
     Returns:
         GeoDataFrame of final training samples.
     """
-    # Fail before loading anything if the year doesn't have enough products to agree.
     products = lulc_products_for_year(year)
 
     logger.info("Getting buffered country geometry")
@@ -725,9 +729,19 @@ def make_training_data(
     geobox = geomad_dem_indices.odc.geobox
 
     logger.info(f"Loading {len(products)} LULC products: {', '.join(p['product'] for p in products)}")
-    agreed = find_agreement(
-        [load_and_prepare(geobox, country_wgs84_buffered, p, year)[p["output_band"]] for p in products]
-    )
+    layers = [load_and_prepare(geobox, country_wgs84_buffered, p, year)[p["output_band"]] for p in products]
+    if year != ANCHOR_YEAR:
+        # A pixel keeps its ANCHOR_YEAR class where either of this year's products confirms it.
+        logger.info(f"Adding the {ANCHOR_YEAR} agreement as a third vote")
+        layers.append(
+            find_agreement(
+                [
+                    load_and_prepare(geobox, country_wgs84_buffered, p, ANCHOR_YEAR)[p["output_band"]]
+                    for p in lulc_products_for_year(ANCHOR_YEAR)
+                ]
+            )
+        )
+    agreed = find_agreement(layers)
 
     logger.info("Generating samples")
     samples = generate_samples(agreed, geomad_dem_indices, n=n, seed=seed)
@@ -805,6 +819,9 @@ def generate_training_data(
     if not output_bucket or not geomad_bucket:
         raise LdnError("Output bucket and GeoMAD bucket must be set.")
     country_of_interest = {country_name: country_code}
+    # Other years have at most 1 LULC product, so nothing to agree with. Fail before any S3 checks or loading.
+    if not 2017 <= int(year) <= 2021:
+        raise LdnError(f"Training data can only be made for 2017 to 2021, not {year}.")
 
     logger.info(
         f"Creating training data for tile {tile_id}, year {year}, region {region}, geomad_bucket "
@@ -838,14 +855,16 @@ def generate_training_data(
     )
 
     # Zero padded indexes
-    file_prefix = f"{data_dir}/{data_version}/{region}/{tile_id_x:03d}/{tile_id_y:03d}/{year}/samples"
+    tile_prefix = f"{data_dir}/{data_version}/{region}/{tile_id_x:03d}/{tile_id_y:03d}"
+    file_prefix = f"{tile_prefix}/{year}/samples"
     # Training data shouldn't be written to source.coop, but supported just in case.
     _is_bucket_source_coop = is_bucket_source_coop(output_bucket)
     if _is_bucket_source_coop:
         raise NotImplementedError("Writing training data to Source.Coop is not supported.")
         # file_prefix = f"{SOURCE_COOP_PREFIX_LULC}/{file_prefix}"
     output_owner = owner_for_region(region, product_owner_output) if single_region_output else None
-    output_key = f"{dataset_prefix(output_owner, sensor, LULC_DATASET_ID)}/{file_prefix}.csv"
+    output_prefix = dataset_prefix(output_owner, sensor, LULC_DATASET_ID)
+    output_key = f"{output_prefix}/{file_prefix}.csv"
 
     if not overwrite:
         logger.info(f"Overwrite is False, checking if object exists at s3://{output_bucket}/{output_key}")
@@ -857,6 +876,11 @@ def generate_training_data(
             logger.info("Item does not exist, proceeding with processing.")
     else:
         logger.info("Overwrite is True, proceeding with processing.")
+
+    # Other years use the ANCHOR_YEAR agreement as a vote, so only make them for tiles that have ANCHOR_YEAR samples.
+    anchor_key = f"{output_prefix}/{tile_prefix}/{ANCHOR_YEAR}/samples.csv"
+    if year != ANCHOR_YEAR and not object_exists(output_bucket, anchor_key):
+        raise LdnError(f"No {ANCHOR_YEAR} samples at s3://{output_bucket}/{anchor_key}. Generate {ANCHOR_YEAR} first.")
 
     make_training_data(
         tile_id,

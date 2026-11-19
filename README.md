@@ -194,6 +194,8 @@ The training data is here: https://dep-public-staging.s3.us-west-2.amazonaws.com
    | Impact Observatory (IO) | No quality filter is available |
 
 2. It keeps a pixel where at least 2 products agree on its class (both of 2 products, or 2 of 3). Nodata does not count as agreement. Then a 3x3 minimum filter keeps a pixel only if all of its neighbourhood agrees.
+
+   2020 is the only year with all 3 products. In other years the 2 products often disagree on the hard classes. For example, IO maps mangroves as tree cover, and ESA WorldCover rarely maps Pacific cropland. So in other years the 2020 agreement map is a third vote, for all classes. If the year's 2 products agree, their class is used. If not, the pixel keeps its 2020 class where either product confirms it. The tile's 2020 samples must exist before other years can be made.
 3. It takes a stratified random sample from the agreement map, only where there is valid GeoMAD data. Each class gets a share of 2,100 points by area, clipped to a minimum and maximum for the class (`CLASS_SAMPLE_N_RANGE`): 300 to 500 for tree cover and water, and 500 to 1,000 for the other classes. A class with fewer pixels gives all of them. The easy classes are capped so they don't take most of the points, and the hard classes (cropland, wetland, other) get more.
 4. It gets the model features (see [Model features](#model-features)) at each sample point.
 5. It removes the samples that have NaN feature values. The code also has a K-Means outlier filter for each class, which removes the samples furthest from the class centroid. This filter is disabled until an ablation study shows if it makes the model better.
