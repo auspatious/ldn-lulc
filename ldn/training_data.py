@@ -824,12 +824,13 @@ def generate_training_data(
         raise LdnError(f"Training data can only be made for 2017 to 2021, not {year}.")
 
     logger.info(
-        f"Creating training data for tile {tile_id}, year {year}, region {region}, geomad_bucket "
+        f"Creating {split} data for tile {tile_id}, year {year}, region {region}, geomad_bucket "
         f"{geomad_bucket}, output_bucket {output_bucket}, country {country_of_interest}, n={n}, overwrite={overwrite}, "
         f"product_owner_geomad={product_owner_geomad}, product_owner_output={product_owner_output}, "
-        f"training_data_version={training_data_version}, geomad_version={geomad_version}, sensor={sensor}"
+        f"training_data_version={training_data_version}, test_data_version={TEST_DATA_VERSION}, "
+        f"geomad_version={geomad_version}, sensor={sensor}"
     )
-    if training_data_version != TRAINING_DATA_VERSION:
+    if split == "train" and training_data_version != TRAINING_DATA_VERSION:
         logger.info(
             f"Overriding the latest LULC prediction version ({TRAINING_DATA_VERSION}) with "
             f"the specified version ({training_data_version})."
