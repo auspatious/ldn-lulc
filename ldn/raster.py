@@ -176,10 +176,14 @@ def _calculate_terrain_features(dem: xr.DataArray) -> xr.Dataset:
 
 # Focal (regional) statistics, named "{band}_{stat}_{size}" with a size x size pixel window. Candidates for model
 # training, which keeps only the groups that improve accuracy. TPI is elevation minus its focal mean.
-# TODO: Explain these simply:
-# 3, 7, 15px window sizes for focal statistics. Also 15 and 51px for TPI (topographic position index).
-# Means: average value within the window. Done for index and reflectance bands. Why?
-# Standard deviations: variability within the window. Done for index bands. Why not reflectance bands?
+# Windows of 3, 7 and 15 pixels (about 90, 210 and 450 m) give the immediate neighbours, the field or patch, and the
+# wider landscape.
+# Means (index, reflectance and MAD bands) smooth single-pixel noise and describe the surroundings, e.g. a grass patch
+# inside a town or a forest.
+# Standard deviations (index bands) measure texture: mixed patches like farms and towns vary, forest and water don't.
+# The indices summarise the bands, so their std gives most of the texture with fewer features. Reflectance std hasn't
+# been tested.
+# TPI at 15 pixels: positive on ridges and hills, negative in valleys and depressions, e.g. wetland.
 _FOCAL_SIZES = [3, 7, 15]
 _TPI_SIZES = [15]
 FOCAL_FEATURES = (
@@ -453,8 +457,8 @@ def make_features(geomad: xr.Dataset, features: list[str]) -> xr.Dataset:
             other names are ignored, since the base features are always computed.
 
     Returns:
-        Computed dataset with scaled reflectance bands, spectral indices, elevation, slope and the requested focal
-        statistics on the GeoMAD grid. The MAD bands are only used for their focal statistics, so they are dropped.
+        Computed dataset with scaled GeoMAD bands, spectral indices, elevation, slope and the requested focal
+        statistics on the GeoMAD grid.
     """
     data = _calculate_indices(_scale_offset_landsat(geomad.squeeze(drop=True)))
 
@@ -464,8 +468,7 @@ def make_features(geomad: xr.Dataset, features: list[str]) -> xr.Dataset:
     # Computed because focal statistics and scikit-learn need numpy arrays, and sending a large lazy graph to Dask
     # workers is slow.
     merged = xr.merge([data, dem], join="exact", compat="no_conflicts").compute()
-    focal = _focal_features(merged, [name for name in features if name in FOCAL_FEATURES])
-    return merged.assign(focal).drop_vars(MAD_BANDS)
+    return merged.assign(_focal_features(merged, [name for name in features if name in FOCAL_FEATURES]))
 
 
 # This is needed to support Source.Coop prefix.
