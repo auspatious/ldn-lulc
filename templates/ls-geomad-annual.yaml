@@ -36,7 +36,7 @@ spec:
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc"
       - name: image-tag
-        value: "0.2.0"
+        value: "0.2.0-dec0a54"
       - name: bucket
         # value: "dep-public-staging" # DEP Staging
         value: "dep-public-data" # DEP Prod

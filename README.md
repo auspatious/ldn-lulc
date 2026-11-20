@@ -262,17 +262,19 @@ The validation data has human or AI labelled points for the formal validation re
 
 #### Model features
 
-Training data and prediction use the same function to make the features (`make_features` in `ldn/raster.py`), so the model always gets the same features. There are 92 features, all float32. The scikit-learn random forest changes its inputs to float32. If a pixel has a NaN feature, it is nodata in the prediction, and it is not in the training data.
+Training data and prediction use the same function to make the features (`make_features` in `ldn/raster.py`), so the model always gets the same features. There are 75 features, all float32. The scikit-learn random forest changes its inputs to float32. If a pixel has a NaN feature, it is nodata in the prediction, and it is not in the training data.
 
 | Group | Features | Count | Values |
 | - | - | - | - |
 | Reflectance | `red`, `green`, `blue`, `nir08`, `swir16`, `swir22` | 6 | GeoMAD geomedian surface reflectance in [0, 1], scaled from the uint16 Landsat Collection 2 digital numbers |
 | MAD | `emad`, `smad`, `bcmad` | 3 | GeoMAD Euclidean, spectral and Bray-Curtis median absolute deviations, as stored |
-| Spectral indices | `ndvi`, `ndwi`, `mndwi`, `ndti`, `bsi`, `mbi`, `baei`, `bui` | 8 | Normalised differences in [-1, 1], but `mbi` is in [-0.5, 1.5], `bui` is in [-2, 2] and `baei` is positive with no upper limit. NaN where all bands in a denominator are 0 |
-| Terrain | `elevation`, `slope`, `northness`, `eastness` | 4 | From Copernicus DEM GLO-30, calculated on its native grid. Units: metres, degrees, and [-1, 1] for northness and eastness (aspect weighted by sin(slope)) |
-| Focal statistics | `{band}_{stat}_{size}` | 71 | Statistics in a size x size pixel window around each pixel: the mean and std of each index at 3, 7 and 15 (48), the mean of each reflectance band at 3, 7 and 15 (18), the mean of each MAD band at 7 (3), and the elevation TPI (elevation minus its focal mean) at 15 and 51 (2) |
+| Spectral indices | `ndvi`, `ndwi`, `mndwi`, `mbi`, `baei`, `bui` | 6 | Normalised differences in [-1, 1], but `mbi` is in [-0.5, 1.5], `bui` is in [-2, 2] and `baei` is positive with no upper limit. NaN where all bands in a denominator are 0 |
+| Terrain | `elevation`, `slope` | 2 | From Copernicus DEM GLO-30, calculated on its native grid. Units: metres and degrees |
+| Focal statistics | `{band}_{stat}_{size}` | 58 | Statistics in a size x size pixel window around each pixel: the mean and std of each index at 3, 7 and 15 (36), the mean of each reflectance band at 3, 7 and 15 (18), the mean of each MAD band at 7 (3), and the elevation TPI (elevation minus its focal mean) at 15 (1) |
 
 The focal statistics are candidates (`FOCAL_FEATURES`). Model training keeps the ones that make the accuracy better. Prediction calculates only the ones that the model uses. The training data CSVs also have `lulc`, the label (a class value from 1 to 7, see `typology_mapping.yaml`), and `geometry`, the sample point in WGS84.
+
+Since 0-2-2, NDTI, BSI, northness, eastness and `elevation_tpi_51` are removed. An ablation study ([report](https://github.com/auspatious/ldn-lulc/blob/features-ablation-2/notebooks/LULC_Testing/reports_test/0-2-1/feature_selection.md), on the unmerged `features-ablation-2` branch) showed the model is no worse without them, and removing them saves compute: the tile padding for the focal statistics is 7 pixels instead of 25. The study also tested adding NDMI, NBR, MVI, EVI, SAVI, tasseled cap brightness, tasseled cap greenness, and tasselled cap wetness. None of these improved the model's F1 scores.
 
 #### Model training
 
