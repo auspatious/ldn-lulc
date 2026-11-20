@@ -95,7 +95,7 @@ GEOMAD_VERSION = "0-3-0"
 # Keep LULC, MODEL, and TRAINING_DATA versions aligned.
 LULC_VERSION = "0-2-2"
 MODEL_VERSION = "0-2-2"
-TRAINING_DATA_VERSION = "0-2-2"
+TRAINING_DATA_VERSION = "0-2-1"  # 0-2-1 has more features than 0-2-2 so we can reuse it (filter removed features).
 # TEST_DATA_VERSION is independent of the other versions and changes should be minimised.
 TEST_DATA_VERSION = (
     "0-0-3"  # This has more features than the model needs since https://github.com/auspatious/ldn-lulc/issues/164
