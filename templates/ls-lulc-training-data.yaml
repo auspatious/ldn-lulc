@@ -11,8 +11,7 @@ spec:
   podGC:
     strategy: OnWorkflowCompletion
     deleteDelayDuration: 600s
-  # Low, because each task requests Planetary Computer tokens for the LULC products, which are rate limited.
-  parallelism: 10
+  parallelism: 20
   podMetadata:
     labels:
       app: ls-lulc-training-data
@@ -68,6 +67,7 @@ spec:
                 - name: country-code
                   value: "{{item.country_code}}"
             withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
+            # withParam: "[{\"id\": \"042_032\", \"region\": \"pacific\", \"country_name\": \"Solomon Islands\", \"country_code\": \"SLB\"}]"
 
     - name: print-tasks
       activeDeadlineSeconds: 300 # 5 mins
