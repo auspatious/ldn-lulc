@@ -92,14 +92,14 @@ NON_DEP_COUNTRIES = {k: v for k, v in SIDS_COUNTRIES_AND_CODES.items() if k not 
 
 # TODO: Is GEOMAD_VERSION 0-3-0 very different to 0-2-1? We have either of those in the different environments.
 GEOMAD_VERSION = "0-3-0"
-# Keep LULC, MODEL, and TRAINING_DATA versions aligned.
+# Keep LULC and MODEL versions aligned. TRAINING_DATA can be older when a model only removes features: model 0-2-2
+# reuses training data 0-2-1, which has the features it removed, and the training notebook drops them.
 LULC_VERSION = "0-2-2"
 MODEL_VERSION = "0-2-2"
-TRAINING_DATA_VERSION = "0-2-2"
-# TEST_DATA_VERSION is independent of the other versions and changes should be minimised.
-TEST_DATA_VERSION = (
-    "0-0-3"  # This has more features than the model needs since https://github.com/auspatious/ldn-lulc/issues/164
-)
+TRAINING_DATA_VERSION = "0-2-1"
+# TEST_DATA_VERSION is independent of the other versions and changes should be minimised. Like the training data, it
+# can have more features than the model uses (since issue #164).
+TEST_DATA_VERSION = "0-0-3"
 
 PACIFIC_OWNER = "dep"
 NON_PACIFIC_OWNER = "ci"

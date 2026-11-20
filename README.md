@@ -274,7 +274,7 @@ Training data and prediction use the same function to make the features (`make_f
 
 The focal statistics are candidates (`FOCAL_FEATURES`). Model training keeps the ones that make the accuracy better. Prediction calculates only the ones that the model uses. The training data CSVs also have `lulc`, the label (a class value from 1 to 7, see `typology_mapping.yaml`), and `geometry`, the sample point in WGS84.
 
-Since 0-2-2, NDTI, BSI, northness, eastness and `elevation_tpi_51` are removed. An ablation study (`notebooks/LULC_Testing/reports_test/0-2-1/feature_selection.md`) showed the model is no worse without them, and removing them saves compute: the tile padding for the focal statistics is 7 pixels instead of 25. The study also tested adding NDMI, NBR, MVI, EVI, SAVI, tasseled cap brightness, tasseled cap greenness, and tasselled cap wetness. None of these improved the model's F1 scores.
+Since 0-2-2, NDTI, BSI, northness, eastness and `elevation_tpi_51` are removed. An ablation study ([report](https://github.com/auspatious/ldn-lulc/blob/features-ablation-2/notebooks/LULC_Testing/reports_test/0-2-1/feature_selection.md), on the unmerged `features-ablation-2` branch) showed the model is no worse without them, and removing them saves compute: the tile padding for the focal statistics is 7 pixels instead of 25. The study also tested adding NDMI, NBR, MVI, EVI, SAVI, tasseled cap brightness, tasseled cap greenness, and tasselled cap wetness. None of these improved the model's F1 scores.
 
 #### Model training
 

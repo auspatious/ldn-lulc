@@ -39,7 +39,7 @@ spec:
         # Test labels are only for 2020. Training data: run 2020 first, because other years use its agreement as a vote.
         value: "2020"
       - name: training-data-version
-        value: "0-2-2" # TRAINING_DATA_VERSION in ldn/utils.py. Used with split "train".
+        value: "0-2-1" # TRAINING_DATA_VERSION in ldn/utils.py. Used with split "train".
       - name: geomad-version
         value: "0-2-1"
       - name: output-bucket
@@ -67,7 +67,6 @@ spec:
                 - name: country-code
                   value: "{{item.country_code}}"
             withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
-            # withParam: "[{\"id\": \"042_032\", \"region\": \"pacific\", \"country_name\": \"Solomon Islands\", \"country_code\": \"SLB\"}]"
 
     - name: print-tasks
       activeDeadlineSeconds: 300 # 5 mins
