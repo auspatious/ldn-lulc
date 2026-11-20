@@ -1,0 +1,164 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: landsat-lulc-training-data-
+  namespace: argo
+spec:
+  entrypoint: workflow-entrypoint
+  serviceAccountName: public-bucket-writer # DEP Staging
+  ttlStrategy:
+    secondsAfterCompletion: 300
+  podGC:
+    strategy: OnWorkflowCompletion
+    deleteDelayDuration: 600s
+  parallelism: 20
+  podMetadata:
+    labels:
+      app: ls-lulc-training-data
+    annotations:
+      karpenter.sh/do-not-disrupt: "true"
+  nodeSelector:
+    karpenter.sh/capacity-type: "spot"
+    dep/workload: data-processing # DEP Staging
+  tolerations:
+    - key: dep/workload
+      operator: Equal
+      value: data-processing # DEP Staging
+      effect: NoSchedule
+  arguments:
+    parameters:
+      - name: image-name
+        value: "ghcr.io/auspatious/ldn-lulc"
+      - name: image-tag
+        value: "0.2.0-dec0a54" # TODO: Training data 0-2-2 needs an image with the 0-2-2 features (ldn/raster.py).
+      - name: split
+        # "test" for TEST_TILES, or "train" for TRAINING_TILES. Test data is written as TEST_DATA_VERSION in the
+        # image (ldn/utils.py), so a new test data version needs a new image.
+        value: "test"
+      - name: year
+        # Test labels are only for 2020. Training data: run 2020 first, because other years use its agreement as a vote.
+        value: "2020"
+      - name: training-data-version
+        value: "0-2-2" # TRAINING_DATA_VERSION in ldn/utils.py. Used with split "train".
+      - name: geomad-version
+        value: "0-2-1"
+      - name: output-bucket
+        value: "dep-public-staging" # DEP Staging
+      - name: overwrite
+        value: "--no-overwrite" # Test data can't be overwritten. Bump TEST_DATA_VERSION instead.
+  templates:
+    - name: workflow-entrypoint
+      dag:
+        tasks:
+          - name: print-tasks
+            template: print-tasks
+
+          - name: training-data
+            depends: print-tasks.Succeeded
+            template: training-data
+            arguments:
+              parameters:
+                - name: tile-id
+                  value: "{{item.id}}"
+                - name: region
+                  value: "{{item.region}}"
+                - name: country-name
+                  value: "{{item.country_name}}"
+                - name: country-code
+                  value: "{{item.country_code}}"
+            withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
+            # withParam: "[{\"id\": \"042_032\", \"region\": \"pacific\", \"country_name\": \"Solomon Islands\", \"country_code\": \"SLB\"}]"
+
+    - name: print-tasks
+      activeDeadlineSeconds: 300 # 5 mins
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 1
+          limits:
+            memory: 2Gi
+            cpu: 1
+        command: [sh, -c]
+        # The tiles come from the image's TEST_TILES or TRAINING_TILES (ldn/training_data.py).
+        args:
+          - |
+            python -c '
+            import json
+            from ldn.training_data import TEST_TILES, TRAINING_TILES
+            tiles = TEST_TILES if "{{ workflow.parameters.split }}" == "test" else TRAINING_TILES
+            tasks = [
+                {"id": t, "region": r, "country_name": name, "country_code": code}
+                for t, r, c in tiles
+                for name, code in c.items()
+            ]
+            print(json.dumps(tasks))
+            ' > /tmp/tasks.json
+      outputs:
+        parameters:
+          - name: tasks
+            valueFrom:
+              path: /tmp/tasks.json
+
+    - name: training-data
+      inputs:
+        parameters:
+          - name: tile-id
+          - name: region
+          - name: country-name
+          - name: country-code
+      activeDeadlineSeconds: 3600 # 60 mins
+      retryStrategy:
+        limit: 3
+        # TODO: 41 logic is not merged yet
+        # Exit code 41 is a transient failure, such as Planetary Computer rate limiting (EXIT_RETRY in ldn/utils.py).
+        # Error means Kubernetes stopped the pod (e.g. spot interruption).
+        # expression: >-
+        #   asInt(lastRetry.exitCode) == 41 ||
+        #   lastRetry.status == "Error"
+        retryPolicy: OnError # Kubernetes pod errors for example
+        backoff:
+          duration: "2m"
+          factor: 2
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: 24Gi
+            cpu: 1
+          limits:
+            memory: 28Gi
+            cpu: 2
+        command: [ldn]
+        # GeoMAD for both regions from the many-region index on Source.Coop. Both regions are written under dep_ls_lulc.
+        args:
+          - training
+          - generate-training-data
+          - --tile-id
+          - "{{ inputs.parameters.tile-id }}"
+          - --year
+          - "{{ workflow.parameters.year }}"
+          - --region
+          - "{{ inputs.parameters.region }}"
+          - --country-name
+          - "{{ inputs.parameters.country-name }}"
+          - --country-code
+          - "{{ inputs.parameters.country-code }}"
+          - --training-data-version
+          - "{{ workflow.parameters.training-data-version }}"
+          - --geomad-version
+          - "{{ workflow.parameters.geomad-version }}"
+          - --geomad-bucket
+          - "us-west-2.opendata.source.coop"
+          - --no-single-region-geomad
+          - --output-bucket
+          - "{{ workflow.parameters.output-bucket }}"
+          - --single-region-output
+          - --product-owner-output
+          - dep
+          - --split
+          - "{{ workflow.parameters.split }}"
+          - "{{ workflow.parameters.overwrite }}"
