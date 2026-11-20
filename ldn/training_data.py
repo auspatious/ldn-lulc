@@ -926,8 +926,8 @@ def search_and_load_geomad_indices_dem(
         geomad_version: GeoMAD version string (e.g. "0-3-0").
 
     Returns:
-        Merged dataset with GeoMAD bands, spectral indices, elevation,
-        slope, northness and eastness, clipped to the intersection of the tile and the buffered country.
+        Merged dataset with GeoMAD bands, spectral indices, elevation, and
+        slope, clipped to the intersection of the tile and the buffered country.
     """
     logger.info(f"Searching for GeoMAD item for tile {tile_id} and year {year}.")
     if GEOMAD_VERSION != geomad_version:

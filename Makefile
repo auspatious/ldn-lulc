@@ -201,11 +201,11 @@ lulc-predict-test:
 				--tile-id $$tile_id \
 				--year $$year \
 				--region $$region \
-				--version 0-2-1 \
+				--version 0-2-2 \
 				--geomad-version 0-2-1 \
 				$$geomad_args \
 				--output-bucket dep-public-staging \
-				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-2-1/lulc_random_forest_model.joblib" \
+				--model-path="/Users/wj/Projects/ldn-lulc/ldn-lulc/ldn/models/0-2-2/lulc_random_forest_model.joblib" \
 				--no-overwrite; \
 		done; \
 	done;
@@ -214,14 +214,14 @@ lulc-predict-test:
 index-lulc-test-dep-staging:
 	ldn index-to-stac-geoparquet \
 	--dataset lulc \
-	--lulc-version 0-2-1 \
+	--lulc-version 0-2-2 \
 	--single-region \
 	--product-owner dep \
 	--bucket dep-public-staging;
 index-lulc-test-dep-staging-ci:
 	ldn index-to-stac-geoparquet \
 	--dataset lulc \
-	--lulc-version 0-2-1 \
+	--lulc-version 0-2-2 \
 	--single-region \
 	--product-owner ci \
 	--bucket dep-public-staging;
