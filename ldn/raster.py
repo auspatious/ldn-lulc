@@ -192,6 +192,10 @@ def _calculate_terrain_features(dem: xr.DataArray) -> xr.Dataset:
 
 # Focal (regional) statistics, named "{band}_{stat}_{size}" with a size x size pixel window. Candidates for model
 # training, which keeps only the groups that improve accuracy. TPI is elevation minus its focal mean.
+# TODO: Explain these simply:
+# 3, 7, 15px window sizes for focal statistics. Also 15 and 51px for TPI (topographic position index).
+# Means: average value within the window. Done for index and reflectance bands. Why?
+# Standard deviations: variability within the window. Done for index bands. Why not reflectance bands?
 _FOCAL_SIZES = [3, 7, 15]
 _TPI_SIZES = [15, 51]
 FOCAL_FEATURES = (
