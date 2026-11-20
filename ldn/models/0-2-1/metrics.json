@@ -1,0 +1,225 @@
+{
+  "model_version": "0-2-1",
+  "created": "2026-11-20",
+  "git_commit": "b739a5ce7ede10257ae0b089e7dfe7c6b25c848a",
+  "training_data_version": "0-2-1",
+  "training_data_years": [
+    "2020",
+    "2021"
+  ],
+  "test_data_version": "0-0-3",
+  "random_forest_params": {
+    "bootstrap": true,
+    "ccp_alpha": 0.0,
+    "class_weight": "balanced",
+    "criterion": "gini",
+    "max_depth": null,
+    "max_features": "sqrt",
+    "max_leaf_nodes": null,
+    "max_samples": null,
+    "min_impurity_decrease": 0.0,
+    "min_samples_leaf": 10,
+    "min_samples_split": 2,
+    "min_weight_fraction_leaf": 0.0,
+    "monotonic_cst": null,
+    "n_estimators": 500,
+    "n_jobs": -1,
+    "oob_score": false,
+    "random_state": 42,
+    "verbose": 0,
+    "warm_start": false
+  },
+  "n_features": 92,
+  "training_samples_per_class": {
+    "Tree cover": 38406,
+    "Grassland": 43790,
+    "Cropland": 21240,
+    "Wetland": 30193,
+    "Built-up": 27626,
+    "Water": 25474,
+    "Other": 20550
+  },
+  "test_samples_per_class": {
+    "Tree cover": 18460,
+    "Grassland": 21316,
+    "Cropland": 10614,
+    "Wetland": 13652,
+    "Built-up": 12471,
+    "Water": 12962,
+    "Other": 11394
+  },
+  "test_report": {
+    "Tree cover": {
+      "precision": 0.8190228858951469,
+      "recall": 0.8200433369447454,
+      "f1-score": 0.8195327937633652,
+      "support": 18460.0
+    },
+    "Grassland": {
+      "precision": 0.7082410705689804,
+      "recall": 0.6902326890598611,
+      "f1-score": 0.6991209313376099,
+      "support": 21316.0
+    },
+    "Cropland": {
+      "precision": 0.60741885625966,
+      "recall": 0.6664782362916902,
+      "f1-score": 0.6355795148247978,
+      "support": 10614.0
+    },
+    "Wetland": {
+      "precision": 0.8829555537630072,
+      "recall": 0.8017872839144448,
+      "f1-score": 0.8404161388153096,
+      "support": 13652.0
+    },
+    "Built-up": {
+      "precision": 0.8274860875877087,
+      "recall": 0.8227086841472215,
+      "f1-score": 0.8250904704463209,
+      "support": 12471.0
+    },
+    "Water": {
+      "precision": 0.9304374473301157,
+      "recall": 0.9369696034562568,
+      "f1-score": 0.9336921007111282,
+      "support": 12962.0
+    },
+    "Other": {
+      "precision": 0.7728810761739705,
+      "recall": 0.8219238195541513,
+      "f1-score": 0.7966483773552805,
+      "support": 11394.0
+    },
+    "accuracy": 0.7895488207477025,
+    "macro avg": {
+      "precision": 0.7926347110826556,
+      "recall": 0.7943062361954817,
+      "f1-score": 0.7928686181791161,
+      "support": 100869.0
+    },
+    "weighted avg": {
+      "precision": 0.7921501974512577,
+      "recall": 0.7895488207477025,
+      "f1-score": 0.7903287543314694,
+      "support": 100869.0
+    }
+  },
+  "test_confusion_matrix": "confusion_matrix.png",
+  "test_report_per_region": {
+    "non-pacific": {
+      "Tree cover": {
+        "precision": 0.8515324399628499,
+        "recall": 0.721123595505618,
+        "f1-score": 0.7809210926568109,
+        "support": 8900.0
+      },
+      "Grassland": {
+        "precision": 0.6953706134593507,
+        "recall": 0.6831742756426791,
+        "f1-score": 0.689218492497181,
+        "support": 11631.0
+      },
+      "Cropland": {
+        "precision": 0.6025980577626434,
+        "recall": 0.7601018135539294,
+        "f1-score": 0.6722476257474499,
+        "support": 6286.0
+      },
+      "Wetland": {
+        "precision": 0.8611966920706989,
+        "recall": 0.7506713780918728,
+        "f1-score": 0.8021446911342698,
+        "support": 7075.0
+      },
+      "Built-up": {
+        "precision": 0.8551133282724216,
+        "recall": 0.8543720879835301,
+        "f1-score": 0.8547425474254743,
+        "support": 9229.0
+      },
+      "Water": {
+        "precision": 0.9126271693596649,
+        "recall": 0.9266291964150084,
+        "f1-score": 0.9195748850531393,
+        "support": 6583.0
+      },
+      "Other": {
+        "precision": 0.767070835992342,
+        "recall": 0.84695603156708,
+        "f1-score": 0.8050365012390329,
+        "support": 7096.0
+      },
+      "accuracy": 0.7825352112676056,
+      "macro avg": {
+        "precision": 0.7922155909828531,
+        "recall": 0.791861196965674,
+        "f1-score": 0.7891265479647654,
+        "support": 56800.0
+      },
+      "weighted avg": {
+        "precision": 0.7903202908984817,
+        "recall": 0.7825352112676056,
+        "f1-score": 0.7838369670315221,
+        "support": 56800.0
+      }
+    },
+    "pacific": {
+      "Tree cover": {
+        "precision": 0.7966380412936233,
+        "recall": 0.9121338912133892,
+        "f1-score": 0.8504827855261875,
+        "support": 9560.0
+      },
+      "Grassland": {
+        "precision": 0.7239756071466781,
+        "recall": 0.6987093443469282,
+        "f1-score": 0.7111181168558218,
+        "support": 9685.0
+      },
+      "Cropland": {
+        "precision": 0.6177024482109228,
+        "recall": 0.5304990757855823,
+        "f1-score": 0.5707893101305158,
+        "support": 4328.0
+      },
+      "Wetland": {
+        "precision": 0.9044943820224719,
+        "recall": 0.8567736049870762,
+        "f1-score": 0.8799875068322012,
+        "support": 6577.0
+      },
+      "Built-up": {
+        "precision": 0.7473253618628068,
+        "recall": 0.7325724861196792,
+        "f1-score": 0.7398753894080997,
+        "support": 3242.0
+      },
+      "Water": {
+        "precision": 0.9491285916156382,
+        "recall": 0.9476406960338611,
+        "f1-score": 0.9483840602447443,
+        "support": 6379.0
+      },
+      "Other": {
+        "precision": 0.7835123773937412,
+        "recall": 0.7805956258724989,
+        "f1-score": 0.782051282051282,
+        "support": 4298.0
+      },
+      "accuracy": 0.7985885770042433,
+      "macro avg": {
+        "precision": 0.7889681156494118,
+        "recall": 0.7798463891941451,
+        "f1-score": 0.7832412072926933,
+        "support": 44069.0
+      },
+      "weighted avg": {
+        "precision": 0.7963578815837654,
+        "recall": 0.7985885770042433,
+        "f1-score": 0.7961497356662945,
+        "support": 44069.0
+      }
+    }
+  }
+}
