@@ -226,6 +226,29 @@ index-lulc-test-dep-staging-ci:
 	--product-owner ci \
 	--bucket dep-public-staging;
 
+###### Country mosaics
+
+print-mosaic-tasks-test-dep-staging:
+	ldn print-mosaic-tasks \
+	--years 2020 \
+	--countries pacific \
+	--dataset geomad \
+	--version 0-2-1 \
+	--single-region \
+	--bucket dep-public-staging \
+	--no-overwrite;
+# One COG/STAC item per country, per year.
+mosaic-cog-test-dep-staging:
+	ldn mosaic-cog \
+	--country FJI \
+	--year 2020 \
+	--dataset geomad \
+	--version 0-2-1 \
+	--resolution 120 \
+	--single-region \
+	--bucket dep-public-staging \
+	--no-overwrite;
+
 # Visualisation app.
 viz-install:
 	cd viz && pnpm install;

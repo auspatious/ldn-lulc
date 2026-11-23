@@ -16,9 +16,10 @@ from ldn import get_version
 from ldn.aws import get_credential_provider, s3_client
 from ldn.cli_collection import collection_app
 from ldn.cli_geomad import geomad_app
-from ldn.cli_grid import cli_grid_app
+from ldn.cli_grid import cli_grid_app, list_countries
 from ldn.grids import get_grid_tiles
 from ldn.lulc import run_classify_task
+from ldn.mosaic import mosaic_cog, mosaic_key_stem
 from ldn.raster import PrefixedS3ItemPath
 from ldn.training_data import cli_training_app
 from ldn.utils import (
@@ -62,6 +63,7 @@ app.add_typer(classify_app, name="lulc", help="Commands for LULC classification.
 app.add_typer(cli_training_app, name="training", help="Commands for generating training data.")
 app.add_typer(geomad_app, name="geomad", help="Commands for working with GeoMAD.")
 app.add_typer(collection_app, name="collection", help="Commands for working with STAC Collections and indexes.")
+app.command()(mosaic_cog)
 
 
 # Work for version and --version
@@ -224,6 +226,47 @@ def print_tasks(
     sys.stdout.write(tasks_json_str)
     logger.info(f"{len(input_tasks)} tasks output for years: {years} and region: {region}.")
     return
+
+
+@app.command()
+def print_mosaic_tasks(
+    years: Annotated[str, typer.Option()],
+    countries: Annotated[
+        str, typer.Option(help="'all', 'pacific', 'non-pacific', or comma-separated ISO codes e.g. 'FJI,TON'.")
+    ],
+    dataset: Annotated[Literal["geomad", "lulc"], typer.Option(help="Dataset name.")],
+    version: Annotated[str, typer.Option(help="Version of the dataset, e.g. '0-3-0'.")],
+    single_region: Annotated[
+        bool, typer.Option(help="Whether mosaics are under the owner's single region prefix (e.g. 'dep_ls_geomad').")
+    ],
+    bucket: Annotated[str | None, typer.Option(help="S3 bucket for data.")] = None,
+    product_owner: Annotated[str | None, typer.Option(help="Override the region-derived owner prefix.")] = None,
+    overwrite: Annotated[bool, typer.Option(help="If true, skip filtering existing outputs.")] = False,
+    sensor: Annotated[str, typer.Option(help="Sensor name, e.g. 'ls' for Landsat.")] = SENSOR,
+) -> None:
+    """Print year/country tasks for mosaic-cog, optionally filtering out those with an existing STAC item."""
+    bucket = bucket or get_env_var("BUCKET")
+    if countries in ("all", "pacific", "non-pacific"):
+        codes = sorted(set(list_countries(countries).values()))
+    else:
+        codes = countries.split(",")
+    tasks = [{"year": str(year), "country": code} for year in parse_years(years) for code in codes]
+
+    if not overwrite:
+        stems = [
+            mosaic_key_stem(t["country"], t["year"], dataset, version, bucket, single_region, product_owner, sensor)
+            for t in tasks
+        ]
+        stac_keys = [f"{stem}.stac-item.json" for stem in stems]
+        # List each mosaic folder (the prefix above the year folders) once.
+        prefixes = {key.rsplit("/", 2)[0] for key in stac_keys}
+        existing = {key for prefix in prefixes for key in _find_stac_items_s3(bucket, f"{prefix}/")}
+        before_count = len(tasks)
+        tasks = [task for task, key in zip(tasks, stac_keys) if key not in existing]
+        logger.info(f"Filtered: {before_count - len(tasks)} already exist, {len(tasks)} remaining.")
+
+    sys.stdout.write(json.dumps(tasks, separators=(",", ":")))
+    logger.info(f"{len(tasks)} mosaic tasks output for years: {years} and countries: {countries}.")
 
 
 def _load_stac_docs(bucket: str, keys: list[str]) -> list[dict]:

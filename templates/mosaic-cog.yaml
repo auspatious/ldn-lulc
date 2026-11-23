@@ -1,0 +1,140 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: mosaic-cog-
+  namespace: argo
+spec:
+  entrypoint: workflow-entrypoint
+  serviceAccountName: public-bucket-writer # DEP Staging
+  # serviceAccountName: open-data-bucket-writer # DEP Prod
+  ttlStrategy:
+    secondsAfterCompletion: 300
+  podGC:
+    strategy: OnWorkflowCompletion
+    deleteDelayDuration: 600s
+  parallelism: 20
+  podMetadata:
+    labels:
+      app: mosaic-cog
+    annotations:
+      karpenter.sh/do-not-disrupt: "true"
+  nodeSelector:
+    karpenter.sh/capacity-type: "spot" # Just to be explicit. In dep-terraform, the data-processing nodepool can only pick spot instances
+    dep/workload: data-processing # DEP Staging
+    # dep/workload: data-processing-public # DEP Prod
+  tolerations:
+    - key: dep/workload
+      operator: Equal
+      value: data-processing # DEP Staging
+      # value: data-processing-public # DEP Prod
+      effect: NoSchedule
+  arguments:
+    parameters:
+      - name: image-name
+        value: "ghcr.io/auspatious/ldn-lulc"
+      - name: image-tag
+        value: "0.2.0"
+      - name: dataset
+        value: "geomad" # "geomad" or "lulc"
+      - name: version
+        value: "0-3-0"
+      - name: bucket
+        value: "dep-public-staging" # DEP Staging
+        # value: "dep-public-data" # DEP Prod
+      - name: single-region
+        value: "--single-region" # For single region products e.g. DEP.
+        # value: "--no-single-region" # For places with both regions e.g. Source Coop.
+      - name: years
+        value: "2000-2025"
+      - name: countries
+        # "all", "pacific", "non-pacific", or comma-separated ISO codes e.g. "FJI,TON".
+        value: "pacific" # DEP buckets only have Pacific data.
+      - name: resolution
+        value: "120"
+      - name: overwrite
+        value: "--no-overwrite" # Can be "--overwrite" or "--no-overwrite"
+
+  templates:
+    - name: workflow-entrypoint
+      dag:
+        tasks:
+          - name: print-tasks
+            template: print-tasks
+
+          - name: mosaic-cog
+            depends: print-tasks.Succeeded
+            template: mosaic-cog
+            arguments:
+              parameters:
+                - name: year
+                  value: "{{item.year}}"
+                - name: country
+                  value: "{{item.country}}"
+            withParam: "{{ tasks.print-tasks.outputs.parameters.tasks }}"
+
+    - name: print-tasks
+      activeDeadlineSeconds: 900 # 15 mins
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: 2Gi
+            cpu: 1
+        command: [sh, -c]
+        args:
+          - |
+            ldn print-mosaic-tasks \
+              --years "{{ workflow.parameters.years }}" \
+              --countries "{{ workflow.parameters.countries }}" \
+              --dataset "{{ workflow.parameters.dataset }}" \
+              --version "{{ workflow.parameters.version }}" \
+              {{ workflow.parameters.single-region }} \
+              --bucket "{{ workflow.parameters.bucket }}" \
+              {{ workflow.parameters.overwrite }} \
+              > /tmp/tasks.json
+      outputs:
+        parameters:
+          - name: tasks
+            valueFrom:
+              path: /tmp/tasks.json
+
+    - name: mosaic-cog
+      inputs:
+        parameters:
+          - name: year
+          - name: country
+      activeDeadlineSeconds: 3600 # 1 hour
+      retryStrategy:
+        limit: 2
+        retryPolicy: OnError
+        backoff:
+          duration: "2m"
+          factor: 2
+      container:
+        image: "{{ workflow.parameters.image-name }}:{{ workflow.parameters.image-tag }}"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: 16Gi
+            cpu: 4
+          limits:
+            memory: 20Gi
+            cpu: 4
+        command: [ldn]
+        args:
+          - mosaic-cog
+          - --country
+          - "{{ inputs.parameters.country }}"
+          - --year
+          - "{{ inputs.parameters.year }}"
+          - --dataset
+          - "{{ workflow.parameters.dataset }}"
+          - --version
+          - "{{ workflow.parameters.version }}"
+          - --resolution
+          - "{{ workflow.parameters.resolution }}"
+          - "{{ workflow.parameters.single-region }}"
+          - --bucket
+          - "{{ workflow.parameters.bucket }}"
+          - "{{ workflow.parameters.overwrite }}"
