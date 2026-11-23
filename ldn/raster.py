@@ -159,7 +159,7 @@ def _calculate_terrain_features(dem: xr.DataArray) -> xr.Dataset:
         dem: 2D elevation DataArray with x (longitude) and y (latitude) coordinates in degrees and a geographic CRS.
 
     Returns:
-        Dataset with elevation (metres), and slope (degrees) on the same grid.
+        Dataset with elevation (metres) and slope (degrees) on the same grid.
     """
     geod = dem.odc.crs.proj.get_geod()
     lat = np.radians(dem.y)
@@ -169,9 +169,8 @@ def _calculate_terrain_features(dem: xr.DataArray) -> xr.Dataset:
     north_radius = geod.a * (1 - geod.es) / w**1.5
     dz_dx = dem.differentiate("x") / (np.radians(1) * east_radius * np.cos(lat))
     dz_dy = dem.differentiate("y") / (np.radians(1) * north_radius)
-    grad = np.hypot(dz_dx, dz_dy)
-    terrain = {"slope": np.degrees(np.arctan(grad))}
-    return xr.Dataset({"elevation": dem, **{name: value.astype("float32") for name, value in terrain.items()}})
+    slope = np.degrees(np.arctan(np.hypot(dz_dx, dz_dy)))
+    return xr.Dataset({"elevation": dem, "slope": slope.astype("float32")})
 
 
 # Focal (regional) statistics, named "{band}_{stat}_{size}" with a size x size pixel window. Candidates for model
