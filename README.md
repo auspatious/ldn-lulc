@@ -435,7 +435,6 @@ Data products:
 
 Each region has its own subfolder, but one index in the parent folder includes the two regions. See [README_Source.Coop.md](https://github.com/auspatious/ldn-lulc/blob/main/README_Source.Coop.md) for more details.
 
-
 #### STAC GeoParquet Index
 
 There is one index for the two regions. You can query it directly. You do not have to download the full catalog.
@@ -491,6 +490,18 @@ There are two environments: Staging and Production. Only the Pacific region is w
 https://dep-public-staging.s3.us-west-2.amazonaws.com/index.html?prefix=dep_ls_lulc/
 
 **Production:** you can explore the `dep-public-data` bucket in the STAC browser: https://stac-browser.digitalearthpacific.org/collections/dep_ls_geomad
+
+### 3. Google Earth Engine
+
+GEE can only read COGs from Google Cloud Storage, so a test subset of LULC `0-2-1` (Fiji `064_022`, Papua New Guinea `030_030` and Puerto Rico `141_128`, for 2000, 2010 and 2020) is copied from Digital Earth Pacific staging to a public GCS bucket. The folder layout and file names match the source, and STAC items are copied unchanged, so their hrefs still point at S3.
+
+**Bucket:** https://console.cloud.google.com/storage/browser/ldn-lulc-public-dev (`gs://ldn-lulc-public-dev`, US-CENTRAL1, public read)
+
+```
+gs://ldn-lulc-public-dev/{dep,ci}_ls_lulc/0-2-1/{col}/{row}/{year}/{dep,ci}_ls_lulc_{col}_{row}_{year}_{band}.tif
+```
+
+Pacific tiles are under `dep_ls_lulc` (EPSG:3832), non-Pacific under `ci_ls_lulc` (EPSG:6933). Bands are `classification`, `gap_filled` and `probability_1` to `probability_7`.
 
 ---
 

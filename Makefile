@@ -226,6 +226,13 @@ index-lulc-test-dep-staging-ci:
 	--product-owner ci \
 	--bucket dep-public-staging;
 
+# Copy a few LULC tiles to GCS, then register them as COG-backed GEE assets. See gee/README.md.
+gee-copy:
+	python gee/copy_aws_to_gcp.py;
+
+gee-register:
+	python gee/register_gee_assets.py;
+
 # Visualisation app.
 viz-install:
 	cd viz && pnpm install;
