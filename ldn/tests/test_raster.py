@@ -213,15 +213,6 @@ class TestCalculateIndices:
         expected = (_GREEN - _SWIR1) / (_GREEN + _SWIR1)
         assert _calculate_indices(spectral_ds)["mndwi"].item() == pytest.approx(expected)
 
-    def test_ndti(self, spectral_ds):
-        expected = (_RED - _GREEN) / (_RED + _GREEN)
-        assert _calculate_indices(spectral_ds)["ndti"].item() == pytest.approx(expected)
-
-    def test_bsi(self, spectral_ds):
-        num = (_SWIR1 + _RED) - (_NIR + _BLUE)
-        den = (_SWIR1 + _RED) + (_NIR + _BLUE)
-        assert _calculate_indices(spectral_ds)["bsi"].item() == pytest.approx(num / den)
-
     def test_mbi(self, spectral_ds):
         expected = (_SWIR1 - _SWIR2 - _NIR) / (_SWIR1 + _SWIR2 + _NIR) + 0.5
         assert _calculate_indices(spectral_ds)["mbi"].item() == pytest.approx(expected)
@@ -239,11 +230,11 @@ class TestCalculateIndices:
         assert "ndbi" not in _calculate_indices(spectral_ds)
 
     def test_adds_indices_and_keeps_original_bands(self, spectral_ds):
-        indices = {"ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"}
+        indices = {"ndvi", "ndwi", "mndwi", "mbi", "baei", "bui"}
         bands = {"nir08", "red", "green", "blue", "swir16", "swir22"}
         assert indices | bands <= set(_calculate_indices(spectral_ds).data_vars)
 
-    @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"])
+    @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi", "mbi", "baei", "bui"])
     def test_all_zero_inputs_yield_nan(self, index):
         ds = _spectral_dataset(nir=0.0, red=0.0, green=0.0, blue=0.0, swir16=0.0, swir22=0.0)
         assert np.isnan(_calculate_indices(ds)[index].item())
@@ -255,11 +246,11 @@ class TestCalculateIndices:
     def test_mutates_and_returns_same_dataset_object(self, spectral_ds):
         assert _calculate_indices(spectral_ds) is spectral_ds
 
-    @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi", "ndti", "bsi"])
+    @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mndwi"])
     def test_normalised_differences_in_range(self, spectral_ds, index):
         assert -1.0 <= _calculate_indices(spectral_ds)[index].item() <= 1.0
 
-    @pytest.mark.parametrize("index", ["ndvi", "ndwi", "bsi", "mbi", "bui"])
+    @pytest.mark.parametrize("index", ["ndvi", "ndwi", "mbi", "bui"])
     def test_nan_nir_propagates(self, index):
         ds = _spectral_dataset(nir=np.nan)
         assert np.isnan(_calculate_indices(ds)[index].item())
@@ -276,19 +267,16 @@ class TestComputeTerrain:
     shrinking of east-west distances, plus invariants that hold for any DEM.
     """
 
-    def test_returns_elevation_slope_northness_and_eastness(self):
+    def test_returns_elevation_and_slope(self):
         assert set(_calculate_terrain_features(_flat_dem()).data_vars) == {
             "elevation",
             "slope",
-            "northness",
-            "eastness",
         }
 
-    def test_flat_dem_has_zero_slope_northness_and_eastness(self):
+    def test_flat_dem_has_zero_slope(self):
         result = _calculate_terrain_features(_flat_dem(size=7, elevation=500.0))
         # Floating point coordinate spacing leaves ~1e-15 rounding, not exactly 0.
-        for name in ["slope", "northness", "eastness"]:
-            np.testing.assert_allclose(result[name].values, 0.0, atol=1e-9)
+        np.testing.assert_allclose(result["slope"].values, 0.0, atol=1e-9)
 
     def test_flat_dem_preserves_elevation_values(self):
         result = _calculate_terrain_features(_flat_dem(elevation=250.0))
@@ -298,22 +286,6 @@ class TestComputeTerrain:
         result = _calculate_terrain_features(_x_ramp_dem())
         slope = np.arctan(1 / _pixel_m(0.0, east=True))
         assert result["slope"].values[1, 1] == pytest.approx(np.degrees(slope), rel=1e-4)
-        assert result["eastness"].values[1, 1] == pytest.approx(-np.sin(slope), rel=1e-4)
-        assert result["northness"].values[1, 1] == pytest.approx(0.0, abs=1e-6)
-
-    def test_terrain_rising_north_faces_south(self):
-        result = _calculate_terrain_features(_y_ramp_dem())
-        slope = np.arctan(1 / _pixel_m(0.0, east=False))
-        assert result["northness"].values[1, 1] == pytest.approx(-np.sin(slope), rel=1e-4)
-        assert result["eastness"].values[1, 1] == pytest.approx(0.0, abs=1e-6)
-
-    def test_row_order_does_not_change_the_result(self):
-        north_up = _y_ramp_dem()
-        south_up = north_up.isel(y=slice(None, None, -1))
-        np.testing.assert_allclose(
-            _calculate_terrain_features(south_up)["northness"].isel(y=slice(None, None, -1)).values,
-            _calculate_terrain_features(north_up)["northness"].values,
-        )
 
     def test_east_west_distances_shrink_with_latitude(self):
         """At 60 degrees a degree of longitude is about half as long, so an east-west ramp is about twice as steep."""
@@ -327,13 +299,6 @@ class TestComputeTerrain:
         assert _calculate_terrain_features(_y_ramp_dem(lat=60.0))["slope"].values[1, 1] == pytest.approx(
             expected, rel=1e-4
         )
-
-    def test_northness_and_eastness_are_aspect_weighted_by_sin_slope_on_random_dem(self):
-        dem = _geo_dem(np.random.default_rng(1).uniform(0, 500, (12, 12)), lat=-18.0)
-        result = _calculate_terrain_features(dem)
-        assert np.all(result["slope"].values >= 0)
-        sin_slope = np.sin(np.radians(result["slope"]))
-        np.testing.assert_allclose(result["northness"] ** 2 + result["eastness"] ** 2, sin_slope**2, rtol=1e-4)
 
     def test_outputs_are_float32(self):
         """float32 like the other features, although the latitudes are float64."""
@@ -508,7 +473,7 @@ class TestLoadDemTerrain:
     @staticmethod
     def _assert_flat_terrain_on(result: xr.Dataset, geobox: GeoBox):
         """A constant 100 m DEM gives 100 m elevation and zero slope everywhere on the geobox."""
-        assert set(result.data_vars) == {"elevation", "slope", "northness", "eastness"}
+        assert set(result.data_vars) == {"elevation", "slope"}
         assert result.odc.geobox.shape == geobox.shape and result.odc.crs == geobox.crs
         np.testing.assert_array_equal(result["elevation"].values, 100.0)
         # Floating point coordinate spacing leaves ~1e-14 degrees of slope, not exactly 0.

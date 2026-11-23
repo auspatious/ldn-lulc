@@ -47,7 +47,7 @@ MAD_BANDS = ["emad", "smad", "bcmad"]
 # GeoMAD output bands that the LULC classification pipeline needs (excludes "count").
 GEOMAD_BANDS = REFLECTANCE_BANDS + MAD_BANDS
 # Spectral indices added by _calculate_indices.
-INDEX_BANDS = ["ndvi", "ndwi", "mndwi", "ndti", "bsi", "mbi", "baei", "bui"]
+INDEX_BANDS = ["ndvi", "ndwi", "mndwi", "mbi", "baei", "bui"]
 
 # Landsat Collection 2 scaling constants (USGS)
 LANDSAT_SCALE = 0.0000275
@@ -123,16 +123,11 @@ def _calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
 
     Returns:
         The same dataset with additional bands: `ndvi`, `ndwi`, `mndwi`,
-        `ndti`, `bsi`, `mbi`, `baei`, and `bui`.
+        `mbi`, `baei`, and `bui`.
     """
-    # TODO: Check whether every index is needed. The random forest copes with correlated features, but redundant ones
-    # dilute feature importance and add compute. Candidates: bui (linear combination of NDBI and ndvi, and NDBI is
-    # -NDMI), ndwi (strongly anti-correlated with ndvi), mbi vs bsi (both bare soil), baei vs bui (both built-up).
-    # Compare with feature importance or drop-column accuracy in notebooks/1_Train_Model.ipynb.
     nir = geomad.nir08
     red = geomad.red
     green = geomad.green
-    blue = geomad.blue
     swir1 = geomad.swir16
     swir2 = geomad.swir22
     # Normalised Difference Vegetation Index (Rouse 1974).
@@ -141,10 +136,6 @@ def _calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
     geomad["ndwi"] = _safe_divide(green - nir, green + nir)
     # Modified Normalised Difference Water Index (Xu 2006).
     geomad["mndwi"] = _safe_divide(green - swir1, green + swir1)
-    # Normalised Difference Turbidity Index (Lacaux 2007).
-    geomad["ndti"] = _safe_divide(red - green, red + green)
-    # Bare Soil Index (Rikimaru 2002).
-    geomad["bsi"] = _safe_divide((swir1 + red) - (nir + blue), (swir1 + red) + (nir + blue))
     # Modified Bare soil Index (Nguyen 2021).
     geomad["mbi"] = _safe_divide(swir1 - swir2 - nir, swir1 + swir2 + nir) + 0.5
     # Built-up Area Extraction Index (Bouzekri 2015). Not a normalised difference, so not bounded to [-1, 1].
@@ -157,22 +148,18 @@ def _calculate_indices(geomad: xr.Dataset) -> xr.Dataset:
 
 
 def _calculate_terrain_features(dem: xr.DataArray) -> xr.Dataset:
-    """Compute slope, northness and eastness from an elevation DataArray on a geographic (degree) grid.
+    """Compute slope from an elevation DataArray on a geographic (degree) grid.
 
     Gradients are computed with central differences (Zevenbergen & Thorne 1987) in degrees and converted to ground
     metres with the radii of curvature of the DEM CRS's ellipsoid at each latitude: a degree of longitude shrinks
     with cos(latitude) and a degree of latitude lengthens slightly towards the poles. Working on
-    the DEM's native grid avoids the scale distortion of the analysis CRSs and keeps aspect relative to true north.
-
-    Northness and eastness are the cosine and sine of aspect (the downslope bearing) weighted by sin(slope): 1 = steep
-    north/east-facing, -1 = steep south/west-facing, 0 on flat ground. Unlike raw aspect, they don't wrap from 359 to 0
-    degrees, and the weighting stops DEM noise on flat ground giving a full-strength aspect.
+    the DEM's native grid avoids the scale distortion of the analysis CRSs.
 
     Args:
         dem: 2D elevation DataArray with x (longitude) and y (latitude) coordinates in degrees and a geographic CRS.
 
     Returns:
-        Dataset with elevation, slope (degrees), northness and eastness on the same grid.
+        Dataset with elevation (metres) and slope (degrees) on the same grid.
     """
     geod = dem.odc.crs.proj.get_geod()
     lat = np.radians(dem.y)
@@ -182,26 +169,30 @@ def _calculate_terrain_features(dem: xr.DataArray) -> xr.Dataset:
     north_radius = geod.a * (1 - geod.es) / w**1.5
     dz_dx = dem.differentiate("x") / (np.radians(1) * east_radius * np.cos(lat))
     dz_dy = dem.differentiate("y") / (np.radians(1) * north_radius)
-    grad = np.hypot(dz_dx, dz_dy)
-    # Equals cos/sin(aspect) * sin(slope), without computing aspect.
-    hypotenuse = np.sqrt(1 + grad**2)
-    terrain = {"slope": np.degrees(np.arctan(grad)), "northness": -dz_dy / hypotenuse, "eastness": -dz_dx / hypotenuse}
-    # float32 like the other features: the float64 latitudes would otherwise promote these to float64.
-    return xr.Dataset({"elevation": dem, **{name: value.astype("float32") for name, value in terrain.items()}})
+    slope = np.degrees(np.arctan(np.hypot(dz_dx, dz_dy)))
+    return xr.Dataset({"elevation": dem, "slope": slope.astype("float32")})
 
 
 # Focal (regional) statistics, named "{band}_{stat}_{size}" with a size x size pixel window. Candidates for model
 # training, which keeps only the groups that improve accuracy. TPI is elevation minus its focal mean.
+# Windows of 3, 7 and 15 pixels (about 90, 210 and 450 m) give the immediate neighbours, the field or patch, and the
+# wider landscape.
+# Means (index, reflectance and MAD bands) smooth single-pixel noise and describe the surroundings, e.g. a grass patch
+# inside a town or a forest.
+# Standard deviations (index bands) measure texture: mixed patches like farms and towns vary, forest and water don't.
+# The indices summarise the bands, so their std gives most of the texture with fewer features. Reflectance std hasn't
+# been tested.
+# TPI at 15 pixels: positive on ridges and hills, negative in valleys and depressions, e.g. wetland.
 _FOCAL_SIZES = [3, 7, 15]
-_TPI_SIZES = [15, 51]
+_TPI_SIZES = [15]
 FOCAL_FEATURES = (
     [f"{band}_{stat}_{size}" for band in INDEX_BANDS for stat in ["mean", "std"] for size in _FOCAL_SIZES]
     + [f"{band}_mean_{size}" for band in REFLECTANCE_BANDS for size in _FOCAL_SIZES]
     + [f"{band}_mean_7" for band in MAD_BANDS]
     + [f"elevation_tpi_{size}" for size in _TPI_SIZES]
 )
-# Pixels to pad each side of a tile so the widest window is complete at tile edges: half the widest window (51 x 51,
-# including the focal pixel), so 25.
+# Pixels to pad each side of a tile so the widest window is complete at tile edges: half the widest window (15 x 15,
+# including the focal pixel), so 7.
 FOCAL_PAD = max(_FOCAL_SIZES + _TPI_SIZES) // 2
 
 # Copernicus DEM collection on MS PC.
@@ -326,7 +317,7 @@ def _merge_geographic_halves(east: xr.Dataset, west: xr.Dataset) -> xr.Dataset:
 
 
 def _load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
-    """Load Copernicus DEM and compute elevation, slope, northness and eastness.
+    """Load Copernicus DEM and compute elevation and slope.
 
     Loads COP-DEM-GLO-30 from Planetary Computer on its native WGS84 grid (limited to the tile), computes terrain
     there (see _calculate_terrain_features), then reprojects to the target geobox with nearest resampling.
@@ -335,7 +326,7 @@ def _load_dem_terrain(geobox: GeoBox) -> xr.Dataset:
         geobox: Target grid (of a tile) in the analysis CRS (EPSG:3832 or EPSG:6933).
 
     Returns:
-        Dataset with elevation, slope, northness and eastness variables.
+        Dataset with elevation and slope variables.
     """
     client = PyStacClient.open(DEM_CATALOG)
 
@@ -465,8 +456,8 @@ def make_features(geomad: xr.Dataset, features: list[str]) -> xr.Dataset:
             other names are ignored, since the base features are always computed.
 
     Returns:
-        Computed dataset with scaled GeoMAD bands, spectral indices, elevation, slope, northness, eastness and the
-        requested focal statistics on the GeoMAD grid.
+        Computed dataset with scaled GeoMAD bands, spectral indices, elevation, slope and the requested focal
+        statistics on the GeoMAD grid.
     """
     data = _calculate_indices(_scale_offset_landsat(geomad.squeeze(drop=True)))
 
