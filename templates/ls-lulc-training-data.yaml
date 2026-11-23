@@ -30,7 +30,7 @@ spec:
       - name: image-name
         value: "ghcr.io/auspatious/ldn-lulc"
       - name: image-tag
-        value: "0.2.0-dec0a54" # TODO: Training data 0-2-2 needs an image with the 0-2-2 features (ldn/raster.py).
+        value: "0.2.2"
       - name: split
         # "test" for TEST_TILES, or "train" for TRAINING_TILES. Test data is written as TEST_DATA_VERSION in the
         # image (ldn/utils.py), so a new test data version needs a new image.
